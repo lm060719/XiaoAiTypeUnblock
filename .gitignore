@@ -1,0 +1,65 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+app/build/
+*/build/
+
+# Gradle files
+.gradle/
+.gradletasknamecache
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Proguard / R8 mapping files
+proguard/
+app/proguard/
+
+# Log files
+*.log
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+.idea/caches
+.idea/libraries
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# Visual Studio Code
+.vscode/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Native build artifacts
+.cxx/
+.externalNativeBuild/
+
+# Memory Dumps & Profiling
+*.hprof
+captures/
+
+# Temporary / Extracted dirs
+app/libs/extracted_aar/

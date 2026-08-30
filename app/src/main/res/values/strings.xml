@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">超级小爱输入法净化</string>
+    <string name="module_description">去除超级小爱输入法（com.xiaomi.type）的敏感内容拦截、内容风控与云端黑名单下发</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#0066FF</color>
+    <color name="primary_variant">#0052CC</color>
+    <color name="secondary">#00C853</color>
+    <color name="background_light">#F5F6F9</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="card_stroke">#E0E4EB</color>
+    <color name="text_primary">#1C1E21</color>
+    <color name="text_secondary">#6E7787</color>
+    <color name="status_active">#10B981</color>
+    <color name="status_inactive">#F59E0B</color>
+</resources>

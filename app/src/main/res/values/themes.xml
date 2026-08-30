@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.XiaoAiTypeUnblock" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_variant</item>
+        <item name="colorAccent">@color/primary</item>
+        <item name="android:statusBarColor">@color/surface_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
