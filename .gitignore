@@ -64,3 +64,5 @@ captures/
 # Temporary / Extracted dirs
 app/libs/extracted_aar/
 
+# Agent / Workspace rules
+AGENTS.md
