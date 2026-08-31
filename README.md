@@ -14,24 +14,32 @@
 
 ## ✨ 核心功能特性
 
-### 1. 🤖 AI 表达安全拦截解除 (AI Safety Unblock)
+### 1. 🚀 澎湃 OS4+ 版本限制解除 (HyperOS 4+ Version Unblock)
+* **业务痛点**：超级小爱输入法在每次调出与初始化时，会严格检测系统属性 `ro.mi.os.version.code`（通过 `z7.s0.f18512a` 判定系统是否低于 OS 4.0）。若在 Xiaomi HyperOS 1/2/3、MIUI 系统或第三方 AOSP ROM 上运行，输入法会强制弹出 `OS_VERSION_UNSUPPORTED` 阻断对话框并调用 `requestHideSelf(0)` 自动退出隐藏，导致键盘完全无法呼出与使用。
+* **净化方案**：
+  * 动态挂钩 `android.os.SystemProperties`，拦截 `ro.mi.os.version.code`、`ro.mi.os.version.name` 与 `ro.miui.ui.version.code`，向目标进程提供虚拟的 HyperOS 4.0+ 运行环境；
+  * 在模块注入阶段反射修改 `z7.s0` 内存标志位，强制将 `f18512a` 阻断状态重置为 `false`；
+  * 挂钩 `AIVersion.isOS4Service`、`isServiceSupport` 与 `SERVICE_SDK_INT`，解除大模型端侧 AI 服务的系统版本校验；
+  * 拦截 `DialogHostActivity` 的 `OS_VERSION_UNSUPPORTED` 提示拉起，彻底杜绝异常弹窗。
+
+### 2. 🤖 AI 表达安全拦截解除 (AI Safety Unblock)
 * **业务痛点**：端云大模型在生成 AI 润色、文案扩展、智能回复时，服务端下发或本地解析时若包含 `"safety_blocked": true`，前端会触发敏感词屏蔽并抛弃生成文本。
 * **净化方案**：动态挂钩 AI 响应解析器（包括完整 JSON 解析、正则降级解析、流式 token 解析），将所有安全阻断标记在内存中实时重写为 `false`，保留所有生成的文字。
 
-### 2. 🎙️ 语音转写风控审查解除 (Voice Moderation Bypass)
+### 3. 🎙️ 语音转写风控审查解除 (Voice Moderation Bypass)
 * **业务痛点**：在进行语音输入（ASR）时，敏感语意会触发讯飞/小米安全策略，弹出 `CONTENT_MODERATION` 错误提示、返回 `30002` 风控错误码并直接挂断语音识别流，丢失已说内容。
 * **净化方案**：拦截语音风控弹窗（Toast）、改写 `30002` 错误码为安全状态码，并抑制异常挂断回调，确保语音转写流畅不中断。
 
-### 3. ☁️ 云端黑名单词库下发拦截 (Cloud Blacklist Block)
+### 4. ☁️ 云端黑名单词库下发拦截 (Cloud Blacklist Block)
 * **业务痛点**：SmartEngine 内核会定期从云端静默下发黑名单词库（`key_blackliststr` / `PinyinCloudAttachResult`），阻断部分云端联想与热词候选。
 * **净化方案**：拦截云端词库更新通道与反序列化构造，强制清空黑名单列表，恢复全量云端拼音候选词能力。
 
-### 4. 📋 剪贴板敏感标记忽略绕过 (Clipboard Sensitive Flag Bypass)
+### 5. 📋 剪贴板敏感标记忽略绕过 (Clipboard Sensitive Flag Bypass)
 * **业务痛点**：Android 13+ 引入剪贴板敏感标记（`android.content.extra.IS_SENSITIVE`），部分应用复制的内容会被输入法打上敏感标签，导致快捷粘贴栏隐藏、分词联想失效。
 * **净化方案**：拦截 `PersistableBundle` 与 `BaseBundle` 对敏感标记的查询，强制返回 `false`，确保剪贴板历史与快捷粘贴功能稳定可用。
 
-### 5. 📊 独立管理界面与实时日志看板 (Live Log & Monitor)
-* **可视化看板**：内置 Material Design 管理主界面，提供四大拦截模块的独立开关控制。
+### 6. 📊 独立管理界面与实时日志看板 (Live Log & Monitor)
+* **可视化看板**：内置 Material Design 管理主界面，提供五大核心拦截与解除特性的独立开关控制。
 * **实时跨进程日志**：基于非阻塞跨进程通信，无需连接电脑抓取 logcat，即可在 UI 中实时查看被净化的事件流与拦截统计。
 * **一键 Root 快速重启**：支持在界面中一键申请 Root 权限强制重启输入法进程，配置秒级生效。
 
@@ -41,7 +49,7 @@
 
 | 项目 | 要求 / 推荐配置 |
 | :--- | :--- |
-| **操作系统** | Android 8.0 ~ Android 17，推荐 **Xiaomi HyperOS 4 (Android 17)** |
+| **操作系统** | Android 8.0 ~ Android 17 (包含 HyperOS 1/2/3/4、MIUI 及第三方 ROM) |
 | **CPU 架构** | ARM64-v8a / armeabi-v7a |
 | **Root 环境** | KernelSU / APatch / Magisk (需要 Root 权限以支持一键重启输入法) |
 | **Xposed 框架** | 支持 **libxposed API 102** 的现代框架 (如 **LSPosed v2.1.0+** 等) |
@@ -70,7 +78,7 @@ flowchart LR
 4. **生效模块**：
    - 点击主界面底部的 **“重启超级小爱输入法”** 按钮（需要授权 Root 权限）；
    - 或前往“系统设置 -> 应用管理 -> 超级小爱输入法”，点击 **“强制停止”**。
-5. **验证效果**：调出超级小爱输入法，进行 AI 扩写/润色或语音转写，返回本模块界面，即可在 **“实时拦截与净化日志”** 中看到具体的拦截与重写记录。
+5. **验证效果**：调出超级小爱输入法，进行打字、AI 扩写/润色或语音转写，返回本模块界面，即可在 **“实时拦截与净化日志”** 中看到具体的拦截与重写记录。
 
 ---
 
@@ -79,6 +87,11 @@ flowchart LR
 ```mermaid
 graph TD
     subgraph TargetApp["超级小爱输入法 (com.xiaomi.type 进程)"]
+        subgraph OS["系统与版本兼容链路"]
+            SYSPROP["SystemProperties.get(ro.mi.os.*)"] -->|HyperOsVersionHook 伪装| OS_PASS["version.code: 4 / z7.s0.f18512a: false"]
+            AIVER["AIVersion (isOS4Service)"] -->|HyperOsVersionHook 劫持| AI_SERVICE_PASS["isServiceSupport: true"]
+        end
+
         subgraph AI["AI 表达链路"]
             LLM_RESP["大模型 JSON / 流式响应"] --> FBS["fb.s 解析器 (h / e / f)"]
             FBS -->|AiSafetyHook 篡改| AI_CLEAN["safety_blocked: false"]
@@ -99,7 +112,7 @@ graph TD
             BUNDLE -->|ClipboardSensitiveHook| CLIP_PASS["IS_SENSITIVE: false"]
         end
 
-        AI_CLEAN & VOICE_PASS & CLOUD_CLEAN & CLIP_PASS --> LOG_BRIDGE["LogBridge (单线程异步)"]
+        OS_PASS & AI_SERVICE_PASS & AI_CLEAN & VOICE_PASS & CLOUD_CLEAN & CLIP_PASS --> LOG_BRIDGE["LogBridge (单线程异步)"]
     end
 
     subgraph ModuleApp["模块主进程 (io.mo.xatype)"]
@@ -113,6 +126,10 @@ graph TD
 
 | 拦截模块 | 目标类与方法 | 拦截机制与业务逻辑 | 源码位置 |
 | :--- | :--- | :--- | :--- |
+| **OS4限制解除** | `android.os.SystemProperties.get/getInt` | 伪装 `ro.mi.os.version.code` 为 `4`，`ro.mi.os.version.name` 为 `OS4.0`。 | [`HyperOsVersionHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/HyperOsVersionHook.kt) |
+| **版本标志重置** | `z7.s0` 静态字段 `f18512a` | 反射重置版本阻断字段为 `false`，消除启动自退与弹窗限制。 | [`HyperOsVersionHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/HyperOsVersionHook.kt) |
+| **AI版本支持** | `AIVersion.isOS4Service`<br>`AIVersion.isServiceSupport` | 拦截 AI 服务版本检测方法并强制返回 `true`，解除端云大模型服务绑定。 | [`HyperOsVersionHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/HyperOsVersionHook.kt) |
+| **版本弹窗压制** | `DialogHostActivity.onCreate` | 拦截 `OS_VERSION_UNSUPPORTED` 弹窗意图并立即销毁，杜绝用户感知。 | [`HyperOsVersionHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/HyperOsVersionHook.kt) |
 | **AI 表达净化** | `fb.s.h(String)`<br>`fb.s.e(String)`<br>`fb.s.f(String)` | 匹配 JSON 与流式 Token 中的 `"safety_blocked": true`，替换为 `"safety_blocked": false`。 | [`AiSafetyHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/AiSafetyHook.kt) |
 | **语音风控拦截** | `a8.n.f(Context, String, String)` | 拦截 Miclaw 错误提示，检测到 `CONTENT_MODERATION` 时返回 `null` 压制弹窗。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
 | **ASR 错误码重写** | `s8.f.m(int, String)` | 捕获语音风控状态码 `30002` 并重写为安全状态码 `-1`。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
@@ -142,6 +159,7 @@ XiaoAiTypeUnblock/
 │   │   │   ├── data/
 │   │   │   │   └── LogEntry.kt              # 日志实体与类型定义
 │   │   │   ├── hooks/
+│   │   │   │   ├── HyperOsVersionHook.kt    # 澎湃 OS4+ 版本限制解除 Hook
 │   │   │   │   ├── AiSafetyHook.kt          # AI 大模型敏感阻断解除 Hook
 │   │   │   │   ├── ClipboardSensitiveHook.kt# 剪贴板敏感标记绕过 Hook
 │   │   │   │   ├── CloudBlacklistHook.kt    # 云端黑名单词库拦截 Hook

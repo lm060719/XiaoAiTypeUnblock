@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvCountVoice: TextView
     private lateinit var tvCountBlacklist: TextView
     private lateinit var tvCountClipboard: TextView
+    private lateinit var tvCountOsVersion: TextView
 
     private lateinit var btnRefreshLogs: TextView
     private lateinit var btnClearLogs: TextView
@@ -42,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchVoiceModeration: SwitchCompat
     private lateinit var switchCloudBlacklist: SwitchCompat
     private lateinit var switchClipboardSensitive: SwitchCompat
+    private lateinit var switchOsVersionUnblock: SwitchCompat
     private lateinit var switchVerboseLog: SwitchCompat
     private lateinit var btnRestartIme: Button
     private lateinit var btnAbout: Button
@@ -90,6 +92,7 @@ class MainActivity : AppCompatActivity() {
         tvCountVoice = findViewById(R.id.tvCountVoice)
         tvCountBlacklist = findViewById(R.id.tvCountBlacklist)
         tvCountClipboard = findViewById(R.id.tvCountClipboard)
+        tvCountOsVersion = findViewById(R.id.tvCountOsVersion)
 
         btnRefreshLogs = findViewById(R.id.btnRefreshLogs)
         btnClearLogs = findViewById(R.id.btnClearLogs)
@@ -100,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         switchVoiceModeration = findViewById(R.id.switchVoiceModeration)
         switchCloudBlacklist = findViewById(R.id.switchCloudBlacklist)
         switchClipboardSensitive = findViewById(R.id.switchClipboardSensitive)
+        switchOsVersionUnblock = findViewById(R.id.switchOsVersionUnblock)
         switchVerboseLog = findViewById(R.id.switchVerboseLog)
         btnRestartIme = findViewById(R.id.btnRestartIme)
         btnAbout = findViewById(R.id.btnAbout)
@@ -164,11 +168,13 @@ class MainActivity : AppCompatActivity() {
                 val voiceCount = result.getInt(LogContentProvider.EXTRA_VOICE_COUNT, 0)
                 val blacklistCount = result.getInt(LogContentProvider.EXTRA_BLACKLIST_COUNT, 0)
                 val clipboardCount = result.getInt(LogContentProvider.EXTRA_CLIPBOARD_COUNT, 0)
+                val osVersionCount = result.getInt(LogContentProvider.EXTRA_OS_VERSION_COUNT, 0)
 
                 tvCountAi.text = aiCount.toString()
                 tvCountVoice.text = voiceCount.toString()
                 tvCountBlacklist.text = blacklistCount.toString()
                 tvCountClipboard.text = clipboardCount.toString()
+                tvCountOsVersion.text = osVersionCount.toString()
 
                 val logEntries = ArrayList<LogEntry>()
                 for (json in list) {
@@ -218,6 +224,12 @@ class MainActivity : AppCompatActivity() {
             showRestartHint()
         }
 
+        switchOsVersionUnblock.isChecked = prefs.getBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, true)
+        switchOsVersionUnblock.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, isChecked).apply()
+            showRestartHint()
+        }
+
         switchVerboseLog.isChecked = prefs.getBoolean(ConfigManager.KEY_VERBOSE_LOG, true)
         switchVerboseLog.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_VERBOSE_LOG, isChecked).apply()
@@ -234,10 +246,11 @@ class MainActivity : AppCompatActivity() {
                 .setTitle("关于模块")
                 .setMessage(
                     "【模块功能】\n" +
-                            "1. AI 表达安全拦截解除：去除 AI 润色与智能回复时的 '已屏蔽敏感内容' 阻断。\n" +
-                            "2. 语音转写合规审查解除：拦截 CONTENT_MODERATION 风控弹窗与 30002 错误中断。\n" +
-                            "3. 云端黑名单词库下发拦截：阻断 key_blackliststr 下发，保留所有云端候选与热词。\n" +
-                            "4. 剪贴板敏感标记忽略绕过：忽略 IS_SENSITIVE 标记，允许快捷记录与联想。\n\n" +
+                            "1. 澎湃 OS4+ 版本限制解除：伪装系统版本并清除 z7.s0 阻断标记，在旧系统与第三方 ROM 上正常使用。\n" +
+                            "2. AI 表达安全拦截解除：去除 AI 润色与智能回复时的 '已屏蔽敏感内容' 阻断。\n" +
+                            "3. 语音转写合规审查解除：拦截 CONTENT_MODERATION 风控弹窗与 30002 错误中断。\n" +
+                            "4. 云端黑名单词库下发拦截：阻断 key_blackliststr 下发，保留所有云端候选与热词。\n" +
+                            "5. 剪贴板敏感标记忽略绕过：忽略 IS_SENSITIVE 标记，允许快捷记录与联想。\n\n" +
                             "【实时日志】\n" +
                             "模块通过跨进程日志桥接，将输入法内部的每次净化/拦截事件实时汇报到此界面。\n\n" +
                             "【技术架构】\n" +

@@ -11,6 +11,7 @@ object ConfigManager {
     const val KEY_VOICE_MODERATION = "pref_voice_moderation"
     const val KEY_CLOUD_BLACKLIST = "pref_cloud_blacklist"
     const val KEY_CLIPBOARD_SENSITIVE = "pref_clipboard_sensitive"
+    const val KEY_OS_VERSION_UNBLOCK = "pref_os_version_unblock"
     const val KEY_VERBOSE_LOG = "pref_verbose_log"
 
     private var remotePrefs: SharedPreferences? = null
@@ -37,6 +38,10 @@ object ConfigManager {
 
     fun isClipboardSensitiveEnabled(): Boolean {
         return remotePrefs?.getBoolean(KEY_CLIPBOARD_SENSITIVE, true) ?: true
+    }
+
+    fun isOsVersionUnblockEnabled(): Boolean {
+        return remotePrefs?.getBoolean(KEY_OS_VERSION_UNBLOCK, true) ?: true
     }
 
     fun isVerboseLogEnabled(): Boolean {

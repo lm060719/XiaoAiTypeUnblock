@@ -28,6 +28,7 @@ class LogContentProvider : ContentProvider() {
         const val EXTRA_VOICE_COUNT = "voice_count"
         const val EXTRA_BLACKLIST_COUNT = "blacklist_count"
         const val EXTRA_CLIPBOARD_COUNT = "clipboard_count"
+        const val EXTRA_OS_VERSION_COUNT = "os_version_count"
 
         private const val MAX_LOGS = 200
         private const val PREFS_PERSISTENT_LOGS = "persistent_logs"
@@ -38,6 +39,7 @@ class LogContentProvider : ContentProvider() {
         private val voiceModerationCounter = AtomicInteger(0)
         private val cloudBlacklistCounter = AtomicInteger(0)
         private val clipboardCounter = AtomicInteger(0)
+        private val osVersionCounter = AtomicInteger(0)
     }
 
     override fun onCreate(): Boolean {
@@ -60,6 +62,7 @@ class LogContentProvider : ContentProvider() {
                         LogType.VOICE_MODERATION -> voiceModerationCounter.incrementAndGet()
                         LogType.CLOUD_BLACKLIST -> cloudBlacklistCounter.incrementAndGet()
                         LogType.CLIPBOARD -> clipboardCounter.incrementAndGet()
+                        LogType.OS_VERSION -> osVersionCounter.incrementAndGet()
                         else -> {}
                     }
                 }
@@ -115,6 +118,7 @@ class LogContentProvider : ContentProvider() {
                         LogType.VOICE_MODERATION -> voiceModerationCounter.incrementAndGet()
                         LogType.CLOUD_BLACKLIST -> cloudBlacklistCounter.incrementAndGet()
                         LogType.CLIPBOARD -> clipboardCounter.incrementAndGet()
+                        LogType.OS_VERSION -> osVersionCounter.incrementAndGet()
                         else -> {}
                     }
                     savePersistedLogs()
@@ -133,6 +137,7 @@ class LogContentProvider : ContentProvider() {
                 result.putInt(EXTRA_VOICE_COUNT, voiceModerationCounter.get())
                 result.putInt(EXTRA_BLACKLIST_COUNT, cloudBlacklistCounter.get())
                 result.putInt(EXTRA_CLIPBOARD_COUNT, clipboardCounter.get())
+                result.putInt(EXTRA_OS_VERSION_COUNT, osVersionCounter.get())
             }
             METHOD_CLEAR -> {
                 logsDeque.clear()
@@ -140,6 +145,7 @@ class LogContentProvider : ContentProvider() {
                 voiceModerationCounter.set(0)
                 cloudBlacklistCounter.set(0)
                 clipboardCounter.set(0)
+                osVersionCounter.set(0)
                 savePersistedLogs()
                 result.putBoolean("success", true)
             }

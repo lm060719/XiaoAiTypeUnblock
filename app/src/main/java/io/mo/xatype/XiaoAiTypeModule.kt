@@ -7,6 +7,7 @@ import io.mo.xatype.data.LogType
 import io.mo.xatype.hooks.AiSafetyHook
 import io.mo.xatype.hooks.ClipboardSensitiveHook
 import io.mo.xatype.hooks.CloudBlacklistHook
+import io.mo.xatype.hooks.HyperOsVersionHook
 import io.mo.xatype.hooks.VoiceModerationHook
 import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
@@ -30,6 +31,12 @@ class XiaoAiTypeModule : XposedModule() {
         XposedUtils.log(this, "Target: ${param.packageName} (FirstPackage=${param.isFirstPackage})")
         XposedUtils.log(this, "Framework: $frameworkName $frameworkVersion (API ${apiVersion})")
         XposedUtils.log(this, "================================================")
+
+        try {
+            HyperOsVersionHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error installing HyperOsVersionHook", t)
+        }
 
         try {
             AiSafetyHook.install(this, classLoader)
