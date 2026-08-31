@@ -8,6 +8,7 @@ import io.mo.xatype.hooks.AiSafetyHook
 import io.mo.xatype.hooks.ClipboardSensitiveHook
 import io.mo.xatype.hooks.CloudBlacklistHook
 import io.mo.xatype.hooks.HyperOsVersionHook
+import io.mo.xatype.hooks.KeyboardStyleHook
 import io.mo.xatype.hooks.VoiceModerationHook
 import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
@@ -60,6 +61,12 @@ class XiaoAiTypeModule : XposedModule() {
             ClipboardSensitiveHook.install(this, classLoader)
         } catch (t: Throwable) {
             XposedUtils.logError(this, "Error installing ClipboardSensitiveHook", t)
+        }
+
+        try {
+            KeyboardStyleHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error installing KeyboardStyleHook", t)
         }
 
         XposedUtils.log(this, "XiaoAiTypeUnblock hooks installation complete.")

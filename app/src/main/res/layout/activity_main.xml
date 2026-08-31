@@ -182,7 +182,7 @@
 
             </LinearLayout>
 
-            <!-- Stats Grid (Row 2: 2 Cards) -->
+            <!-- Stats Grid (Row 2: 3 Cards) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -223,6 +223,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
+                    android:layout_marginEnd="4dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_card"
                     android:orientation="vertical"
@@ -242,6 +243,35 @@
                         android:layout_marginTop="4dp"
                         android:text="0"
                         android:textColor="#06B6D4"
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <!-- Stat 6: Custom Style Applied -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_card"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="样式美化"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tvCountStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="0"
+                        android:textColor="#F43F5E"
                         android:textSize="20sp"
                         android:textStyle="bold" />
 
@@ -607,6 +637,747 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:checked="true" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Section Title: Style Customization -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:text="键盘外观与个性化定制"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <!-- Style Customization Card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:background="@drawable/bg_card"
+                android:orientation="vertical">
+
+                <!-- Switch: Enable Custom Style -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="启用键盘外观个性化"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="自定义圆角弧度、背景透明度、背景图及上下左右边距"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                    </LinearLayout>
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switchStyleEnabled"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+
+                </LinearLayout>
+
+                <!-- Detailed Controls Container -->
+                <LinearLayout
+                    android:id="@+id/layoutStyleControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 1. Corner Radius -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="边角圆角弧度"
+                                android:textColor="@color/text_primary"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvCornerRadiusValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="16 dp"
+                                android:textColor="@color/primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                        <SeekBar
+                            android:id="@+id/sbCornerRadius"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:max="40"
+                            android:progress="16" />
+
+                        <!-- Corner Mode -->
+                        <RadioGroup
+                            android:id="@+id/rgCornerMode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:orientation="horizontal">
+
+                            <RadioButton
+                                android:id="@+id/rbCornerTopOnly"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="16dp"
+                                android:checked="true"
+                                android:text="仅顶部圆角"
+                                android:textSize="12sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbCornerAll"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="四角全圆角 (卡片悬浮)"
+                                android:textSize="12sp" />
+
+                        </RadioGroup>
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 2. Opacity / Transparency -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="背景透明度"
+                                android:textColor="@color/text_primary"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvOpacityValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="100%"
+                                android:textColor="@color/primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                        <SeekBar
+                            android:id="@+id/sbOpacity"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:max="100"
+                            android:progress="100" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 3. Margins & Insets -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="键盘边距微调 (卡片浮岛)"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <!-- Top Margin -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="顶部边距"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/tvMarginTopValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0 dp"
+                                android:textColor="@color/primary"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                        <SeekBar
+                            android:id="@+id/sbMarginTop"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="40"
+                            android:progress="0" />
+
+                        <!-- Bottom Margin -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="底部边距"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/tvMarginBottomValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0 dp"
+                                android:textColor="@color/primary"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                        <SeekBar
+                            android:id="@+id/sbMarginBottom"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="48"
+                            android:progress="0" />
+
+                        <!-- Horizontal Margin -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="左右边距"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/tvMarginHorizontalValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0 dp"
+                                android:textColor="@color/primary"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                        <SeekBar
+                            android:id="@+id/sbMarginHorizontal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="32"
+                            android:progress="0" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 4. Background Customization -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="背景类型选择"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <RadioGroup
+                            android:id="@+id/rgBgType"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:orientation="horizontal">
+
+                            <RadioButton
+                                android:id="@+id/rbBgDefault"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="8dp"
+                                android:checked="true"
+                                android:text="系统默认"
+                                android:textSize="12sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbBgColor"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="8dp"
+                                android:text="纯色背景"
+                                android:textSize="12sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbBgImage"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="自定义图片"
+                                android:textSize="12sp" />
+
+                        </RadioGroup>
+
+                        <!-- Solid Color Config Area -->
+                        <LinearLayout
+                            android:id="@+id/layoutBgColorConfig"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="常用预设色："
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+
+                            <!-- Preset Color Buttons -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:orientation="horizontal">
+
+                                <Button
+                                    android:id="@+id/btnColorCatppuccin"
+                                    android:layout_width="0dp"
+                                    android:layout_height="36dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:layout_weight="1"
+                                    android:backgroundTint="#1E1E2E"
+                                    android:text="深灰"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="10sp" />
+
+                                <Button
+                                    android:id="@+id/btnColorAmoled"
+                                    android:layout_width="0dp"
+                                    android:layout_height="36dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:layout_weight="1"
+                                    android:backgroundTint="#000000"
+                                    android:text="纯黑"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="10sp" />
+
+                                <Button
+                                    android:id="@+id/btnColorSlate"
+                                    android:layout_width="0dp"
+                                    android:layout_height="36dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:layout_weight="1"
+                                    android:backgroundTint="#1E293B"
+                                    android:text="晨曦蓝"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="10sp" />
+
+                                <Button
+                                    android:id="@+id/btnColorPurple"
+                                    android:layout_width="0dp"
+                                    android:layout_height="36dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:layout_weight="1"
+                                    android:backgroundTint="#2E1065"
+                                    android:text="暗夜紫"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="10sp" />
+
+                                <Button
+                                    android:id="@+id/btnColorWhite"
+                                    android:layout_width="0dp"
+                                    android:layout_height="36dp"
+                                    android:layout_weight="1"
+                                    android:backgroundTint="#F1F5F9"
+                                    android:text="极简白"
+                                    android:textColor="#1E293B"
+                                    android:textSize="10sp" />
+
+                            </LinearLayout>
+
+                            <!-- Custom Hex Input -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <EditText
+                                    android:id="@+id/etCustomColor"
+                                    android:layout_width="0dp"
+                                    android:layout_height="40dp"
+                                    android:layout_weight="1"
+                                    android:background="@drawable/bg_preview_container"
+                                    android:hint="#1E1E2E"
+                                    android:paddingStart="10dp"
+                                    android:paddingEnd="10dp"
+                                    android:singleLine="true"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="13sp" />
+
+                                <Button
+                                    android:id="@+id/btnApplyCustomColor"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="40dp"
+                                    android:layout_marginStart="8dp"
+                                    android:background="@drawable/bg_button_primary"
+                                    android:text="应用颜色"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="12sp" />
+
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                        <!-- Custom Image Config Area -->
+                        <LinearLayout
+                            android:id="@+id/layoutBgImageConfig"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <Button
+                                    android:id="@+id/btnPickBgImage"
+                                    android:layout_width="0dp"
+                                    android:layout_height="40dp"
+                                    android:layout_marginEnd="6dp"
+                                    android:layout_weight="1"
+                                    android:background="@drawable/bg_button_primary"
+                                    android:text="从相册选择图片..."
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="12sp" />
+
+                                <Button
+                                    android:id="@+id/btnClearBgImage"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="40dp"
+                                    android:layout_marginStart="6dp"
+                                    android:background="@drawable/bg_button_outlined"
+                                    android:text="清除图片"
+                                    android:textColor="@color/primary"
+                                    android:textSize="12sp" />
+
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/ivBgImagePreview"
+                                android:layout_width="match_parent"
+                                android:layout_height="80dp"
+                                android:layout_marginTop="8dp"
+                                android:background="@drawable/bg_preview_container"
+                                android:scaleType="centerCrop"
+                                android:visibility="gone" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 5. Realtime Preview Container -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:text="实时样式模拟预览："
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="120dp"
+                            android:background="@drawable/bg_preview_container"
+                            android:padding="8dp">
+
+                            <!-- Keyboard Mock Card -->
+                            <FrameLayout
+                                android:id="@+id/previewKeyboardCard"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="#1E1E2E"
+                                android:elevation="6dp">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:orientation="vertical"
+                                    android:padding="6dp">
+
+                                    <!-- Mock Candidates Bar -->
+                                    <LinearLayout
+                                        android:layout_width="match_parent"
+                                        android:layout_height="22dp"
+                                        android:gravity="center_vertical"
+                                        android:orientation="horizontal">
+
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:layout_marginEnd="12dp"
+                                            android:text="1. 小爱"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="11sp"
+                                            android:textStyle="bold" />
+
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:layout_marginEnd="12dp"
+                                            android:text="2. 输入法"
+                                            android:textColor="#CBD5E1"
+                                            android:textSize="11sp" />
+
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="3. 净化"
+                                            android:textColor="#CBD5E1"
+                                            android:textSize="11sp" />
+
+                                    </LinearLayout>
+
+                                    <!-- Mock Keys Row 1 -->
+                                    <LinearLayout
+                                        android:layout_width="match_parent"
+                                        android:layout_height="0dp"
+                                        android:layout_marginTop="4dp"
+                                        android:layout_weight="1"
+                                        android:orientation="horizontal">
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#334155"
+                                            android:gravity="center"
+                                            android:text="Q"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#334155"
+                                            android:gravity="center"
+                                            android:text="W"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#334155"
+                                            android:gravity="center"
+                                            android:text="E"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#334155"
+                                            android:gravity="center"
+                                            android:text="R"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#334155"
+                                            android:gravity="center"
+                                            android:text="T"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#334155"
+                                            android:gravity="center"
+                                            android:text="Y"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="10sp" />
+
+                                    </LinearLayout>
+
+                                    <!-- Mock Spacebar Row -->
+                                    <LinearLayout
+                                        android:layout_width="match_parent"
+                                        android:layout_height="0dp"
+                                        android:layout_marginTop="2dp"
+                                        android:layout_weight="1"
+                                        android:orientation="horizontal">
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#475569"
+                                            android:gravity="center"
+                                            android:text="符"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="9sp" />
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="3"
+                                            android:background="#334155"
+                                            android:gravity="center"
+                                            android:text="中 / 英 空格"
+                                            android:textColor="#CBD5E1"
+                                            android:textSize="9sp" />
+
+                                        <TextView
+                                            android:layout_width="0dp"
+                                            android:layout_height="match_parent"
+                                            android:layout_margin="2dp"
+                                            android:layout_weight="1"
+                                            android:background="#2563EB"
+                                            android:gravity="center"
+                                            android:text="发送"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="9sp"
+                                            android:textStyle="bold" />
+
+                                    </LinearLayout>
+
+                                </LinearLayout>
+
+                            </FrameLayout>
+
+                        </FrameLayout>
+
+                    </LinearLayout>
 
                 </LinearLayout>
 

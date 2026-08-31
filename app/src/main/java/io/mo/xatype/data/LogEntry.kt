@@ -11,7 +11,8 @@ enum class LogType(val displayName: String, val colorHex: String) {
     VOICE_MODERATION("语音风控拦截", "#F59E0B"),
     CLOUD_BLACKLIST("黑名单清除", "#8B5CF6"),
     CLIPBOARD("剪贴板绕过", "#EC4899"),
-    OS_VERSION("OS4限制解除", "#06B6D4");
+    OS_VERSION("OS4限制解除", "#06B6D4"),
+    STYLE("样式个性化", "#F43F5E");
 
     companion object {
         fun fromString(name: String): LogType {

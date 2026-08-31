@@ -66,4 +66,36 @@ object XposedUtils {
         }
         return null
     }
+
+    fun getObjectField(obj: Any, fieldName: String): Any? {
+        var currentClass: Class<*>? = obj.javaClass
+        while (currentClass != null && currentClass != Any::class.java) {
+            try {
+                val field = currentClass.getDeclaredField(fieldName)
+                field.isAccessible = true
+                return field.get(obj)
+            } catch (_: NoSuchFieldException) {
+                currentClass = currentClass.superclass
+            } catch (t: Throwable) {
+                return null
+            }
+        }
+        return null
+    }
+
+    fun setObjectField(obj: Any, fieldName: String, value: Any?) {
+        var currentClass: Class<*>? = obj.javaClass
+        while (currentClass != null && currentClass != Any::class.java) {
+            try {
+                val field = currentClass.getDeclaredField(fieldName)
+                field.isAccessible = true
+                field.set(obj, value)
+                return
+            } catch (_: NoSuchFieldException) {
+                currentClass = currentClass.superclass
+            } catch (_: Throwable) {
+                return
+            }
+        }
+    }
 }

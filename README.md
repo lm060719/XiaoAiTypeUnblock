@@ -38,8 +38,17 @@
 * **业务痛点**：Android 13+ 引入剪贴板敏感标记（`android.content.extra.IS_SENSITIVE`），部分应用复制的内容会被输入法打上敏感标签，导致快捷粘贴栏隐藏、分词联想失效。
 * **净化方案**：拦截 `PersistableBundle` 与 `BaseBundle` 对敏感标记的查询，强制返回 `false`，确保剪贴板历史与快捷粘贴功能稳定可用。
 
-### 6. 📊 独立管理界面与实时日志看板 (Live Log & Monitor)
-* **可视化看板**：内置 Material Design 管理主界面，提供五大核心拦截与解除特性的独立开关控制。
+### 6. 🎨 键盘外观与个性化定制 (Keyboard Appearance & Style Customization)
+* **业务痛点**：超级小爱输入法默认采用固定底色、直角/固定圆角且紧贴屏幕边缘的键盘布局，缺乏透明度、个性化背景图以及悬浮边距等美化调节能力。
+* **美化方案**：
+  * **边角圆角弧度 (Corner Radius)**：支持 **0 ~ 40 dp** 动态圆角调节，支持“仅顶部圆角”（经典贴底）与“四角全圆角”（悬浮卡片），配合硬件级 `ViewOutlineProvider` 实现按键与候选栏防锯齿裁切；
+  * **背景透明度 (Opacity / Transparency)**：支持 **10% ~ 100%** 无级透明度调节，半透打字不遮挡底层应用内容；
+  * **自定义背景 (Background)**：支持预设纯色（Catppuccin、AMOLED 纯黑、晨曦蓝、暗夜紫、极简白）、自定义 HEX 色值，以及直接从相册选取自定义高清背景图片（支持 ContentProvider 跨进程安全流式加载）；
+  * **卡片悬浮边距 (Floating Margins)**：支持独立调节顶部边距、底部边距与左右水平边距，赋予立体 Elevation 阴影，打造现代化浮岛悬浮键盘质感；
+  * **实时可视化模拟预览**：管理界面内置实时键盘模拟器，拖动滑块或切换背景即可所见即所得。
+
+### 7. 📊 独立管理界面与实时日志看板 (Live Log & Monitor)
+* **可视化看板**：内置 Material Design 管理主界面，提供六大核心拦截与个性化美化特性的独立开关与参数控制。
 * **实时跨进程日志**：基于非阻塞跨进程通信，无需连接电脑抓取 logcat，即可在 UI 中实时查看被净化的事件流与拦截统计。
 * **一键 Root 快速重启**：支持在界面中一键申请 Root 权限强制重启输入法进程，配置秒级生效。
 
@@ -67,14 +76,14 @@ flowchart LR
     A[编译 / 下载 APK] --> B[安装模块至设备]
     B --> C[打开 LSPosed 管理器]
     C --> D[启用模块并勾选 com.xiaomi.type]
-    D --> E[打开模块 App 配置开关]
+    D --> E[打开模块 App 配置开关与外观]
     E --> F[点击'重启超级小爱输入法']
     F --> G[呼出输入法享受完整体验]
 ```
 
 1. **获取安装包**：在 Release 页面下载最新版 APK，或自行克隆源码编译安装。
 2. **启用模块**：打开 LSPosed / 对应现代 Xposed 管理器，在模块列表中找到 **超级小爱输入法净化** 并启用，确认作用域勾选了 **超级小爱输入法 (`com.xiaomi.type`)**。
-3. **参数配置**：打开本模块的应用界面，按需勾选或保持默认开启全部净化功能。
+3. **参数配置**：打开本模块的应用界面，按需配置风控拦截开关、圆角弧度、透明度、背景图与卡片边距。
 4. **生效模块**：
    - 点击主界面底部的 **“重启超级小爱输入法”** 按钮（需要授权 Root 权限）；
    - 或前往“系统设置 -> 应用管理 -> 超级小爱输入法”，点击 **“强制停止”**。
@@ -90,6 +99,11 @@ graph TD
         subgraph OS["系统与版本兼容链路"]
             SYSPROP["SystemProperties.get(ro.mi.os.*)"] -->|HyperOsVersionHook 伪装| OS_PASS["version.code: 4 / z7.s0.f18512a: false"]
             AIVER["AIVersion (isOS4Service)"] -->|HyperOsVersionHook 劫持| AI_SERVICE_PASS["isServiceSupport: true"]
+        end
+
+        subgraph Style["外观美化链路"]
+            STYLE_CONF["ConfigManager (圆角/透明度/边距/背景)"] -->|KeyboardStyleHook| ROOT_VIEW["l8.c / u9.s (Compose 视图)"]
+            ROOT_VIEW -->|ViewOutlineProvider| CORNER_CLIP["硬件圆角裁切 & 悬浮边距"]
         end
 
         subgraph AI["AI 表达链路"]
@@ -112,7 +126,7 @@ graph TD
             BUNDLE -->|ClipboardSensitiveHook| CLIP_PASS["IS_SENSITIVE: false"]
         end
 
-        OS_PASS & AI_SERVICE_PASS & AI_CLEAN & VOICE_PASS & CLOUD_CLEAN & CLIP_PASS --> LOG_BRIDGE["LogBridge (单线程异步)"]
+        OS_PASS & AI_SERVICE_PASS & CORNER_CLIP & AI_CLEAN & VOICE_PASS & CLOUD_CLEAN & CLIP_PASS --> LOG_BRIDGE["LogBridge (单线程异步)"]
     end
 
     subgraph ModuleApp["模块主进程 (io.mo.xatype)"]
@@ -126,6 +140,7 @@ graph TD
 
 | 拦截模块 | 目标类与方法 | 拦截机制与业务逻辑 | 源码位置 |
 | :--- | :--- | :--- | :--- |
+| **外观美化注入** | `MiInputMethodService.onCreateInputView`<br>`MiInputMethodService.onStartInputView` | 拦截根视图，注入自定义圆角、透明度、背景图/纯色及上下左右边距。 | [`KeyboardStyleHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/KeyboardStyleHook.kt) |
 | **OS4限制解除** | `android.os.SystemProperties.get/getInt` | 伪装 `ro.mi.os.version.code` 为 `4`，`ro.mi.os.version.name` 为 `OS4.0`。 | [`HyperOsVersionHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/HyperOsVersionHook.kt) |
 | **版本标志重置** | `z7.s0` 静态字段 `f18512a` | 反射重置版本阻断字段为 `false`，消除启动自退与弹窗限制。 | [`HyperOsVersionHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/HyperOsVersionHook.kt) |
 | **AI版本支持** | `AIVersion.isOS4Service`<br>`AIVersion.isServiceSupport` | 拦截 AI 服务版本检测方法并强制返回 `true`，解除端云大模型服务绑定。 | [`HyperOsVersionHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/HyperOsVersionHook.kt) |
@@ -159,6 +174,7 @@ XiaoAiTypeUnblock/
 │   │   │   ├── data/
 │   │   │   │   └── LogEntry.kt              # 日志实体与类型定义
 │   │   │   ├── hooks/
+│   │   │   │   ├── KeyboardStyleHook.kt     # 键盘外观与个性化美化 Hook
 │   │   │   │   ├── HyperOsVersionHook.kt    # 澎湃 OS4+ 版本限制解除 Hook
 │   │   │   │   ├── AiSafetyHook.kt          # AI 大模型敏感阻断解除 Hook
 │   │   │   │   ├── ClipboardSensitiveHook.kt# 剪贴板敏感标记绕过 Hook
