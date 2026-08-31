@@ -1,15 +1,15 @@
-package com.xiaomi.type.unblock
+package io.mo.xatype
 
-import com.xiaomi.type.unblock.config.ConfigManager
-import com.xiaomi.type.unblock.data.LogType
-import com.xiaomi.type.unblock.hooks.AiSafetyHook
-import com.xiaomi.type.unblock.hooks.ClipboardSensitiveHook
-import com.xiaomi.type.unblock.hooks.CloudBlacklistHook
-import com.xiaomi.type.unblock.hooks.VoiceModerationHook
-import com.xiaomi.type.unblock.util.LogBridge
-import com.xiaomi.type.unblock.util.XposedUtils
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
+import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.data.LogType
+import io.mo.xatype.hooks.AiSafetyHook
+import io.mo.xatype.hooks.ClipboardSensitiveHook
+import io.mo.xatype.hooks.CloudBlacklistHook
+import io.mo.xatype.hooks.VoiceModerationHook
+import io.mo.xatype.util.LogBridge
+import io.mo.xatype.util.XposedUtils
 
 class XiaoAiTypeModule : XposedModule() {
 

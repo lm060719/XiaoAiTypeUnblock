@@ -1,10 +1,10 @@
-package com.xiaomi.type.unblock.util
+package io.mo.xatype.util
 
 import android.content.Context
 import android.os.Bundle
-import com.xiaomi.type.unblock.data.LogEntry
-import com.xiaomi.type.unblock.data.LogType
-import com.xiaomi.type.unblock.provider.LogContentProvider
+import io.mo.xatype.data.LogEntry
+import io.mo.xatype.data.LogType
+import io.mo.xatype.provider.LogContentProvider
 import java.util.concurrent.Executors
 
 object LogBridge {

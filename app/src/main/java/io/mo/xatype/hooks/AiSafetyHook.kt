@@ -1,10 +1,10 @@
-package com.xiaomi.type.unblock.hooks
+package io.mo.xatype.hooks
 
-import com.xiaomi.type.unblock.config.ConfigManager
-import com.xiaomi.type.unblock.data.LogType
-import com.xiaomi.type.unblock.util.LogBridge
-import com.xiaomi.type.unblock.util.XposedUtils
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.data.LogType
+import io.mo.xatype.util.LogBridge
+import io.mo.xatype.util.XposedUtils
 import java.util.regex.Pattern
 
 object AiSafetyHook {

@@ -1,4 +1,4 @@
-package com.xiaomi.type.unblock.data
+package io.mo.xatype.data
 
 import org.json.JSONObject
 import java.text.SimpleDateFormat

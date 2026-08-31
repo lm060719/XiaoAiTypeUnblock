@@ -1,4 +1,4 @@
-package com.xiaomi.type.unblock.provider
+package io.mo.xatype.provider
 
 import android.content.ContentProvider
 import android.content.ContentValues
@@ -6,8 +6,8 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
-import com.xiaomi.type.unblock.data.LogEntry
-import com.xiaomi.type.unblock.data.LogType
+import io.mo.xatype.data.LogEntry
+import io.mo.xatype.data.LogType
 import org.json.JSONArray
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicInteger
@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class LogContentProvider : ContentProvider() {
 
     companion object {
-        const val AUTHORITY = "com.xiaomi.type.unblock.logprovider"
+        const val AUTHORITY = "io.mo.xatype.logprovider"
         val CONTENT_URI: Uri = Uri.parse("content://$AUTHORITY")
 
         const val METHOD_RECORD = "record"

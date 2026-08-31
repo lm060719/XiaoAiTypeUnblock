@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.xiaomi.type.unblock"
+    namespace = "io.mo.xatype"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.xiaomi.type.unblock"
+        applicationId = "io.mo.xatype"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

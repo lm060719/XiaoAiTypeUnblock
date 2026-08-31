@@ -1,4 +1,4 @@
-package com.xiaomi.type.unblock.ui
+package io.mo.xatype.ui
 
 import android.content.Context
 import android.content.Intent
@@ -15,10 +15,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.xiaomi.type.unblock.R
-import com.xiaomi.type.unblock.config.ConfigManager
-import com.xiaomi.type.unblock.data.LogEntry
-import com.xiaomi.type.unblock.provider.LogContentProvider
+import io.mo.xatype.R
+import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.data.LogEntry
+import io.mo.xatype.provider.LogContentProvider
 import java.io.DataOutputStream
 
 class MainActivity : AppCompatActivity() {

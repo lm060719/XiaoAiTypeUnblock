@@ -1,4 +1,4 @@
-package com.xiaomi.type.unblock.config
+package io.mo.xatype.config
 
 import android.content.Context
 import android.content.SharedPreferences

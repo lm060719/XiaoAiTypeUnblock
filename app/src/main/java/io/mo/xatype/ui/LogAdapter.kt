@@ -1,4 +1,4 @@
-package com.xiaomi.type.unblock.ui
+package io.mo.xatype.ui
 
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -7,8 +7,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.xiaomi.type.unblock.R
-import com.xiaomi.type.unblock.data.LogEntry
+import io.mo.xatype.R
+import io.mo.xatype.data.LogEntry
 
 class LogAdapter(private var items: List<LogEntry> = emptyList()) :
     RecyclerView.Adapter<LogAdapter.LogViewHolder>() {

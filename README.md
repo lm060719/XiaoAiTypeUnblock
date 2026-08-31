@@ -102,7 +102,7 @@ graph TD
         AI_CLEAN & VOICE_PASS & CLOUD_CLEAN & CLIP_PASS --> LOG_BRIDGE["LogBridge (单线程异步)"]
     end
 
-    subgraph ModuleApp["模块主进程 (com.xiaomi.type.unblock)"]
+    subgraph ModuleApp["模块主进程 (io.mo.xatype)"]
         LOG_BRIDGE -->|ContentResolver.call| PROVIDER["LogContentProvider"]
         PROVIDER --> UI["MainActivity 看板 (实时轮询 / 计数器)"]
         CONFIG["ConfigManager (RemotePreferences)"] -.->|IPC 共享配置| TargetApp
@@ -113,18 +113,18 @@ graph TD
 
 | 拦截模块 | 目标类与方法 | 拦截机制与业务逻辑 | 源码位置 |
 | :--- | :--- | :--- | :--- |
-| **AI 表达净化** | `fb.s.h(String)`<br>`fb.s.e(String)`<br>`fb.s.f(String)` | 匹配 JSON 与流式 Token 中的 `"safety_blocked": true`，替换为 `"safety_blocked": false`。 | [`AiSafetyHook.kt`](file:///app/src/main/java/com/xiaomi/type/unblock/hooks/AiSafetyHook.kt) |
-| **语音风控拦截** | `a8.n.f(Context, String, String)` | 拦截 Miclaw 错误提示，检测到 `CONTENT_MODERATION` 时返回 `null` 压制弹窗。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/com/xiaomi/type/unblock/hooks/VoiceModerationHook.kt) |
-| **ASR 错误码重写** | `s8.f.m(int, String)` | 捕获语音风控状态码 `30002` 并重写为安全状态码 `-1`。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/com/xiaomi/type/unblock/hooks/VoiceModerationHook.kt) |
-| **ASR 会话保护** | `s8.d.e(Bundle)` | 丢弃携带 `code: 30002` 的 Bundle 回调，阻止语音引擎强行关闭输入会话。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/com/xiaomi/type/unblock/hooks/VoiceModerationHook.kt) |
-| **云端黑名单清空** | `c1.onPyCloudAttachUpdate(...)` | 拦截云端下发附带词库，将 `blacklistStr` 参数置空。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/com/xiaomi/type/unblock/hooks/CloudBlacklistHook.kt) |
-| **词库实体置空** | `PinyinCloudAttachResult.get/setBlackListStr` | 强制返回空字符串并阻止黑名单内存字段写入。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/com/xiaomi/type/unblock/hooks/CloudBlacklistHook.kt) |
-| **剪贴板敏感绕过** | `PersistableBundle.getBoolean(...)`<br>`BaseBundle.getBoolean(...)` | 拦截 key 为 `android.content.extra.IS_SENSITIVE` 的调用并返回 `false`。 | [`ClipboardSensitiveHook.kt`](file:///app/src/main/java/com/xiaomi/type/unblock/hooks/ClipboardSensitiveHook.kt) |
+| **AI 表达净化** | `fb.s.h(String)`<br>`fb.s.e(String)`<br>`fb.s.f(String)` | 匹配 JSON 与流式 Token 中的 `"safety_blocked": true`，替换为 `"safety_blocked": false`。 | [`AiSafetyHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/AiSafetyHook.kt) |
+| **语音风控拦截** | `a8.n.f(Context, String, String)` | 拦截 Miclaw 错误提示，检测到 `CONTENT_MODERATION` 时返回 `null` 压制弹窗。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
+| **ASR 错误码重写** | `s8.f.m(int, String)` | 捕获语音风控状态码 `30002` 并重写为安全状态码 `-1`。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
+| **ASR 会话保护** | `s8.d.e(Bundle)` | 丢弃携带 `code: 30002` 的 Bundle 回调，阻止语音引擎强行关闭输入会话。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
+| **云端黑名单清空** | `c1.onPyCloudAttachUpdate(...)` | 拦截云端下发附带词库，将 `blacklistStr` 参数置空。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/CloudBlacklistHook.kt) |
+| **词库实体置空** | `PinyinCloudAttachResult.get/setBlackListStr` | 强制返回空字符串并阻止黑名单内存字段写入。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/CloudBlacklistHook.kt) |
+| **剪贴板敏感绕过** | `PersistableBundle.getBoolean(...)`<br>`BaseBundle.getBoolean(...)` | 拦截 key 为 `android.content.extra.IS_SENSITIVE` 的调用并返回 `false`。 | [`ClipboardSensitiveHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/ClipboardSensitiveHook.kt) |
 
 ### 2. 现代 Xposed 与无阻塞设计
 
 * **原生远程配置**：通过 libxposed 的 `module.getRemotePreferences("settings")` 直接读取模块私有存储，无需配置复杂的 World-Readable 权限，彻底规避 Android 14/15/16/17 (HyperOS 4) 下存储沙盒限制。
-* **异步事件桥接**：Hook 点内的日志记录由 [`LogBridge`](file:///app/src/main/java/com/xiaomi/type/unblock/util/LogBridge.kt) 提交至专用单线程池，通过 `ContentResolver.call` 跨进程发送至 [`LogContentProvider`](file:///app/src/main/java/com/xiaomi/type/unblock/provider/LogContentProvider.kt)，杜绝打字过程中的任何 IPC 卡顿与掉帧。
+* **异步事件桥接**：Hook 点内的日志记录由 [`LogBridge`](file:///app/src/main/java/io/mo/xatype/util/LogBridge.kt) 提交至专用单线程池，通过 `ContentResolver.call` 跨进程发送至 [`LogContentProvider`](file:///app/src/main/java/io/mo/xatype/provider/LogContentProvider.kt)，杜绝打字过程中的任何 IPC 卡顿与掉帧。
 * **防御性容错**：所有 Hook 操作均被 `try-catch` 包裹，若输入法更新导致内部方法混淆或签名微调，模块将平稳跳过对应点并输出 Diagnostic Log，绝不影响输入法的常规打字与基础功能。
 
 ---
@@ -135,7 +135,7 @@ graph TD
 XiaoAiTypeUnblock/
 ├── app/
 │   ├── src/main/
-│   │   ├── java/com/xiaomi/type/unblock/
+│   │   ├── java/io/mo/xatype/
 │   │   │   ├── XiaoAiTypeModule.kt          # XposedModule 入口类 (API 102)
 │   │   │   ├── config/
 │   │   │   │   └── ConfigManager.kt         # 远程与本地偏好设置统一管理

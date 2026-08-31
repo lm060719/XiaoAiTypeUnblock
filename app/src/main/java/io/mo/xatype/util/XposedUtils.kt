@@ -1,4 +1,4 @@
-package com.xiaomi.type.unblock.util
+package io.mo.xatype.util
 
 import android.util.Log
 import io.github.libxposed.api.XposedInterface

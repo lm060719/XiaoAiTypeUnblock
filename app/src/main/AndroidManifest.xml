@@ -37,7 +37,7 @@
 
         <provider
             android:name=".provider.LogContentProvider"
-            android:authorities="com.xiaomi.type.unblock.logprovider"
+            android:authorities="io.mo.xatype.logprovider"
             android:exported="true" />
 
     </application>
