@@ -41,7 +41,7 @@
 ### 6. 🎨 键盘外观与个性化定制 (Keyboard Appearance & Style Customization)
 * **业务痛点**：超级小爱输入法默认采用固定底色、直角/固定圆角且紧贴屏幕边缘的键盘布局，缺乏透明度、个性化背景图以及悬浮边距等美化调节能力。
 * **美化方案**：
-  * **边角圆角弧度 (Corner Radius)**：支持 **0 ~ 40 dp** 动态圆角调节，支持“仅顶部圆角”（经典贴底）与“四角全圆角”（悬浮卡片），配合硬件级 `ViewOutlineProvider` 实现按键与候选栏防锯齿裁切；
+  * **边角圆角弧度 (Corner Radius)**：支持 **0 ~ 40 dp** 动态顶部圆角调节，配合硬件级 `ViewOutlineProvider` 与 HyperOS AGSL 着色器实现按键与候选栏防锯齿贴合裁切；
   * **背景透明度 (Opacity / Transparency)**：支持 **10% ~ 100%** 无级透明度调节，半透打字不遮挡底层应用内容；
   * **自定义背景 (Background)**：支持预设纯色（Catppuccin、AMOLED 纯黑、晨曦蓝、暗夜紫、极简白）、自定义 HEX 色值，以及直接从相册选取自定义高清背景图片（支持 ContentProvider 跨进程安全流式加载）；
   * **卡片悬浮边距 (Floating Margins)**：支持独立调节顶部边距、底部边距与左右水平边距，赋予立体 Elevation 阴影，打造现代化浮岛悬浮键盘质感；

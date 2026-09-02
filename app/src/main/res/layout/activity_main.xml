@@ -756,32 +756,6 @@
                             android:max="40"
                             android:progress="16" />
 
-                        <!-- Corner Mode -->
-                        <RadioGroup
-                            android:id="@+id/rgCornerMode"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:orientation="horizontal">
-
-                            <RadioButton
-                                android:id="@+id/rbCornerTopOnly"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginEnd="16dp"
-                                android:checked="true"
-                                android:text="仅顶部圆角"
-                                android:textSize="12sp" />
-
-                            <RadioButton
-                                android:id="@+id/rbCornerAll"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="四角全圆角 (卡片悬浮)"
-                                android:textSize="12sp" />
-
-                        </RadioGroup>
-
                     </LinearLayout>
 
                     <View
@@ -816,7 +790,7 @@
                                 android:id="@+id/tvOpacityValue"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="100%"
+                                android:text="85%"
                                 android:textColor="@color/primary"
                                 android:textSize="13sp"
                                 android:textStyle="bold" />
@@ -829,7 +803,41 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
                             android:max="100"
-                            android:progress="100" />
+                            android:progress="85" />
+
+                        <!-- Blur Radius Control for Dynamic Glass -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="毛玻璃模糊强度 (动态玻璃)"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/tvBlurRadiusValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="50 dp"
+                                android:textColor="@color/primary"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                        <SeekBar
+                            android:id="@+id/sbBlurRadius"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:max="100"
+                            android:progress="50" />
 
                     </LinearLayout>
 
@@ -991,7 +999,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginEnd="8dp"
                                 android:checked="true"
-                                android:text="系统默认"
+                                android:text="动态毛玻璃 (HyperOS 动态液态玻璃)"
                                 android:textSize="12sp" />
 
                             <RadioButton

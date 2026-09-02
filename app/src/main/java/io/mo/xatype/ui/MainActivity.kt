@@ -71,11 +71,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutStyleControls: LinearLayout
     private lateinit var tvCornerRadiusValue: TextView
     private lateinit var sbCornerRadius: SeekBar
-    private lateinit var rgCornerMode: RadioGroup
-    private lateinit var rbCornerTopOnly: RadioButton
-    private lateinit var rbCornerAll: RadioButton
     private lateinit var tvOpacityValue: TextView
     private lateinit var sbOpacity: SeekBar
+    private lateinit var tvBlurRadiusValue: TextView
+    private lateinit var sbBlurRadius: SeekBar
     private lateinit var tvMarginTopValue: TextView
     private lateinit var sbMarginTop: SeekBar
     private lateinit var tvMarginBottomValue: TextView
@@ -175,11 +174,10 @@ class MainActivity : AppCompatActivity() {
         layoutStyleControls = findViewById(R.id.layoutStyleControls)
         tvCornerRadiusValue = findViewById(R.id.tvCornerRadiusValue)
         sbCornerRadius = findViewById(R.id.sbCornerRadius)
-        rgCornerMode = findViewById(R.id.rgCornerMode)
-        rbCornerTopOnly = findViewById(R.id.rbCornerTopOnly)
-        rbCornerAll = findViewById(R.id.rbCornerAll)
         tvOpacityValue = findViewById(R.id.tvOpacityValue)
         sbOpacity = findViewById(R.id.sbOpacity)
+        tvBlurRadiusValue = findViewById(R.id.tvBlurRadiusValue)
+        sbBlurRadius = findViewById(R.id.sbBlurRadius)
         tvMarginTopValue = findViewById(R.id.tvMarginTopValue)
         sbMarginTop = findViewById(R.id.sbMarginTop)
         tvMarginBottomValue = findViewById(R.id.tvMarginBottomValue)
@@ -366,17 +364,8 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
         })
 
-        val cornerMode = prefs.getInt(ConfigManager.KEY_CORNER_MODE, 0)
-        if (cornerMode == 0) rbCornerTopOnly.isChecked = true else rbCornerAll.isChecked = true
-        rgCornerMode.setOnCheckedChangeListener { _, checkedId ->
-            val mode = if (checkedId == R.id.rbCornerAll) 1 else 0
-            prefs.edit().putInt(ConfigManager.KEY_CORNER_MODE, mode).apply()
-            updateStylePreview()
-            showRestartHint()
-        }
-
         // 2. Opacity
-        val opacity = prefs.getInt(ConfigManager.KEY_OPACITY, 100)
+        val opacity = prefs.getInt(ConfigManager.KEY_OPACITY, 85)
         sbOpacity.progress = opacity
         tvOpacityValue.text = "$opacity%"
         sbOpacity.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -385,6 +374,23 @@ class MainActivity : AppCompatActivity() {
                 tvOpacityValue.text = "$clamped%"
                 if (fromUser) {
                     prefs.edit().putInt(ConfigManager.KEY_OPACITY, clamped).apply()
+                    updateStylePreview()
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
+        })
+
+        // Blur Radius
+        val blurRadius = prefs.getInt(ConfigManager.KEY_BLUR_RADIUS, 50)
+        sbBlurRadius.progress = blurRadius
+        tvBlurRadiusValue.text = "$blurRadius dp"
+        sbBlurRadius.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val clamped = progress.coerceAtLeast(20)
+                tvBlurRadiusValue.text = "$clamped dp"
+                if (fromUser) {
+                    prefs.edit().putInt(ConfigManager.KEY_BLUR_RADIUS, clamped).apply()
                     updateStylePreview()
                 }
             }
@@ -555,7 +561,6 @@ class MainActivity : AppCompatActivity() {
         val prefs = ConfigManager.getLocalPrefs(this)
         val isEnabled = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, true)
         val cornerRadius = prefs.getInt(ConfigManager.KEY_CORNER_RADIUS, 16)
-        val cornerMode = prefs.getInt(ConfigManager.KEY_CORNER_MODE, 0)
         val opacity = prefs.getInt(ConfigManager.KEY_OPACITY, 100)
         val bgType = prefs.getInt(ConfigManager.KEY_BG_TYPE, 0)
         val bgColorStr = prefs.getString(ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E"
@@ -602,15 +607,15 @@ class MainActivity : AppCompatActivity() {
                                 previewKeyboardCard.background = ColorDrawable(Color.parseColor("#1E1E2E"))
                             }
                         }
-                        else -> {
-                            previewKeyboardCard.background = ColorDrawable(Color.parseColor("#1E1E2E"))
+                        else -> { // Dynamic Glass
+                            previewKeyboardCard.background = ColorDrawable(Color.argb(180, 28, 30, 42))
                         }
                     }
                 } else {
                     previewKeyboardCard.background = ColorDrawable(Color.parseColor("#1E1E2E"))
                 }
 
-                // Corner radius clipping
+                // Corner radius clipping (Top corners only)
                 if (radiusPx > 0f && isEnabled) {
                     previewKeyboardCard.clipToOutline = true
                     previewKeyboardCard.outlineProvider = object : ViewOutlineProvider() {
@@ -618,11 +623,7 @@ class MainActivity : AppCompatActivity() {
                             val w = view.width
                             val h = view.height
                             if (w <= 0 || h <= 0) return
-                            if (cornerMode == 0) {
-                                outline.setRoundRect(0, 0, w, h + radiusPx.toInt(), radiusPx)
-                            } else {
-                                outline.setRoundRect(0, 0, w, h, radiusPx)
-                            }
+                            outline.setRoundRect(0, 0, w, h + radiusPx.toInt(), radiusPx)
                         }
                     }
                     previewKeyboardCard.invalidateOutline()
