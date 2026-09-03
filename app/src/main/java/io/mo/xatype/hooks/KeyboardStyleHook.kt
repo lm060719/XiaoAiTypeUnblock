@@ -8,6 +8,7 @@ import android.graphics.Outline
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.view.Gravity
 import android.view.View
@@ -21,13 +22,14 @@ import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.data.LogType
 import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
+import java.util.WeakHashMap
 
 object KeyboardStyleHook {
 
     private var cachedBitmap: Bitmap? = null
     private var cachedImageVersion: Long = -1L
     private var lastLoggedTime = 0L
-
+    private val glassTintViews = WeakHashMap<Any, View>()
     fun install(module: XposedModule, classLoader: ClassLoader) {
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
         if (imeServiceClass == null) {
@@ -97,28 +99,7 @@ object KeyboardStyleHook {
             XposedUtils.log(module, "KeyboardStyleHook: Hooked onWindowShown")
         }
 
-        // 4. Hook Compose keyboard background color in na.d.h(): return 0L (Color.Unspecified)
-        try {
-            val naDClass = XposedUtils.findClass("na.d", classLoader)
-            if (naDClass != null) {
-                val hMethod = naDClass.declaredMethods.find { it.name == "h" && it.parameterTypes.isEmpty() }
-                if (hMethod != null) {
-                    val unspecifiedColor = 0L
-                    module.hook(hMethod).intercept { chain ->
-                        if (ConfigManager.isStyleEnabled()) {
-                            unspecifiedColor
-                        } else {
-                            chain.proceed()
-                        }
-                    }
-                    XposedUtils.log(module, "KeyboardStyleHook: Hooked na.d.h (Compose background color bypass)")
-                }
-            }
-        } catch (t: Throwable) {
-            XposedUtils.logError(module, "Error hooking na.d.h", t)
-        }
-
-        // 5. Hook Compose keyboard container corner radius: na.m.F0(s0.p)
+        // 4. Hook Compose keyboard container corner radius: na.m.F0(s0.p)
         try {
             val naMClass = XposedUtils.findClass("na.m", classLoader)
             if (naMClass != null) {
@@ -164,7 +145,7 @@ object KeyboardStyleHook {
                     val res = chain.proceed()
                     if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
                         val helper = chain.thisObject
-                        val f3497d = XposedUtils.getObjectField(helper, "f3497d")
+                        val f3497d = XposedUtils.getObjectField(helper, "d")
                         if (f3497d != null) {
                             try {
                                 val setValueMethod = f3497d.javaClass.methods.find { it.name == "setValue" }
@@ -184,8 +165,11 @@ object KeyboardStyleHook {
                     val result = chain.proceed()
                     if (result != null && ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
                         try {
-                            val blurRadius = ConfigManager.getBlurRadius()
-                            XposedUtils.setObjectField(result, "f18605p", blurRadius)
+                            XposedUtils.setObjectField(
+                                result,
+                                "p",
+                                ConfigManager.getBlurRadius().coerceIn(0, 400)
+                            )
                         } catch (_: Throwable) {}
                     }
                     result
@@ -224,7 +208,7 @@ object KeyboardStyleHook {
                     val res = chain.proceed()
                     if (ConfigManager.isStyleEnabled()) {
                         val helper = chain.thisObject
-                        val service = XposedUtils.getObjectField(helper, "f3495a") as? android.inputmethodservice.InputMethodService
+                        val service = XposedUtils.getObjectField(helper, "a") as? android.inputmethodservice.InputMethodService
                         if (service != null) {
                             ConfigManager.syncFromProvider(service)
                             updateHyperMaterialViews(module, service, helper)
@@ -344,28 +328,28 @@ object KeyboardStyleHook {
      * that check so the native method keeps the blur views alive.
      */
     private fun forceCurrentPackageIntoMaterialWhitelist(helper: Any) {
-        val packageName = XposedUtils.getObjectField(helper, "f3510u") as? String ?: return
+        val packageName = XposedUtils.getObjectField(helper, "u") as? String ?: return
 
         val versions = LinkedHashMap<Any?, Any?>()
-        (XposedUtils.getObjectField(helper, "f3511v") as? Map<*, *>)?.forEach { (key, value) ->
+        (XposedUtils.getObjectField(helper, "v") as? Map<*, *>)?.forEach { (key, value) ->
             versions[key] = value
         }
         versions[packageName] = 2
-        XposedUtils.setObjectField(helper, "f3511v", versions)
+        XposedUtils.setObjectField(helper, "v", versions)
 
         val primaryPackages = LinkedHashSet<Any?>()
-        (XposedUtils.getObjectField(helper, "f3512w") as? Set<*>)?.forEach {
+        (XposedUtils.getObjectField(helper, "w") as? Set<*>)?.forEach {
             primaryPackages.add(it)
         }
         primaryPackages.add(packageName)
-        XposedUtils.setObjectField(helper, "f3512w", primaryPackages)
+        XposedUtils.setObjectField(helper, "w", primaryPackages)
 
         val secondaryPackages = LinkedHashSet<Any?>()
-        (XposedUtils.getObjectField(helper, "f3513x") as? Set<*>)?.forEach {
+        (XposedUtils.getObjectField(helper, "x") as? Set<*>)?.forEach {
             secondaryPackages.add(it)
         }
         secondaryPackages.add(packageName)
-        XposedUtils.setObjectField(helper, "f3513x", secondaryPackages)
+        XposedUtils.setObjectField(helper, "x", secondaryPackages)
     }
 
     private fun getOrLoadBitmap(service: android.content.Context): Bitmap? {
@@ -395,20 +379,36 @@ object KeyboardStyleHook {
      * Updating only the bb.u.e(boolean) factory cannot change a token that has
      * already been created, so update both cached tokens before reapplying it.
      */
-    private fun updateCachedBlurTokens(helper: Any, blurRadiusDp: Int): Boolean {
+    private fun updateCachedGlassTokens(helper: Any, blurRadiusDp: Int, opacity: Int): Boolean {
         var updated = false
+        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
 
-        for (lazyFieldName in arrayOf("f3506p", "f3507q")) {
+        for ((index, lazyFieldName) in arrayOf("p", "q").withIndex()) {
             try {
                 val lazyValue = XposedUtils.getObjectField(helper, lazyFieldName) ?: continue
                 val getValue = lazyValue.javaClass.methods.firstOrNull {
                     it.name == "getValue" && it.parameterTypes.isEmpty()
                 } ?: continue
                 val token = getValue.invoke(lazyValue) ?: continue
-                val blurField = token.javaClass.getDeclaredField("f18605p").apply {
-                    isAccessible = true
+                XposedUtils.setObjectField(token, "p", blurRadiusDp.coerceIn(0, 400))
+
+                // Keep Xiaomi's blend modes, but replace its heavy masks with
+                // translucent neutral tints. This preserves the full native blur
+                // while the slider changes glass clarity instead of View opacity.
+                val blendColors = if (index == 0) {
+                    intArrayOf(
+                        Color.argb((4 + 106 * strength).toInt(), 255, 255, 255),
+                        Color.argb((2 + 68 * strength).toInt(), 246, 249, 255),
+                        Color.argb((1 + 39 * strength).toInt(), 187, 205, 232)
+                    )
+                } else {
+                    intArrayOf(
+                        Color.argb((5 + 95 * strength).toInt(), 27, 30, 38),
+                        Color.argb((2 + 53 * strength).toInt(), 255, 255, 255),
+                        Color.argb((1 + 34 * strength).toInt(), 153, 178, 216)
+                    )
                 }
-                blurField.setInt(token, blurRadiusDp.coerceIn(0, 400))
+                XposedUtils.setObjectField(token, "e", blendColors)
                 updated = true
             } catch (_: Throwable) {
             }
@@ -419,10 +419,10 @@ object KeyboardStyleHook {
 
     /**
      * Keep the native blur view's background transparent. The target APK clears
-     * that background 20 ms after applying material, so tint and stroke belong
-     * in the foreground where they do not replace the blur surface.
+     * that background 20 ms after applying material, so the outline belongs in
+     * the foreground where it does not replace the blur surface.
      */
-    private fun applyGlassForeground(
+    private fun applySoftGlassForeground(
         view: View,
         isDark: Boolean,
         opacity: Int,
@@ -430,28 +430,121 @@ object KeyboardStyleHook {
         floating: Boolean
     ) {
         val density = view.resources.displayMetrics.density
-        val tintAlpha = (opacity.coerceIn(10, 100) * 0.85f).toInt().coerceIn(8, 96)
-        val tintColor = if (isDark) {
-            Color.argb(tintAlpha, 30, 32, 38)
+        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+        val radii = if (floating) {
+            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx)
         } else {
-            Color.argb(tintAlpha, 245, 246, 250)
-        }
-        val strokeColor = if (isDark) {
-            Color.argb(72, 255, 255, 255)
-        } else {
-            Color.argb(92, 255, 255, 255)
+            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
         }
 
-        view.foreground = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(tintColor)
-            setStroke((0.8f * density).toInt().coerceAtLeast(1), strokeColor)
-            cornerRadii = if (floating) {
-                floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx)
+        val softLight = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            if (isDark) {
+                intArrayOf(
+                    Color.argb((3 + 67 * strength).toInt(), 255, 255, 255),
+                    Color.TRANSPARENT,
+                    Color.argb((1 + 34 * strength).toInt(), 111, 151, 205)
+                )
             } else {
-                floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
+                intArrayOf(
+                    Color.argb((4 + 76 * strength).toInt(), 255, 255, 255),
+                    Color.argb((1 + 31 * strength).toInt(), 255, 255, 255),
+                    Color.argb((1 + 39 * strength).toInt(), 184, 205, 232)
+                )
+            }
+        ).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadii = radii
+        }
+
+        val highlight = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Color.TRANSPARENT)
+            setStroke(
+                (0.8f * density).toInt().coerceAtLeast(1),
+                Color.argb((18 + 102 * strength).toInt(), 255, 255, 255)
+            )
+            cornerRadii = radii
+        }
+
+        view.foreground = LayerDrawable(arrayOf(softLight, highlight))
+    }
+
+    private fun updateGlassTintLayer(
+        helper: Any,
+        materialView: View,
+        isDark: Boolean,
+        opacity: Int,
+        radiusPx: Float,
+        floating: Boolean
+    ) {
+        val parent = materialView.parent as? ViewGroup ?: return
+
+        fun syncLayout(tint: View) {
+            val sourceParams = materialView.layoutParams ?: return
+            tint.layoutParams = if (sourceParams is FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams(sourceParams)
+            } else {
+                ViewGroup.LayoutParams(sourceParams)
             }
         }
+
+        var tintView = glassTintViews[helper]
+        if (tintView == null || tintView.parent !== parent) {
+            (tintView?.parent as? ViewGroup)?.removeView(tintView)
+            tintView = View(materialView.context).apply {
+                isClickable = false
+                isFocusable = false
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                elevation = 0f
+                translationZ = 0f
+            }
+            val materialIndex = parent.indexOfChild(materialView).coerceAtLeast(0)
+            parent.addView(
+                tintView,
+                (materialIndex + 1).coerceAtMost(parent.childCount),
+                ViewGroup.LayoutParams(0, 0)
+            )
+            syncLayout(tintView)
+            val synchronizedTint = tintView
+            materialView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                if (synchronizedTint.parent === materialView.parent) {
+                    syncLayout(synchronizedTint)
+                }
+            }
+            glassTintViews[helper] = tintView
+        } else {
+            syncLayout(tintView)
+        }
+
+        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+        val radii = if (floating) {
+            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx)
+        } else {
+            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
+        }
+        val colors = if (isDark) {
+            intArrayOf(
+                Color.argb((145 * strength).toInt(), 38, 41, 49),
+                Color.argb((105 * strength).toInt(), 25, 28, 35),
+                Color.argb((85 * strength).toInt(), 52, 61, 76)
+            )
+        } else {
+            intArrayOf(
+                Color.argb((190 * strength).toInt(), 255, 255, 255),
+                Color.argb((125 * strength).toInt(), 247, 249, 253),
+                Color.argb((145 * strength).toInt(), 218, 229, 244)
+            )
+        }
+        tintView.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadii = radii
+            setStroke(
+                materialView.resources.displayMetrics.density.toInt().coerceAtLeast(1),
+                Color.argb((16 + 96 * strength).toInt(), 255, 255, 255)
+            )
+        }
+        tintView.visibility = View.VISIBLE
     }
 
     private fun invokeHelperMethod(helper: Any, name: String, vararg args: Any?): Any? {
@@ -468,8 +561,8 @@ object KeyboardStyleHook {
         helper: Any?
     ) {
         if (helper == null) return
-        val f3500h = XposedUtils.getObjectField(helper, "f3500h") as? View ?: return
-        val f3501i = XposedUtils.getObjectField(helper, "f3501i") as? View
+        val f3500h = XposedUtils.getObjectField(helper, "h") as? View ?: return
+        val f3501i = XposedUtils.getObjectField(helper, "i") as? View
 
         if (!ConfigManager.isStyleEnabled()) return
 
@@ -481,26 +574,29 @@ object KeyboardStyleHook {
         val bMarginDp = ConfigManager.getMarginBottom()
         val blurRadiusDp = ConfigManager.getBlurRadius()
 
-        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-
         val density = f3500h.resources.displayMetrics.density
         val radiusPx = cornerRadiusDp * density
         val hMarginPx = (hMarginDp * density).toInt()
         val bMarginPx = (bMarginDp * density).toInt()
         val floating = hMarginPx > 0 || bMarginPx > 0
+        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
         f3500h.post {
             try {
                 // 1. Background Customization on f3500h (the actual keyboard card at bottom)
                 when (bgType) {
                     0 -> { // HyperOS Dynamic Liquid Glass (系统通知中心同款动态毛玻璃)
+                        val glassStrength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+                        // bb.u inserts this view at index 0, behind the keyboard.
+                        // Keep full material strength; Z elevation is normalized
+                        // below so rounded corners cannot lift it above key content.
                         f3500h.alpha = 1.0f
 
                         // This APK already ships a complete native material pipeline
                         // in bb.u.c(View). Tune its cached token and let that code
                         // configure pass-window blur, radius, blend colors and bloom.
                         f3500h.setBackgroundColor(Color.TRANSPARENT)
-                        val tokenUpdated = updateCachedBlurTokens(helper, blurRadiusDp)
+                        val tokenUpdated = updateCachedGlassTokens(helper, blurRadiusDp, opacity)
                         val materialApplied = try {
                             invokeHelperMethod(helper, "c", f3500h) as? Boolean ?: false
                         } catch (t: Throwable) {
@@ -508,7 +604,7 @@ object KeyboardStyleHook {
                             false
                         }
 
-                        applyGlassForeground(f3500h, isDark, opacity, radiusPx, floating)
+                        applySoftGlassForeground(f3500h, isDark, opacity, radiusPx, floating)
                         f3500h.visibility = View.VISIBLE
 
                         if (ConfigManager.isVerboseLogEnabled()) {
@@ -521,7 +617,7 @@ object KeyboardStyleHook {
                         // Update f3501i (RuntimeShader Rim Light & Shadow)
                         if (f3501i != null) {
                             try {
-                                f3501i.alpha = 1.0f
+                                f3501i.alpha = 0.55f + 0.25f * glassStrength
                                 val bMethod = helper.javaClass.declaredMethods.find { it.name == "b" && it.parameterTypes.size == 1 }
                                 bMethod?.invoke(helper, f3501i)
                                 f3501i.visibility = View.VISIBLE
@@ -590,11 +686,18 @@ object KeyboardStyleHook {
                             outline.setRoundRect(0, 0, w, h + radiusPx.toInt(), radiusPx)
                         }
                     }
-                    f3500h.elevation = if (hMarginPx > 0 || bMarginPx > 0 || radiusPx > 0f) 16f else 0f
+                    f3500h.elevation = if (bgType == 0) 0f else if (hMarginPx > 0 || bMarginPx > 0 || radiusPx > 0f) 16f else 0f
+                    f3500h.translationZ = 0f
                     f3500h.invalidateOutline()
                 } else {
                     f3500h.clipToOutline = false
                     f3500h.outlineProvider = ViewOutlineProvider.BACKGROUND
+                }
+
+                if (bgType == 0) {
+                    updateGlassTintLayer(helper, f3500h, isDark, opacity, radiusPx, floating)
+                } else {
+                    glassTintViews[helper]?.visibility = View.GONE
                 }
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "KeyboardStyleHook: failed to update material views", t)
