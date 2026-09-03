@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.view.Gravity
 import android.view.View
@@ -20,42 +21,12 @@ import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.data.LogType
 import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
-import java.lang.reflect.Method
 
 object KeyboardStyleHook {
 
     private var cachedBitmap: Bitmap? = null
     private var cachedImageVersion: Long = -1L
     private var lastLoggedTime = 0L
-
-    // Cached View hidden methods
-    private var methodPassWindowBlur: Method? = null
-    private var methodSetMiViewMaterialType: Method? = null
-    private var methodSetMiGlassBlurRadius: Method? = null
-    private var methodSetMiBackgroundBlurRadius: Method? = null
-    private var methodSetMiBackgroundBlurMode: Method? = null
-    private var methodSetMiGlassSdfMaxSize: Method? = null
-
-    init {
-        try {
-            methodPassWindowBlur = View::class.java.getMethod("setPassWindowBlurEnabled", Boolean::class.javaPrimitiveType ?: java.lang.Boolean.TYPE)
-        } catch (_: Throwable) {}
-        try {
-            methodSetMiViewMaterialType = View::class.java.getMethod("setMiViewMaterialType", Int::class.javaPrimitiveType ?: java.lang.Integer.TYPE)
-        } catch (_: Throwable) {}
-        try {
-            methodSetMiGlassBlurRadius = View::class.java.getMethod("setMiGlassBlurRadius", Int::class.javaPrimitiveType ?: java.lang.Integer.TYPE, Int::class.javaPrimitiveType ?: java.lang.Integer.TYPE)
-        } catch (_: Throwable) {}
-        try {
-            methodSetMiBackgroundBlurRadius = View::class.java.getMethod("setMiBackgroundBlurRadius", Int::class.javaPrimitiveType ?: java.lang.Integer.TYPE)
-        } catch (_: Throwable) {}
-        try {
-            methodSetMiBackgroundBlurMode = View::class.java.getMethod("setMiBackgroundBlurMode", Int::class.javaPrimitiveType ?: java.lang.Integer.TYPE)
-        } catch (_: Throwable) {}
-        try {
-            methodSetMiGlassSdfMaxSize = View::class.java.getMethod("setMiGlassSdfMaxSize", Float::class.javaPrimitiveType ?: java.lang.Float.TYPE, Float::class.javaPrimitiveType ?: java.lang.Float.TYPE)
-        } catch (_: Throwable) {}
-    }
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
@@ -187,6 +158,9 @@ object KeyboardStyleHook {
             val kMethod = bbUClass.declaredMethods.find { it.name == "k" }
             if (kMethod != null) {
                 module.hook(kMethod).intercept { chain ->
+                    if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
+                        forceCurrentPackageIntoMaterialWhitelist(chain.thisObject)
+                    }
                     val res = chain.proceed()
                     if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
                         val helper = chain.thisObject
@@ -253,7 +227,7 @@ object KeyboardStyleHook {
                         val service = XposedUtils.getObjectField(helper, "f3495a") as? android.inputmethodservice.InputMethodService
                         if (service != null) {
                             ConfigManager.syncFromProvider(service)
-                            updateHyperMaterialViews(service, helper)
+                            updateHyperMaterialViews(module, service, helper)
                         }
                     }
                     res
@@ -364,6 +338,36 @@ object KeyboardStyleHook {
         }
     }
 
+    /**
+     * bb.u.k() removes both material views when the current editor package is
+     * absent from its downloaded whitelist. Add only the active package before
+     * that check so the native method keeps the blur views alive.
+     */
+    private fun forceCurrentPackageIntoMaterialWhitelist(helper: Any) {
+        val packageName = XposedUtils.getObjectField(helper, "f3510u") as? String ?: return
+
+        val versions = LinkedHashMap<Any?, Any?>()
+        (XposedUtils.getObjectField(helper, "f3511v") as? Map<*, *>)?.forEach { (key, value) ->
+            versions[key] = value
+        }
+        versions[packageName] = 2
+        XposedUtils.setObjectField(helper, "f3511v", versions)
+
+        val primaryPackages = LinkedHashSet<Any?>()
+        (XposedUtils.getObjectField(helper, "f3512w") as? Set<*>)?.forEach {
+            primaryPackages.add(it)
+        }
+        primaryPackages.add(packageName)
+        XposedUtils.setObjectField(helper, "f3512w", primaryPackages)
+
+        val secondaryPackages = LinkedHashSet<Any?>()
+        (XposedUtils.getObjectField(helper, "f3513x") as? Set<*>)?.forEach {
+            secondaryPackages.add(it)
+        }
+        secondaryPackages.add(packageName)
+        XposedUtils.setObjectField(helper, "f3513x", secondaryPackages)
+    }
+
     private fun getOrLoadBitmap(service: android.content.Context): Bitmap? {
         val currentVersion = ConfigManager.getBgImageVersion()
         if (cachedBitmap != null && cachedImageVersion == currentVersion && !cachedBitmap!!.isRecycled) {
@@ -386,7 +390,83 @@ object KeyboardStyleHook {
         return null
     }
 
-    private fun updateHyperMaterialViews(service: android.inputmethodservice.InputMethodService, helper: Any?) {
+    /**
+     * bb.u caches the light and dark material tokens in Kotlin lazy fields.
+     * Updating only the bb.u.e(boolean) factory cannot change a token that has
+     * already been created, so update both cached tokens before reapplying it.
+     */
+    private fun updateCachedBlurTokens(helper: Any, blurRadiusDp: Int): Boolean {
+        var updated = false
+
+        for (lazyFieldName in arrayOf("f3506p", "f3507q")) {
+            try {
+                val lazyValue = XposedUtils.getObjectField(helper, lazyFieldName) ?: continue
+                val getValue = lazyValue.javaClass.methods.firstOrNull {
+                    it.name == "getValue" && it.parameterTypes.isEmpty()
+                } ?: continue
+                val token = getValue.invoke(lazyValue) ?: continue
+                val blurField = token.javaClass.getDeclaredField("f18605p").apply {
+                    isAccessible = true
+                }
+                blurField.setInt(token, blurRadiusDp.coerceIn(0, 400))
+                updated = true
+            } catch (_: Throwable) {
+            }
+        }
+
+        return updated
+    }
+
+    /**
+     * Keep the native blur view's background transparent. The target APK clears
+     * that background 20 ms after applying material, so tint and stroke belong
+     * in the foreground where they do not replace the blur surface.
+     */
+    private fun applyGlassForeground(
+        view: View,
+        isDark: Boolean,
+        opacity: Int,
+        radiusPx: Float,
+        floating: Boolean
+    ) {
+        val density = view.resources.displayMetrics.density
+        val tintAlpha = (opacity.coerceIn(10, 100) * 0.85f).toInt().coerceIn(8, 96)
+        val tintColor = if (isDark) {
+            Color.argb(tintAlpha, 30, 32, 38)
+        } else {
+            Color.argb(tintAlpha, 245, 246, 250)
+        }
+        val strokeColor = if (isDark) {
+            Color.argb(72, 255, 255, 255)
+        } else {
+            Color.argb(92, 255, 255, 255)
+        }
+
+        view.foreground = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(tintColor)
+            setStroke((0.8f * density).toInt().coerceAtLeast(1), strokeColor)
+            cornerRadii = if (floating) {
+                floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx)
+            } else {
+                floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
+            }
+        }
+    }
+
+    private fun invokeHelperMethod(helper: Any, name: String, vararg args: Any?): Any? {
+        val method = helper.javaClass.declaredMethods.firstOrNull {
+            it.name == name && it.parameterTypes.size == args.size
+        } ?: return null
+        method.isAccessible = true
+        return method.invoke(helper, *args)
+    }
+
+    private fun updateHyperMaterialViews(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        helper: Any?
+    ) {
         if (helper == null) return
         val f3500h = XposedUtils.getObjectField(helper, "f3500h") as? View ?: return
         val f3501i = XposedUtils.getObjectField(helper, "f3501i") as? View
@@ -407,6 +487,7 @@ object KeyboardStyleHook {
         val radiusPx = cornerRadiusDp * density
         val hMarginPx = (hMarginDp * density).toInt()
         val bMarginPx = (bMarginDp * density).toInt()
+        val floating = hMarginPx > 0 || bMarginPx > 0
 
         f3500h.post {
             try {
@@ -415,49 +496,27 @@ object KeyboardStyleHook {
                     0 -> { // HyperOS Dynamic Liquid Glass (系统通知中心同款动态毛玻璃)
                         f3500h.alpha = 1.0f
 
-                        // Apply HyperOS Native Glass & Blur APIs on f3500h
-                        try {
-                            methodPassWindowBlur?.invoke(f3500h, true)
-                        } catch (_: Throwable) {}
-
-                        try {
-                            methodSetMiViewMaterialType?.invoke(f3500h, 1)
-                        } catch (_: Throwable) {}
-
-                        try {
-                            methodSetMiGlassBlurRadius?.invoke(f3500h, blurRadiusDp, 500)
-                        } catch (_: Throwable) {}
-
-                        try {
-                            methodSetMiBackgroundBlurRadius?.invoke(f3500h, (blurRadiusDp * density).toInt())
-                        } catch (_: Throwable) {}
-
-                        try {
-                            methodSetMiBackgroundBlurMode?.invoke(f3500h, 1)
-                        } catch (_: Throwable) {}
-
-                        if (f3500h.width > 0 && f3500h.height > 0) {
-                            try {
-                                methodSetMiGlassSdfMaxSize?.invoke(f3500h, f3500h.width.toFloat(), f3500h.height.toFloat())
-                            } catch (_: Throwable) {}
+                        // This APK already ships a complete native material pipeline
+                        // in bb.u.c(View). Tune its cached token and let that code
+                        // configure pass-window blur, radius, blend colors and bloom.
+                        f3500h.setBackgroundColor(Color.TRANSPARENT)
+                        val tokenUpdated = updateCachedBlurTokens(helper, blurRadiusDp)
+                        val materialApplied = try {
+                            invokeHelperMethod(helper, "c", f3500h) as? Boolean ?: false
+                        } catch (t: Throwable) {
+                            XposedUtils.logError(module, "KeyboardStyleHook: native HyperMaterial apply failed", t)
+                            false
                         }
 
-                        // Apply HyperMaterial Helper token
-                        try {
-                            val cMethod = helper.javaClass.declaredMethods.find { it.name == "c" && it.parameterTypes.size == 1 }
-                            cMethod?.invoke(helper, f3500h)
-                        } catch (_: Throwable) {}
-
-                        // Opacity slider controls the translucent glass tint depth (15% ~ 60% alpha veil)
-                        // In Notification Center: dark is ~35% black tint, light is ~40% white tint
-                        val glassAlpha = (opacity.coerceIn(10, 100) / 100.0f * 130.0f).toInt().coerceIn(15, 170)
-                        val glassTint = if (isDark) {
-                            Color.argb(glassAlpha, 20, 22, 30)
-                        } else {
-                            Color.argb(glassAlpha, 240, 242, 248)
-                        }
-                        f3500h.background = ColorDrawable(glassTint)
+                        applyGlassForeground(f3500h, isDark, opacity, radiusPx, floating)
                         f3500h.visibility = View.VISIBLE
+
+                        if (ConfigManager.isVerboseLogEnabled()) {
+                            XposedUtils.log(
+                                module,
+                                "KeyboardStyleHook: glass tokenUpdated=$tokenUpdated, materialApplied=$materialApplied, blur=${blurRadiusDp}dp"
+                            )
+                        }
 
                         // Update f3501i (RuntimeShader Rim Light & Shadow)
                         if (f3501i != null) {
@@ -472,6 +531,10 @@ object KeyboardStyleHook {
                         }
                     }
                     1 -> { // Solid / HEX Color
+                        try {
+                            invokeHelperMethod(helper, "m")
+                        } catch (_: Throwable) {
+                        }
                         val alpha = (opacity.coerceIn(10, 100)) / 100.0f
                         val alphaInt = (alpha * 255).toInt().coerceIn(0, 255)
                         f3500h.alpha = 1.0f
@@ -484,10 +547,15 @@ object KeyboardStyleHook {
                         val g = Color.green(parsedColor)
                         val b = Color.blue(parsedColor)
                         f3500h.background = ColorDrawable(Color.argb(alphaInt, r, g, b))
+                        f3500h.foreground = null
                         f3501i?.visibility = View.GONE
                         f3500h.visibility = View.VISIBLE
                     }
                     2 -> { // Custom Image
+                        try {
+                            invokeHelperMethod(helper, "m")
+                        } catch (_: Throwable) {
+                        }
                         val alpha = (opacity.coerceIn(10, 100)) / 100.0f
                         val alphaInt = (alpha * 255).toInt().coerceIn(0, 255)
                         f3500h.alpha = 1.0f
@@ -497,6 +565,7 @@ object KeyboardStyleHook {
                             drawable.alpha = alphaInt
                             f3500h.background = drawable
                         }
+                        f3500h.foreground = null
                         f3501i?.visibility = View.GONE
                         f3500h.visibility = View.VISIBLE
                     }
@@ -527,7 +596,8 @@ object KeyboardStyleHook {
                     f3500h.clipToOutline = false
                     f3500h.outlineProvider = ViewOutlineProvider.BACKGROUND
                 }
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                XposedUtils.logError(module, "KeyboardStyleHook: failed to update material views", t)
             }
         }
     }
@@ -618,7 +688,7 @@ object KeyboardStyleHook {
 
                 // 4. Update HyperMaterialHelper's f3500h view which is the true keyboard bottom card
                 val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
-                updateHyperMaterialViews(service, helper)
+                updateHyperMaterialViews(module, service, helper)
 
                 // Log event occasionally (throttle to once per 5 seconds to avoid flooding)
                 val now = System.currentTimeMillis()
