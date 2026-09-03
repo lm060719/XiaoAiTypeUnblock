@@ -4,8 +4,6 @@ import android.content.Context
 import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.config.ConfigManager
-import io.mo.xatype.data.LogType
-import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
 
 object VoiceModerationHook {
@@ -30,11 +28,6 @@ object VoiceModerationHook {
                             if (ConfigManager.isVerboseLogEnabled()) {
                                 XposedUtils.log(module, "[Voice Moderation] Suppressed Miclaw CONTENT_MODERATION toast/error")
                             }
-                            LogBridge.record(
-                                LogType.VOICE_MODERATION,
-                                "拦截语音合规审查弹窗",
-                                "来源: a8.n.f | 已拦截 CONTENT_MODERATION 错误提示与文字上屏阻断"
-                            )
                             null
                         } else {
                             chain.proceed()
@@ -62,11 +55,6 @@ object VoiceModerationHook {
                             if (ConfigManager.isVerboseLogEnabled()) {
                                 XposedUtils.log(module, "[Voice Moderation] Intercepted error 30002 in s8.f.m()")
                             }
-                            LogBridge.record(
-                                LogType.VOICE_MODERATION,
-                                "拦截 ASR 30002 风控错误码",
-                                "来源: s8.f.m | 错误码 30002 (CONTENT_MODERATION) 已重写为安全状态"
-                            )
                             chain.proceed(arrayOf(-1, chain.getArg(1)))
                         } else {
                             chain.proceed()
@@ -94,11 +82,6 @@ object VoiceModerationHook {
                                 if (ConfigManager.isVerboseLogEnabled()) {
                                     XposedUtils.log(module, "[Voice Moderation] Suppressed ASR error 30002 callback in s8.d.e()")
                                 }
-                                LogBridge.record(
-                                    LogType.VOICE_MODERATION,
-                                    "丢弃 ASR 语音审查回调",
-                                    "来源: s8.d.e | 已丢弃 30002 错误回调，避免强制关闭语音会话"
-                                )
                                 return@intercept null
                             }
                         }

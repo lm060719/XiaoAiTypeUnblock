@@ -3,14 +3,12 @@ package io.mo.xatype
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import io.mo.xatype.config.ConfigManager
-import io.mo.xatype.data.LogType
 import io.mo.xatype.hooks.AiSafetyHook
 import io.mo.xatype.hooks.ClipboardSensitiveHook
 import io.mo.xatype.hooks.CloudBlacklistHook
 import io.mo.xatype.hooks.HyperOsVersionHook
 import io.mo.xatype.hooks.KeyboardStyleHook
 import io.mo.xatype.hooks.VoiceModerationHook
-import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
 
 class XiaoAiTypeModule : XposedModule() {
@@ -70,10 +68,5 @@ class XiaoAiTypeModule : XposedModule() {
         }
 
         XposedUtils.log(this, "XiaoAiTypeUnblock hooks installation complete.")
-        LogBridge.record(
-            LogType.INIT,
-            "模块初始化成功",
-            "已注入超级小爱输入法进程 (PID: ${android.os.Process.myPid()})"
-        )
     }
 }

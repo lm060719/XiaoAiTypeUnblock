@@ -126,13 +126,11 @@ graph TD
             BUNDLE -->|ClipboardSensitiveHook| CLIP_PASS["IS_SENSITIVE: false"]
         end
 
-        OS_PASS & AI_SERVICE_PASS & CORNER_CLIP & AI_CLEAN & VOICE_PASS & CLOUD_CLEAN & CLIP_PASS --> LOG_BRIDGE["LogBridge (单线程异步)"]
     end
 
     subgraph ModuleApp["模块主进程 (io.mo.xatype)"]
-        LOG_BRIDGE -->|ContentResolver.call| PROVIDER["LogContentProvider"]
-        PROVIDER --> UI["MainActivity 看板 (实时轮询 / 计数器)"]
-        CONFIG["ConfigManager (RemotePreferences)"] -.->|IPC 共享配置| TargetApp
+        CONFIG["ConfigManager (RemotePreferences / Provider)"] -.->|IPC 共享配置 & 背景图| TargetApp
+        UI["MainActivity 控制台 (功能开关 / 外观个性化)"] --> CONFIG
     end
 ```
 
@@ -156,7 +154,7 @@ graph TD
 ### 2. 现代 Xposed 与无阻塞设计
 
 * **原生远程配置**：通过 libxposed 的 `module.getRemotePreferences("settings")` 直接读取模块私有存储，无需配置复杂的 World-Readable 权限，彻底规避 Android 14/15/16/17 (HyperOS 4) 下存储沙盒限制。
-* **异步事件桥接**：Hook 点内的日志记录由 [`LogBridge`](file:///app/src/main/java/io/mo/xatype/util/LogBridge.kt) 提交至专用单线程池，通过 `ContentResolver.call` 跨进程发送至 [`LogContentProvider`](file:///app/src/main/java/io/mo/xatype/provider/LogContentProvider.kt)，杜绝打字过程中的任何 IPC 卡顿与掉帧。
+* **极简零开销架构**：Hook 拦截与规则处理均在目标进程纯内存完成，无打字过程跨进程 IPC 与日志线程开销，极致轻量省电。
 * **防御性容错**：所有 Hook 操作均被 `try-catch` 包裹，若输入法更新导致内部方法混淆或签名微调，模块将平稳跳过对应点并输出 Diagnostic Log，绝不影响输入法的常规打字与基础功能。
 
 ---
@@ -171,8 +169,6 @@ XiaoAiTypeUnblock/
 │   │   │   ├── XiaoAiTypeModule.kt          # XposedModule 入口类 (API 102)
 │   │   │   ├── config/
 │   │   │   │   └── ConfigManager.kt         # 远程与本地偏好设置统一管理
-│   │   │   ├── data/
-│   │   │   │   └── LogEntry.kt              # 日志实体与类型定义
 │   │   │   ├── hooks/
 │   │   │   │   ├── KeyboardStyleHook.kt     # 键盘外观与个性化美化 Hook
 │   │   │   │   ├── HyperOsVersionHook.kt    # 澎湃 OS4+ 版本限制解除 Hook
@@ -181,12 +177,10 @@ XiaoAiTypeUnblock/
 │   │   │   │   ├── CloudBlacklistHook.kt    # 云端黑名单词库拦截 Hook
 │   │   │   │   └── VoiceModerationHook.kt   # 语音转写 ASR 审查拦截 Hook
 │   │   │   ├── provider/
-│   │   │   │   └── LogContentProvider.kt    # 跨进程日志共享与持久化 Provider
+│   │   │   │   └── LogContentProvider.kt    # 跨进程配置与自定义背景共享 Provider
 │   │   │   ├── ui/
-│   │   │   │   ├── MainActivity.kt          # 模块主控制台 Activity
-│   │   │   │   └── LogAdapter.kt            # 实时日志 RecyclerView 适配器
+│   │   │   │   └── MainActivity.kt          # 模块主控制台 Activity
 │   │   │   └── util/
-│   │   │       ├── LogBridge.kt             # 跨进程异步日志投递桥梁
 │   │   │       └── XposedUtils.kt           # 反射与日志工具类封装
 │   │   ├── resources/META-INF/xposed/
 │   │   │   ├── java_init.list               # libxposed 入口声明

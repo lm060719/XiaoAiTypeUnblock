@@ -2,24 +2,17 @@ package io.mo.xatype.hooks
 
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.config.ConfigManager
-import io.mo.xatype.data.LogType
-import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
 import java.util.regex.Pattern
 
 object AiSafetyHook {
     private val SAFETY_BLOCKED_PATTERN = Pattern.compile("\"safety_blocked\"\\s*:\\s*true", Pattern.CASE_INSENSITIVE)
 
-    fun sanitizeJson(input: String?, source: String): String? {
+    fun sanitizeJson(input: String?): String? {
         if (!ConfigManager.isAiSafetyEnabled()) return input
         if (input == null || !input.contains("safety_blocked")) return input
         val matcher = SAFETY_BLOCKED_PATTERN.matcher(input)
         if (matcher.find()) {
-            LogBridge.record(
-                LogType.AI_SAFETY,
-                "净化 AI 表达安全阻断",
-                "来源: $source | 已将 \"safety_blocked\": true 净化为 false，解除阻断"
-            )
             return matcher.replaceAll("\"safety_blocked\": false")
         }
         return input
@@ -35,7 +28,7 @@ object AiSafetyHook {
                     module.hook(methodH).intercept { chain ->
                         if (!ConfigManager.isAiSafetyEnabled()) return@intercept chain.proceed()
                         val originalJson = chain.getArg(0) as? String
-                        val sanitized = sanitizeJson(originalJson, "fb.s.h(完整JSON)")
+                        val sanitized = sanitizeJson(originalJson)
                         if (sanitized != originalJson) {
                             if (ConfigManager.isVerboseLogEnabled()) {
                                 XposedUtils.log(module, "[AI Safety] Sanitized safety_blocked in fb.s.h()")
@@ -58,7 +51,7 @@ object AiSafetyHook {
                     module.hook(methodE).intercept { chain ->
                         if (!ConfigManager.isAiSafetyEnabled()) return@intercept chain.proceed()
                         val originalJson = chain.getArg(0) as? String
-                        val sanitized = sanitizeJson(originalJson, "fb.s.e(正则降级)")
+                        val sanitized = sanitizeJson(originalJson)
                         if (sanitized != originalJson) {
                             if (ConfigManager.isVerboseLogEnabled()) {
                                 XposedUtils.log(module, "[AI Safety] Sanitized safety_blocked in fb.s.e()")
@@ -81,7 +74,7 @@ object AiSafetyHook {
                     module.hook(methodF).intercept { chain ->
                         if (!ConfigManager.isAiSafetyEnabled()) return@intercept chain.proceed()
                         val originalJson = chain.getArg(0) as? String
-                        val sanitized = sanitizeJson(originalJson, "fb.s.f(流式片段)")
+                        val sanitized = sanitizeJson(originalJson)
                         if (sanitized != originalJson) {
                             if (ConfigManager.isVerboseLogEnabled()) {
                                 XposedUtils.log(module, "[AI Safety] Sanitized safety_blocked in fb.s.f()")

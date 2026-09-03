@@ -10,8 +10,6 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -29,11 +27,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import io.mo.xatype.R
 import io.mo.xatype.config.ConfigManager
-import io.mo.xatype.data.LogEntry
 import io.mo.xatype.provider.LogContentProvider
 import java.io.DataOutputStream
 import java.io.File
@@ -44,19 +39,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewStatusDot: View
     private lateinit var tvStatusTitle: TextView
     private lateinit var tvStatusDesc: TextView
-
-    private lateinit var tvCountAi: TextView
-    private lateinit var tvCountVoice: TextView
-    private lateinit var tvCountBlacklist: TextView
-    private lateinit var tvCountClipboard: TextView
-    private lateinit var tvCountOsVersion: TextView
-    private lateinit var tvCountStyle: TextView
-
-    private lateinit var btnRefreshLogs: TextView
-    private lateinit var btnClearLogs: TextView
-    private lateinit var tvEmptyLogs: TextView
-    private lateinit var rvLogs: RecyclerView
-    private lateinit var logAdapter: LogAdapter
 
     // Function Switches
     private lateinit var switchAiSafety: SwitchCompat
@@ -102,21 +84,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRestartIme: Button
     private lateinit var btnAbout: Button
 
-    private val handler = Handler(Looper.getMainLooper())
-    private var isPolling = false
-
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             saveCustomBackgroundImage(uri)
-        }
-    }
-
-    private val pollRunnable = object : Runnable {
-        override fun run() {
-            fetchLiveLogs()
-            if (isPolling) {
-                handler.postDelayed(this, 1500)
-            }
         }
     }
 
@@ -129,38 +99,17 @@ class MainActivity : AppCompatActivity() {
         initSwitches()
         initStyleControls()
         initButtons()
-        initLogList()
     }
 
     override fun onResume() {
         super.onResume()
-        isPolling = true
-        handler.post(pollRunnable)
         updateStylePreview()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        isPolling = false
-        handler.removeCallbacks(pollRunnable)
     }
 
     private fun initViews() {
         viewStatusDot = findViewById(R.id.viewStatusDot)
         tvStatusTitle = findViewById(R.id.tvStatusTitle)
         tvStatusDesc = findViewById(R.id.tvStatusDesc)
-
-        tvCountAi = findViewById(R.id.tvCountAi)
-        tvCountVoice = findViewById(R.id.tvCountVoice)
-        tvCountBlacklist = findViewById(R.id.tvCountBlacklist)
-        tvCountClipboard = findViewById(R.id.tvCountClipboard)
-        tvCountOsVersion = findViewById(R.id.tvCountOsVersion)
-        tvCountStyle = findViewById(R.id.tvCountStyle)
-
-        btnRefreshLogs = findViewById(R.id.btnRefreshLogs)
-        btnClearLogs = findViewById(R.id.btnClearLogs)
-        tvEmptyLogs = findViewById(R.id.tvEmptyLogs)
-        rvLogs = findViewById(R.id.rvLogs)
 
         switchAiSafety = findViewById(R.id.switchAiSafety)
         switchVoiceModeration = findViewById(R.id.switchVoiceModeration)
@@ -226,75 +175,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initLogList() {
-        logAdapter = LogAdapter()
-        rvLogs.layoutManager = LinearLayoutManager(this)
-        rvLogs.adapter = logAdapter
 
-        btnRefreshLogs.setOnClickListener {
-            fetchLiveLogs()
-            Toast.makeText(this, "日志已刷新", Toast.LENGTH_SHORT).show()
-        }
-
-        btnClearLogs.setOnClickListener {
-            try {
-                contentResolver.call(
-                    LogContentProvider.CONTENT_URI,
-                    LogContentProvider.METHOD_CLEAR,
-                    null,
-                    null
-                )
-                fetchLiveLogs()
-                Toast.makeText(this, "拦截日志与统计已清空", Toast.LENGTH_SHORT).show()
-            } catch (_: Throwable) {
-            }
-        }
-    }
-
-    private fun fetchLiveLogs() {
-        try {
-            val result = contentResolver.call(
-                LogContentProvider.CONTENT_URI,
-                LogContentProvider.METHOD_GET_LOGS,
-                null,
-                null
-            )
-            if (result != null) {
-                val list = result.getStringArrayList(LogContentProvider.EXTRA_LOGS_LIST) ?: arrayListOf()
-                val aiCount = result.getInt(LogContentProvider.EXTRA_AI_COUNT, 0)
-                val voiceCount = result.getInt(LogContentProvider.EXTRA_VOICE_COUNT, 0)
-                val blacklistCount = result.getInt(LogContentProvider.EXTRA_BLACKLIST_COUNT, 0)
-                val clipboardCount = result.getInt(LogContentProvider.EXTRA_CLIPBOARD_COUNT, 0)
-                val osVersionCount = result.getInt(LogContentProvider.EXTRA_OS_VERSION_COUNT, 0)
-                val styleCount = result.getInt(LogContentProvider.EXTRA_STYLE_COUNT, 0)
-
-                tvCountAi.text = aiCount.toString()
-                tvCountVoice.text = voiceCount.toString()
-                tvCountBlacklist.text = blacklistCount.toString()
-                tvCountClipboard.text = clipboardCount.toString()
-                tvCountOsVersion.text = osVersionCount.toString()
-                tvCountStyle.text = styleCount.toString()
-
-                val logEntries = ArrayList<LogEntry>()
-                for (json in list) {
-                    val entry = LogEntry.fromJson(json)
-                    if (entry != null) {
-                        logEntries.add(entry)
-                    }
-                }
-
-                if (logEntries.isEmpty()) {
-                    tvEmptyLogs.visibility = View.VISIBLE
-                    rvLogs.visibility = View.GONE
-                } else {
-                    tvEmptyLogs.visibility = View.GONE
-                    rvLogs.visibility = View.VISIBLE
-                    logAdapter.updateData(logEntries)
-                }
-            }
-        } catch (_: Throwable) {
-        }
-    }
 
     private fun initSwitches() {
         val prefs = ConfigManager.getLocalPrefs(this)
@@ -685,7 +566,6 @@ class MainActivity : AppCompatActivity() {
                 btnRestartIme.isEnabled = true
                 if (isSuccess) {
                     Toast.makeText(this, "超级小爱输入法已成功通过 Root 权限重启！", Toast.LENGTH_SHORT).show()
-                    fetchLiveLogs()
                 } else {
                     Toast.makeText(this, "请授权 Root 权限后操作！", Toast.LENGTH_LONG).show()
                 }

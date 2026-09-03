@@ -19,8 +19,6 @@ import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import io.github.libxposed.api.XposedModule
 import io.mo.xatype.config.ConfigManager
-import io.mo.xatype.data.LogType
-import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
 import java.util.WeakHashMap
 
@@ -28,7 +26,6 @@ object KeyboardStyleHook {
 
     private var cachedBitmap: Bitmap? = null
     private var cachedImageVersion: Long = -1L
-    private var lastLoggedTime = 0L
     private val glassTintViews = WeakHashMap<Any, View>()
     fun install(module: XposedModule, classLoader: ClassLoader) {
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
@@ -744,10 +741,6 @@ object KeyboardStyleHook {
         ConfigManager.syncFromProvider(service)
         if (!ConfigManager.isStyleEnabled()) return
 
-        val cornerRadiusDp = ConfigManager.getCornerRadius()
-        val opacity = ConfigManager.getOpacity() // 10 to 100
-        val bgType = ConfigManager.getBgType() // 0: DYNAMIC_GLASS, 1: COLOR, 2: IMAGE
-        val bgColorStr = ConfigManager.getBgColor()
         val marginTopDp = ConfigManager.getMarginTop()
         val marginBottomDp = ConfigManager.getMarginBottom()
         val marginHorizontalDp = ConfigManager.getMarginHorizontal()
@@ -792,25 +785,6 @@ object KeyboardStyleHook {
                 // 4. Update HyperMaterialHelper's f3500h view which is the true keyboard bottom card
                 val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
                 updateHyperMaterialViews(module, service, helper)
-
-                // Log event occasionally (throttle to once per 5 seconds to avoid flooding)
-                val now = System.currentTimeMillis()
-                if (now - lastLoggedTime > 5000) {
-                    lastLoggedTime = now
-                    val bgDesc = when (bgType) {
-                        0 -> "动态液态玻璃(HyperOS Glass)"
-                        1 -> "纯色($bgColorStr)"
-                        2 -> "自定义图片"
-                        else -> "动态液态玻璃"
-                    }
-                    val cornerDesc = "顶部圆角(${cornerRadiusDp}dp)"
-                    val marginDesc = "上${marginTopDp}dp / 下${marginBottomDp}dp / 左右${marginHorizontalDp}dp"
-                    LogBridge.record(
-                        LogType.STYLE,
-                        "应用键盘个性化样式",
-                        "圆角: $cornerDesc | 透明度: ${opacity}% | 模糊: ${ConfigManager.getBlurRadius()}dp | 边距: $marginDesc | 背景: $bgDesc"
-                    )
-                }
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "Error applying custom style to keyboard view", t)
             }
