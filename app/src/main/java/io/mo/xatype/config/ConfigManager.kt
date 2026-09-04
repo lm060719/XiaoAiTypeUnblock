@@ -19,7 +19,7 @@ object ConfigManager {
     // Style & Appearance Configs
     const val KEY_STYLE_ENABLED = "pref_style_enabled"
     const val KEY_CORNER_RADIUS = "pref_corner_radius"
-    const val KEY_OPACITY = "pref_opacity" // 10 to 100
+    const val KEY_OPACITY = "pref_opacity" // 0 to 100
     const val KEY_BLUR_RADIUS = "pref_blur_radius" // 20 to 100
     const val KEY_BG_TYPE = "pref_bg_type" // 0: DYNAMIC_GLASS, 1: COLOR, 2: IMAGE
     const val KEY_BG_COLOR = "pref_bg_color"
@@ -28,13 +28,13 @@ object ConfigManager {
     private var remotePrefs: SharedPreferences? = null
 
     // In-memory cached synced values (Live synced from Provider)
-    @Volatile private var cachedAiSafety = true
-    @Volatile private var cachedVoiceModeration = true
-    @Volatile private var cachedCloudBlacklist = true
-    @Volatile private var cachedClipboardSensitive = true
-    @Volatile private var cachedClipboardPermanent = true
-    @Volatile private var cachedOsVersionUnblock = true
-    @Volatile private var cachedStyleEnabled = true
+    @Volatile private var cachedAiSafety = false
+    @Volatile private var cachedVoiceModeration = false
+    @Volatile private var cachedCloudBlacklist = false
+    @Volatile private var cachedClipboardSensitive = false
+    @Volatile private var cachedClipboardPermanent = false
+    @Volatile private var cachedOsVersionUnblock = false
+    @Volatile private var cachedStyleEnabled = false
     @Volatile private var cachedCornerRadius = 16
     @Volatile private var cachedOpacity = 85
     @Volatile private var cachedBlurRadius = 50
@@ -56,13 +56,13 @@ object ConfigManager {
             val uri = Uri.parse("content://io.mo.xatype.logprovider")
             val bundle = context.contentResolver.call(uri, "get_config", null, null)
             if (bundle != null) {
-                cachedAiSafety = bundle.getBoolean(KEY_AI_SAFETY, true)
-                cachedVoiceModeration = bundle.getBoolean(KEY_VOICE_MODERATION, true)
-                cachedCloudBlacklist = bundle.getBoolean(KEY_CLOUD_BLACKLIST, true)
-                cachedClipboardSensitive = bundle.getBoolean(KEY_CLIPBOARD_SENSITIVE, true)
-                cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, true)
-                cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, true)
-                cachedStyleEnabled = bundle.getBoolean(KEY_STYLE_ENABLED, true)
+                cachedAiSafety = bundle.getBoolean(KEY_AI_SAFETY, false)
+                cachedVoiceModeration = bundle.getBoolean(KEY_VOICE_MODERATION, false)
+                cachedCloudBlacklist = bundle.getBoolean(KEY_CLOUD_BLACKLIST, false)
+                cachedClipboardSensitive = bundle.getBoolean(KEY_CLIPBOARD_SENSITIVE, false)
+                cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, false)
+                cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, false)
+                cachedStyleEnabled = bundle.getBoolean(KEY_STYLE_ENABLED, false)
                 cachedCornerRadius = bundle.getInt(KEY_CORNER_RADIUS, 16)
                 cachedOpacity = bundle.getInt(KEY_OPACITY, 85)
                 cachedBlurRadius = bundle.getInt(KEY_BLUR_RADIUS, 50)
@@ -77,32 +77,32 @@ object ConfigManager {
 
     fun isAiSafetyEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedAiSafety
-        return remotePrefs?.getBoolean(KEY_AI_SAFETY, true) ?: cachedAiSafety
+        return remotePrefs?.getBoolean(KEY_AI_SAFETY, false) ?: cachedAiSafety
     }
 
     fun isVoiceModerationEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedVoiceModeration
-        return remotePrefs?.getBoolean(KEY_VOICE_MODERATION, true) ?: cachedVoiceModeration
+        return remotePrefs?.getBoolean(KEY_VOICE_MODERATION, false) ?: cachedVoiceModeration
     }
 
     fun isCloudBlacklistEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedCloudBlacklist
-        return remotePrefs?.getBoolean(KEY_CLOUD_BLACKLIST, true) ?: cachedCloudBlacklist
+        return remotePrefs?.getBoolean(KEY_CLOUD_BLACKLIST, false) ?: cachedCloudBlacklist
     }
 
     fun isClipboardSensitiveEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedClipboardSensitive
-        return remotePrefs?.getBoolean(KEY_CLIPBOARD_SENSITIVE, true) ?: cachedClipboardSensitive
+        return remotePrefs?.getBoolean(KEY_CLIPBOARD_SENSITIVE, false) ?: cachedClipboardSensitive
     }
 
     fun isClipboardPermanentEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedClipboardPermanent
-        return remotePrefs?.getBoolean(KEY_CLIPBOARD_PERMANENT, true) ?: cachedClipboardPermanent
+        return remotePrefs?.getBoolean(KEY_CLIPBOARD_PERMANENT, false) ?: cachedClipboardPermanent
     }
 
     fun isOsVersionUnblockEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedOsVersionUnblock
-        return remotePrefs?.getBoolean(KEY_OS_VERSION_UNBLOCK, true) ?: cachedOsVersionUnblock
+        return remotePrefs?.getBoolean(KEY_OS_VERSION_UNBLOCK, false) ?: cachedOsVersionUnblock
     }
 
     fun isStyleEnabled(): Boolean {
@@ -141,7 +141,7 @@ object ConfigManager {
     }
 
     fun isVerboseLogEnabled(): Boolean {
-        return remotePrefs?.getBoolean(KEY_VERBOSE_LOG, true) ?: true
+        return remotePrefs?.getBoolean(KEY_VERBOSE_LOG, false) ?: false
     }
 
     fun getLocalPrefs(context: Context): SharedPreferences {

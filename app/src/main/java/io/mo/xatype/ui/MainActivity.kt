@@ -157,43 +157,43 @@ class MainActivity : AppCompatActivity() {
     private fun initSwitches() {
         val prefs = ConfigManager.getLocalPrefs(this)
 
-        switchAiSafety.isChecked = prefs.getBoolean(ConfigManager.KEY_AI_SAFETY, true)
+        switchAiSafety.isChecked = prefs.getBoolean(ConfigManager.KEY_AI_SAFETY, false)
         switchAiSafety.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_AI_SAFETY, isChecked).apply()
             showRestartHint()
         }
 
-        switchVoiceModeration.isChecked = prefs.getBoolean(ConfigManager.KEY_VOICE_MODERATION, true)
+        switchVoiceModeration.isChecked = prefs.getBoolean(ConfigManager.KEY_VOICE_MODERATION, false)
         switchVoiceModeration.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_VOICE_MODERATION, isChecked).apply()
             showRestartHint()
         }
 
-        switchCloudBlacklist.isChecked = prefs.getBoolean(ConfigManager.KEY_CLOUD_BLACKLIST, true)
+        switchCloudBlacklist.isChecked = prefs.getBoolean(ConfigManager.KEY_CLOUD_BLACKLIST, false)
         switchCloudBlacklist.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_CLOUD_BLACKLIST, isChecked).apply()
             showRestartHint()
         }
 
-        switchClipboardSensitive.isChecked = prefs.getBoolean(ConfigManager.KEY_CLIPBOARD_SENSITIVE, true)
+        switchClipboardSensitive.isChecked = prefs.getBoolean(ConfigManager.KEY_CLIPBOARD_SENSITIVE, false)
         switchClipboardSensitive.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_CLIPBOARD_SENSITIVE, isChecked).apply()
             showRestartHint()
         }
 
-        switchClipboardPermanent.isChecked = prefs.getBoolean(ConfigManager.KEY_CLIPBOARD_PERMANENT, true)
+        switchClipboardPermanent.isChecked = prefs.getBoolean(ConfigManager.KEY_CLIPBOARD_PERMANENT, false)
         switchClipboardPermanent.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_CLIPBOARD_PERMANENT, isChecked).apply()
             showRestartHint()
         }
 
-        switchOsVersionUnblock.isChecked = prefs.getBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, true)
+        switchOsVersionUnblock.isChecked = prefs.getBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, false)
         switchOsVersionUnblock.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, isChecked).apply()
             showRestartHint()
         }
 
-        switchVerboseLog.isChecked = prefs.getBoolean(ConfigManager.KEY_VERBOSE_LOG, true)
+        switchVerboseLog.isChecked = prefs.getBoolean(ConfigManager.KEY_VERBOSE_LOG, false)
         switchVerboseLog.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_VERBOSE_LOG, isChecked).apply()
         }
@@ -202,7 +202,7 @@ class MainActivity : AppCompatActivity() {
     private fun initStyleControls() {
         val prefs = ConfigManager.getLocalPrefs(this)
 
-        val isStyleEnabled = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, true)
+        val isStyleEnabled = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)
         switchStyleEnabled.isChecked = isStyleEnabled
         layoutStyleControls.visibility = if (isStyleEnabled) View.VISIBLE else View.GONE
         switchStyleEnabled.setOnCheckedChangeListener { _, isChecked ->
@@ -232,7 +232,7 @@ class MainActivity : AppCompatActivity() {
         tvOpacityValue.text = "$opacity%"
         sbOpacity.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val clamped = progress.coerceAtLeast(10)
+                val clamped = progress.coerceIn(0, 100)
                 tvOpacityValue.text = "$clamped%"
                 if (fromUser) {
                     prefs.edit().putInt(ConfigManager.KEY_OPACITY, clamped).apply()
@@ -430,7 +430,7 @@ class MainActivity : AppCompatActivity() {
         val now = System.currentTimeMillis()
         if (now - lastToastTime > 3000) {
             lastToastTime = now
-            Toast.makeText(this, "配置已更新，请点击'重启超级小爱输入法'生效", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "配置已更新，重启超级小爱输入法生效", Toast.LENGTH_SHORT).show()
         }
     }
 }

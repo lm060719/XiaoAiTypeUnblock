@@ -569,7 +569,7 @@ object KeyboardStyleHook {
      */
     private fun updateCachedGlassTokens(helper: Any, blurRadiusDp: Int, opacity: Int): Boolean {
         var updated = false
-        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
 
         for ((index, lazyFieldName) in arrayOf("p", "q").withIndex()) {
             try {
@@ -617,7 +617,7 @@ object KeyboardStyleHook {
         radiusPx: Float
     ) {
         val density = view.resources.displayMetrics.density
-        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
         val radii = floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
 
         val softLight = GradientDrawable(
@@ -716,7 +716,7 @@ object KeyboardStyleHook {
         } catch (_: Throwable) {
             Color.parseColor("#1E1E2E")
         }
-        val alpha = (Color.alpha(parsedColor) * (opacity.coerceIn(10, 100) / 100.0f))
+        val alpha = (Color.alpha(parsedColor) * (opacity.coerceIn(0, 100) / 100.0f))
             .toInt()
             .coerceIn(0, 255)
         return Color.argb(
@@ -753,7 +753,7 @@ object KeyboardStyleHook {
                 val bitmap = service?.let { getOrLoadBitmap(it) }
                 if (service != null && bitmap != null && !bitmap.isRecycled) {
                     materialView.background = BitmapDrawable(service.resources, bitmap).apply {
-                        alpha = (ConfigManager.getOpacity().coerceIn(10, 100) * 255 / 100)
+                        alpha = (ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100)
                     }
                 }
             }
@@ -868,7 +868,7 @@ object KeyboardStyleHook {
                 // 1. Background Customization on f3500h (the actual keyboard card at bottom)
                 when (bgType) {
                     0 -> { // HyperOS Dynamic Liquid Glass (系统通知中心同款动态毛玻璃)
-                        val glassStrength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+                        val glassStrength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
                         // bb.u inserts this view at index 0, behind the keyboard.
                         // Keep full material strength; Z elevation is normalized
                         // below so rounded corners cannot lift it above key content.
@@ -950,7 +950,7 @@ object KeyboardStyleHook {
         if (bgType == 1) return resolveSolidColor(bgColor, opacity)
         if (bgType != 0) return Color.TRANSPARENT
         val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
         val alpha: Int
         val red: Int
         val green: Int
@@ -1060,7 +1060,7 @@ object KeyboardStyleHook {
                     val contentTop = resolveKeyboardContentTop(service, targetView)
                     if (contentTop != null && contentTop < targetView.height) {
                         val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-                        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+                        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
                         val colors = if (isDark) {
                             intArrayOf(
                                 Color.argb((105 + 110 * strength).toInt(), 24, 28, 36),

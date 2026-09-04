@@ -131,7 +131,7 @@
                         android:id="@+id/switchAiSafety"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -178,7 +178,7 @@
                         android:id="@+id/switchVoiceModeration"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -225,7 +225,7 @@
                         android:id="@+id/switchCloudBlacklist"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -272,7 +272,7 @@
                         android:id="@+id/switchClipboardSensitive"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -319,7 +319,7 @@
                         android:id="@+id/switchClipboardPermanent"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -356,7 +356,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="绕过非 HyperOS 4.0+ 系统的弹窗阻断与自退限制，在旧系统与第三方 ROM 上正常使用"
+                            android:text="绕过非 HyperOS 4.0+ 系统的弹窗阻断与自退限制"
                             android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
@@ -366,7 +366,7 @@
                         android:id="@+id/switchOsVersionUnblock"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -413,7 +413,7 @@
                         android:id="@+id/switchVerboseLog"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -475,7 +475,7 @@
                         android:id="@+id/switchStyleEnabled"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -593,7 +593,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="毛玻璃模糊强度 (动态玻璃)"
+                                android:text="毛玻璃模糊强度 (柔光玻璃)"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="12sp" />
 
@@ -653,7 +653,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginEnd="8dp"
                                 android:checked="true"
-                                android:text="动态毛玻璃 (HyperOS 动态液态玻璃)"
+                                android:text="动态毛玻璃 (柔光玻璃)"
                                 android:textSize="12sp" />
 
                             <RadioButton
