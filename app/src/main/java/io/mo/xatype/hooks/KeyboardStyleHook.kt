@@ -19,6 +19,7 @@ import io.github.libxposed.api.XposedModule
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
+import java.util.WeakHashMap
 
 object KeyboardStyleHook {
 
@@ -28,6 +29,7 @@ object KeyboardStyleHook {
     // na.d is a data-style class whose hashCode includes these mutable fields,
     // so identity keys are required to keep restoration reliable after patching.
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
+    private val materialRefreshGenerations = WeakHashMap<View, Int>()
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
@@ -228,12 +230,45 @@ object KeyboardStyleHook {
                         val service = XposedUtils.getObjectField(helper, "a") as? android.inputmethodservice.InputMethodService
                         if (service != null) {
                             ConfigManager.syncFromProvider(service)
-                            updateHyperMaterialViews(module, service, helper)
+                            scheduleHyperMaterialRefresh(module, service, helper)
                         }
                     }
                     res
                 }
                 XposedUtils.log(module, "KeyboardStyleHook: Hooked bb.u.g")
+            }
+
+            // In non-floating mode bb.u.g creates the material view with height=0.
+            // bb.u.o later posts the real height after InputMethodService computes
+            // contentTopInsets. Applying material before that layout produces the
+            // opaque white cold-start frame seen after force-stopping the IME.
+            val oMethod = bbUClass.declaredMethods.find {
+                it.name == "o" &&
+                    it.parameterTypes.size == 2 &&
+                    it.parameterTypes.all { type -> type == Int::class.javaPrimitiveType }
+            }
+            if (oMethod != null) {
+                module.hook(oMethod).intercept { chain ->
+                    val res = chain.proceed()
+                    if (ConfigManager.isStyleEnabled()) {
+                        val helper = chain.thisObject
+                        val service = XposedUtils.getObjectField(helper, "a") as? android.inputmethodservice.InputMethodService
+                        if (service != null) {
+                            // bb.u.o posts the final material height before this
+                            // callback. Queue the complete style pass behind it so
+                            // contentTopInsets and target screen coordinates are
+                            // recomputed together, including the toolbar area.
+                            val rootView = XposedUtils.getObjectField(service, "currentImeRootView") as? View
+                            if (rootView != null) {
+                                applyStyle(module, service, rootView)
+                            } else {
+                                scheduleHyperMaterialRefresh(module, service, helper)
+                            }
+                        }
+                    }
+                    res
+                }
+                XposedUtils.log(module, "KeyboardStyleHook: Hooked bb.u.o (post-layout material refresh)")
             }
         }
 
@@ -556,12 +591,123 @@ object KeyboardStyleHook {
         null
     }
 
+    private fun resolveKeyboardContentTop(
+        service: android.inputmethodservice.InputMethodService,
+        targetView: View
+    ): Int? {
+        // mTmpInsets.contentTopInsets is still 0 during the first cold-start
+        // frame. Xiaomi's material view has already been laid out at the real
+        // keyboard top by bb.u.o, so its screen position is the reliable source.
+        val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+        val materialView = helper?.let { XposedUtils.getObjectField(it, "h") as? View }
+        if (materialView != null && materialView.isAttachedToWindow && materialView.height > 0) {
+            val materialLocation = IntArray(2)
+            val targetLocation = IntArray(2)
+            materialView.getLocationOnScreen(materialLocation)
+            targetView.getLocationOnScreen(targetLocation)
+            val materialTop = materialLocation[1] - targetLocation[1]
+            if (materialTop >= 0 && materialTop < targetView.height) {
+                return materialTop
+            }
+        }
+
+        return getImeContentTopInset(service)?.let { windowTop ->
+            val decor = service.window?.window?.decorView
+            if (decor != null) {
+                val decorLocation = IntArray(2)
+                val targetLocation = IntArray(2)
+                decor.getLocationOnScreen(decorLocation)
+                targetView.getLocationOnScreen(targetLocation)
+                windowTop + decorLocation[1] - targetLocation[1]
+            } else {
+                windowTop
+            }
+        }
+    }
+
     private fun invokeHelperMethod(helper: Any, name: String, vararg args: Any?): Any? {
         val method = helper.javaClass.declaredMethods.firstOrNull {
             it.name == name && it.parameterTypes.size == args.size
         } ?: return null
         method.isAccessible = true
         return method.invoke(helper, *args)
+    }
+
+    /**
+     * Wait until Xiaomi's material view has a real surface size before applying
+     * HyperMaterial. Calls from onCreateInputView/onStartInputView/bb.u.g can all
+     * arrive while the non-floating glass view is still 0px tall on a cold start.
+     * A generation per view coalesces those calls, then two bounded settle passes
+     * cover the render-thread hand-off without leaving permanent polling behind.
+     */
+    private fun scheduleHyperMaterialRefresh(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        helper: Any?
+    ) {
+        if (helper == null || !ConfigManager.isStyleEnabled()) return
+        val materialView = XposedUtils.getObjectField(helper, "h") as? View ?: return
+        val rimView = XposedUtils.getObjectField(helper, "i") as? View
+        val dynamicGlass = ConfigManager.getBgType() == 0
+
+        val generation = synchronized(materialRefreshGenerations) {
+            val next = (materialRefreshGenerations[materialView] ?: 0) + 1
+            materialRefreshGenerations[materialView] = next
+            next
+        }
+
+        // Hide only Xiaomi's background material views while their height is 0;
+        // the keyboard content stays visible over the stable fallback tint.
+        if (dynamicGlass && (!materialView.isAttachedToWindow || materialView.width <= 0 || materialView.height <= 0)) {
+            materialView.visibility = View.INVISIBLE
+            rimView?.visibility = View.INVISIBLE
+        }
+
+        val refresh = object : Runnable {
+            private var layoutWaitFrames = 0
+            private var settlePass = 0
+
+            override fun run() {
+                val isCurrent = synchronized(materialRefreshGenerations) {
+                    materialRefreshGenerations[materialView] == generation
+                }
+                if (!isCurrent || !ConfigManager.isStyleEnabled()) return
+
+                if (!materialView.isAttachedToWindow || materialView.width <= 0 || materialView.height <= 0) {
+                    if (dynamicGlass) {
+                        materialView.visibility = View.INVISIBLE
+                        rimView?.visibility = View.INVISIBLE
+                    }
+                    // bb.u.o normally resolves this on the next layout. Keep the
+                    // fallback visible for at most two seconds on unusually slow starts.
+                    if (layoutWaitFrames++ < 120) {
+                        materialView.postOnAnimation(this)
+                    } else {
+                        synchronized(materialRefreshGenerations) {
+                            if (materialRefreshGenerations[materialView] == generation) {
+                                materialRefreshGenerations.remove(materialView)
+                            }
+                        }
+                        XposedUtils.log(module, "KeyboardStyleHook: skipped zero-size material view after cold-start wait")
+                    }
+                    return
+                }
+
+                updateHyperMaterialViews(module, service, helper)
+
+                if (dynamicGlass && settlePass < 2) {
+                    val delayMs = if (settlePass++ == 0) 64L else 240L
+                    materialView.postDelayed(this, delayMs)
+                } else {
+                    synchronized(materialRefreshGenerations) {
+                        if (materialRefreshGenerations[materialView] == generation) {
+                            materialRefreshGenerations.remove(materialView)
+                        }
+                    }
+                }
+            }
+        }
+        materialView.post(refresh)
     }
 
     private fun updateHyperMaterialViews(
@@ -805,18 +951,7 @@ object KeyboardStyleHook {
                     rootView
                 }
                 targetView.background = if (bgType == 0) {
-                    val contentTop = getImeContentTopInset(service)?.let { windowTop ->
-                        val decor = service.window?.window?.decorView
-                        if (decor != null) {
-                            val decorLocation = IntArray(2)
-                            val targetLocation = IntArray(2)
-                            decor.getLocationOnScreen(decorLocation)
-                            targetView.getLocationOnScreen(targetLocation)
-                            windowTop + decorLocation[1] - targetLocation[1]
-                        } else {
-                            windowTop
-                        }
-                    }
+                    val contentTop = resolveKeyboardContentTop(service, targetView)
                     if (contentTop != null && contentTop < targetView.height) {
                         val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
                         val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
@@ -877,7 +1012,7 @@ object KeyboardStyleHook {
 
                 // 4. Update HyperMaterialHelper's f3500h view which is the true keyboard bottom card
                 val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
-                updateHyperMaterialViews(module, service, helper)
+                scheduleHyperMaterialRefresh(module, service, helper)
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "Error applying custom style to keyboard view", t)
             }

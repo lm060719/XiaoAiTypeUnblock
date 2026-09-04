@@ -5,16 +5,11 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Outline
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.view.ViewOutlineProvider
 import android.widget.Button
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -73,7 +68,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnPickBgImage: Button
     private lateinit var btnClearBgImage: Button
     private lateinit var ivBgImagePreview: ImageView
-    private lateinit var previewKeyboardCard: FrameLayout
 
     private lateinit var btnRestartIme: Button
     private lateinit var btnAbout: Button
@@ -93,11 +87,6 @@ class MainActivity : AppCompatActivity() {
         initSwitches()
         initStyleControls()
         initButtons()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        updateStylePreview()
     }
 
     private fun initViews() {
@@ -138,7 +127,6 @@ class MainActivity : AppCompatActivity() {
         btnPickBgImage = findViewById(R.id.btnPickBgImage)
         btnClearBgImage = findViewById(R.id.btnClearBgImage)
         ivBgImagePreview = findViewById(R.id.ivBgImagePreview)
-        previewKeyboardCard = findViewById(R.id.previewKeyboardCard)
 
         btnRestartIme = findViewById(R.id.btnRestartIme)
         btnAbout = findViewById(R.id.btnAbout)
@@ -220,7 +208,6 @@ class MainActivity : AppCompatActivity() {
         switchStyleEnabled.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_STYLE_ENABLED, isChecked).apply()
             layoutStyleControls.visibility = if (isChecked) View.VISIBLE else View.GONE
-            updateStylePreview()
             showRestartHint()
         }
 
@@ -233,7 +220,6 @@ class MainActivity : AppCompatActivity() {
                 tvCornerRadiusValue.text = "$progress dp"
                 if (fromUser) {
                     prefs.edit().putInt(ConfigManager.KEY_CORNER_RADIUS, progress).apply()
-                    updateStylePreview()
                 }
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -250,7 +236,6 @@ class MainActivity : AppCompatActivity() {
                 tvOpacityValue.text = "$clamped%"
                 if (fromUser) {
                     prefs.edit().putInt(ConfigManager.KEY_OPACITY, clamped).apply()
-                    updateStylePreview()
                 }
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -267,7 +252,6 @@ class MainActivity : AppCompatActivity() {
                 tvBlurRadiusValue.text = "$clamped dp"
                 if (fromUser) {
                     prefs.edit().putInt(ConfigManager.KEY_BLUR_RADIUS, clamped).apply()
-                    updateStylePreview()
                 }
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -291,7 +275,6 @@ class MainActivity : AppCompatActivity() {
             }
             prefs.edit().putInt(ConfigManager.KEY_BG_TYPE, newBgType).apply()
             updateBgConfigVisibility(newBgType)
-            updateStylePreview()
             showRestartHint()
         }
 
@@ -302,7 +285,6 @@ class MainActivity : AppCompatActivity() {
         val selectColor = { hex: String ->
             etCustomColor.setText(hex)
             prefs.edit().putString(ConfigManager.KEY_BG_COLOR, hex).apply()
-            updateStylePreview()
             showRestartHint()
         }
 
@@ -317,7 +299,6 @@ class MainActivity : AppCompatActivity() {
             try {
                 Color.parseColor(hex)
                 prefs.edit().putString(ConfigManager.KEY_BG_COLOR, hex).apply()
-                updateStylePreview()
                 Toast.makeText(this, "颜色已更新：$hex", Toast.LENGTH_SHORT).show()
                 showRestartHint()
             } catch (_: Throwable) {
@@ -335,7 +316,6 @@ class MainActivity : AppCompatActivity() {
             if (file.exists()) file.delete()
             prefs.edit().putLong(ConfigManager.KEY_BG_IMAGE_VERSION, System.currentTimeMillis()).apply()
             ivBgImagePreview.visibility = View.GONE
-            updateStylePreview()
             Toast.makeText(this, "自定义背景图已清除", Toast.LENGTH_SHORT).show()
             showRestartHint()
         }
@@ -362,7 +342,6 @@ class MainActivity : AppCompatActivity() {
                         .putLong(ConfigManager.KEY_BG_IMAGE_VERSION, System.currentTimeMillis())
                         .apply()
                     updateImagePreviewThumbnail()
-                    updateStylePreview()
                     Toast.makeText(this, "背景图片已成功保存！", Toast.LENGTH_SHORT).show()
                     showRestartHint()
                 } else {
@@ -385,71 +364,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         ivBgImagePreview.visibility = View.GONE
-    }
-
-    private fun updateStylePreview() {
-        val prefs = ConfigManager.getLocalPrefs(this)
-        val isEnabled = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, true)
-        val cornerRadius = prefs.getInt(ConfigManager.KEY_CORNER_RADIUS, 16)
-        val opacity = prefs.getInt(ConfigManager.KEY_OPACITY, 100)
-        val bgType = prefs.getInt(ConfigManager.KEY_BG_TYPE, 0)
-        val bgColorStr = prefs.getString(ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E"
-
-        val density = resources.displayMetrics.density
-        val radiusPx = (if (isEnabled) cornerRadius else 0) * density
-        val alpha = if (isEnabled) (opacity.coerceIn(10, 100) / 100f) else 1.0f
-
-        previewKeyboardCard.post {
-            try {
-                // Alpha
-                previewKeyboardCard.alpha = alpha
-
-                // Background
-                if (isEnabled) {
-                    when (bgType) {
-                        1 -> { // Solid color
-                            val parsed = try { Color.parseColor(bgColorStr) } catch (_: Throwable) { Color.parseColor("#1E1E2E") }
-                            previewKeyboardCard.background = ColorDrawable(parsed)
-                        }
-                        2 -> { // Custom Image
-                            val file = File(filesDir, LogContentProvider.BG_IMAGE_FILENAME)
-                            if (file.exists()) {
-                                val bmp = BitmapFactory.decodeFile(file.absolutePath)
-                                if (bmp != null) {
-                                    previewKeyboardCard.background = BitmapDrawable(resources, bmp)
-                                } else {
-                                    previewKeyboardCard.background = ColorDrawable(Color.parseColor("#1E1E2E"))
-                                }
-                            } else {
-                                previewKeyboardCard.background = ColorDrawable(Color.parseColor("#1E1E2E"))
-                            }
-                        }
-                        else -> { // Dynamic Glass
-                            previewKeyboardCard.background = ColorDrawable(Color.argb(180, 28, 30, 42))
-                        }
-                    }
-                } else {
-                    previewKeyboardCard.background = ColorDrawable(Color.parseColor("#1E1E2E"))
-                }
-
-                // Corner radius clipping (Top corners only)
-                if (radiusPx > 0f && isEnabled) {
-                    previewKeyboardCard.clipToOutline = true
-                    previewKeyboardCard.outlineProvider = object : ViewOutlineProvider() {
-                        override fun getOutline(view: View, outline: Outline) {
-                            val w = view.width
-                            val h = view.height
-                            if (w <= 0 || h <= 0) return
-                            outline.setRoundRect(0, 0, w, h + radiusPx.toInt(), radiusPx)
-                        }
-                    }
-                    previewKeyboardCard.invalidateOutline()
-                } else {
-                    previewKeyboardCard.clipToOutline = false
-                    previewKeyboardCard.outlineProvider = ViewOutlineProvider.BACKGROUND
-                }
-            } catch (_: Throwable) {}
-        }
     }
 
     private fun initButtons() {
