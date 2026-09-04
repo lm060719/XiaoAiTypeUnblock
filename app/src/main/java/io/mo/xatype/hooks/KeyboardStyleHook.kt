@@ -20,13 +20,17 @@ import android.widget.FrameLayout
 import io.github.libxposed.api.XposedModule
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
-import java.util.WeakHashMap
+import java.util.IdentityHashMap
 
 object KeyboardStyleHook {
 
     private var cachedBitmap: Bitmap? = null
     private var cachedImageVersion: Long = -1L
-    private val glassTintViews = WeakHashMap<Any, View>()
+    @Volatile private var activeBottomBarColor: Int = Color.TRANSPARENT
+    // na.d is a data-style class whose hashCode includes these mutable fields,
+    // so identity keys are required to keep restoration reliable after patching.
+    private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
+
     fun install(module: XposedModule, classLoader: ClassLoader) {
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
         if (imeServiceClass == null) {
@@ -111,9 +115,27 @@ object KeyboardStyleHook {
                     }
                     XposedUtils.log(module, "KeyboardStyleHook: Hooked na.m.F0 (Compose corner radius)")
                 }
+
+                // The APPS/menu page has its own translucent color tokens. Once
+                // the keyboard background is replaced with glass, Xiaomi's low
+                // alpha defaults can leave both labels and monochrome icons
+                // almost white-on-white. Patch only those menu-specific tokens.
+                val colorsMethod = naMClass.declaredMethods.find {
+                    it.name == "w" && it.parameterTypes.size == 1 && it.returnType.name == "na.d"
+                }
+                if (colorsMethod != null) {
+                    module.hook(colorsMethod).intercept { chain ->
+                        val colors = chain.proceed()
+                        if (colors != null) {
+                            updateAppsPanelContrast(colors, ConfigManager.isStyleEnabled())
+                        }
+                        colors
+                    }
+                    XposedUtils.log(module, "KeyboardStyleHook: Hooked na.m.w (Apps panel contrast)")
+                }
             }
         } catch (t: Throwable) {
-            XposedUtils.logError(module, "Error hooking na.m.F0", t)
+            XposedUtils.logError(module, "Error hooking Compose style tokens", t)
         }
 
         // 6. Hook HyperMaterial Helper support & package whitelist bypass
@@ -281,7 +303,7 @@ object KeyboardStyleHook {
                                 val bInner = XposedUtils.getObjectField(bField, "b") as? android.content.Context
                                 if (bInner is android.inputmethodservice.InputMethodService) {
                                     val window = bInner.window?.window
-                                    window?.setNavigationBarColor(Color.TRANSPARENT)
+                                    window?.setNavigationBarColor(activeBottomBarColor)
                                     window?.setNavigationBarContrastEnforced(false)
                                 }
                             }
@@ -291,7 +313,8 @@ object KeyboardStyleHook {
                     XposedUtils.log(module, "KeyboardStyleHook: Hooked bb.g1.S")
                 }
 
-                // Hook bb.g1.s(int i5, int i10, int i11, boolean z2): Force bottom view background color to 0 (TRANSPARENT)
+                // Hook bb.g1.s(int i5, int i10, int i11, boolean z2): keep
+                // HyperOS' separate bottom view continuous with the glass card.
                 val staticSMethod = bbG1Class.declaredMethods.find { it.name == "s" && it.parameterTypes.size == 4 }
                 if (staticSMethod != null) {
                     module.hook(staticSMethod).intercept { chain ->
@@ -303,7 +326,7 @@ object KeyboardStyleHook {
                                 val customizeMethod = injectorClass.declaredMethods.find { it.name == "customizeBottomViewColor" }
                                 if (customizeMethod != null) {
                                     customizeMethod.isAccessible = true
-                                    customizeMethod.invoke(null, true, 0, iconColor, rippleColor)
+                                customizeMethod.invoke(null, true, activeBottomBarColor, iconColor, rippleColor)
                                 }
                             } catch (_: Throwable) {}
                             null
@@ -311,7 +334,7 @@ object KeyboardStyleHook {
                             chain.proceed()
                         }
                     }
-                    XposedUtils.log(module, "KeyboardStyleHook: Hooked bb.g1.s (BottomView transparent background)")
+                    XposedUtils.log(module, "KeyboardStyleHook: Hooked bb.g1.s (BottomView glass background)")
                 }
             }
         } catch (t: Throwable) {
@@ -347,6 +370,66 @@ object KeyboardStyleHook {
         }
         secondaryPackages.add(packageName)
         XposedUtils.setObjectField(helper, "x", secondaryPackages)
+    }
+
+    /** Compose stores sRGB colors as an unsigned ARGB value in the high 32 bits. */
+    private fun composeColor(argb: Int): Long =
+        (argb.toLong() and 0xffffffffL) shl 32
+
+    private fun readLongField(instance: Any, name: String): Long? = try {
+        instance.javaClass.getDeclaredField(name).apply { isAccessible = true }.getLong(instance)
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun writeLongField(instance: Any, name: String, value: Long) {
+        try {
+            instance.javaClass.getDeclaredField(name).apply { isAccessible = true }.setLong(instance, value)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * na.d fields B0..L0 are, in order: panel background, card background,
+     * card icon, card text, active toggle background/color, back arrow, and
+     * tooltip background/text/border/shadow. D0/E0 are also used by page dots.
+     */
+    private fun updateAppsPanelContrast(colors: Any, enabled: Boolean) {
+        val fieldNames = arrayOf("B0", "C0", "D0", "E0", "F0", "G0", "H0", "I0", "J0", "K0", "L0")
+        synchronized(originalAppsPanelColors) {
+            val originals = originalAppsPanelColors.getOrPut(colors) {
+                fieldNames.mapNotNull { name -> readLongField(colors, name)?.let { name to it } }.toMap()
+            }
+
+            if (!enabled) {
+                originals.forEach { (name, value) -> writeLongField(colors, name, value) }
+                return
+            }
+
+            val isDarkPalette = XposedUtils.getObjectField(colors, "f13287n1") as? Boolean ?: false
+            val primary = if (isDarkPalette) Color.argb(242, 255, 255, 255) else Color.argb(230, 0, 0, 0)
+            val secondary = if (isDarkPalette) Color.argb(217, 255, 255, 255) else Color.argb(204, 0, 0, 0)
+            val card = if (isDarkPalette) Color.argb(46, 255, 255, 255) else Color.argb(105, 255, 255, 255)
+            val tooltip = if (isDarkPalette) Color.rgb(45, 48, 53) else Color.rgb(250, 250, 250)
+            val tooltipBorder = if (isDarkPalette) Color.argb(80, 255, 255, 255) else Color.argb(42, 0, 0, 0)
+            val tooltipShadow = Color.argb(if (isDarkPalette) 110 else 60, 0, 0, 0)
+            val accent = Color.rgb(52, 130, 255)
+
+            val replacements = mapOf(
+                "B0" to Color.TRANSPARENT,
+                "C0" to card,
+                "D0" to secondary,
+                "E0" to primary,
+                "F0" to Color.argb(48, 52, 130, 255),
+                "G0" to accent,
+                "H0" to primary,
+                "I0" to tooltip,
+                "J0" to (if (isDarkPalette) Color.WHITE else Color.BLACK),
+                "K0" to tooltipBorder,
+                "L0" to tooltipShadow
+            )
+            replacements.forEach { (name, value) -> writeLongField(colors, name, composeColor(value)) }
+        }
     }
 
     private fun getOrLoadBitmap(service: android.content.Context): Bitmap? {
@@ -467,81 +550,17 @@ object KeyboardStyleHook {
         view.foreground = LayerDrawable(arrayOf(softLight, highlight))
     }
 
-    private fun updateGlassTintLayer(
-        helper: Any,
-        materialView: View,
-        isDark: Boolean,
-        opacity: Int,
-        radiusPx: Float,
-        floating: Boolean
-    ) {
-        val parent = materialView.parent as? ViewGroup ?: return
-
-        fun syncLayout(tint: View) {
-            val sourceParams = materialView.layoutParams ?: return
-            tint.layoutParams = if (sourceParams is FrameLayout.LayoutParams) {
-                FrameLayout.LayoutParams(sourceParams)
-            } else {
-                ViewGroup.LayoutParams(sourceParams)
-            }
-        }
-
-        var tintView = glassTintViews[helper]
-        if (tintView == null || tintView.parent !== parent) {
-            (tintView?.parent as? ViewGroup)?.removeView(tintView)
-            tintView = View(materialView.context).apply {
-                isClickable = false
-                isFocusable = false
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                elevation = 0f
-                translationZ = 0f
-            }
-            val materialIndex = parent.indexOfChild(materialView).coerceAtLeast(0)
-            parent.addView(
-                tintView,
-                (materialIndex + 1).coerceAtMost(parent.childCount),
-                ViewGroup.LayoutParams(0, 0)
-            )
-            syncLayout(tintView)
-            val synchronizedTint = tintView
-            materialView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                if (synchronizedTint.parent === materialView.parent) {
-                    syncLayout(synchronizedTint)
-                }
-            }
-            glassTintViews[helper] = tintView
-        } else {
-            syncLayout(tintView)
-        }
-
-        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
-        val radii = if (floating) {
-            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx)
-        } else {
-            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
-        }
-        val colors = if (isDark) {
-            intArrayOf(
-                Color.argb((145 * strength).toInt(), 38, 41, 49),
-                Color.argb((105 * strength).toInt(), 25, 28, 35),
-                Color.argb((85 * strength).toInt(), 52, 61, 76)
-            )
-        } else {
-            intArrayOf(
-                Color.argb((190 * strength).toInt(), 255, 255, 255),
-                Color.argb((125 * strength).toInt(), 247, 249, 253),
-                Color.argb((145 * strength).toInt(), 218, 229, 244)
-            )
-        }
-        tintView.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadii = radii
-            setStroke(
-                materialView.resources.displayMetrics.density.toInt().coerceAtLeast(1),
-                Color.argb((16 + 96 * strength).toInt(), 255, 255, 255)
-            )
-        }
-        tintView.visibility = View.VISIBLE
+    private fun getImeContentTopInset(
+        service: android.inputmethodservice.InputMethodService
+    ): Int? = try {
+        val field = android.inputmethodservice.InputMethodService::class.java
+            .getDeclaredField("mTmpInsets")
+        field.isAccessible = true
+        val insets = field.get(service)
+        val topField = insets.javaClass.getField("contentTopInsets")
+        topField.getInt(insets).takeIf { it > 0 }
+    } catch (_: Throwable) {
+        null
     }
 
     private fun invokeHelperMethod(helper: Any, name: String, vararg args: Any?): Any? {
@@ -691,38 +710,69 @@ object KeyboardStyleHook {
                     f3500h.outlineProvider = ViewOutlineProvider.BACKGROUND
                 }
 
-                if (bgType == 0) {
-                    updateGlassTintLayer(helper, f3500h, isDark, opacity, radiusPx, floating)
-                } else {
-                    glassTintViews[helper]?.visibility = View.GONE
-                }
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "KeyboardStyleHook: failed to update material views", t)
             }
         }
     }
 
-    private fun updateBottomBarTransparency(service: android.inputmethodservice.InputMethodService) {
+    private fun resolveBottomBarColor(
+        service: android.inputmethodservice.InputMethodService,
+        bgType: Int,
+        opacity: Int
+    ): Int {
+        if (bgType != 0) return Color.TRANSPARENT
+        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+        val alpha: Int
+        val red: Int
+        val green: Int
+        val blue: Int
+        if (isDark) {
+            alpha = (85 + 115 * strength).toInt()
+            red = 50
+            green = 61
+            blue = 79
+        } else {
+            alpha = (135 + 90 * strength).toInt()
+            red = 76
+            green = 94
+            blue = 122
+        }
+        // The IME's liquid-glass surface remains a light transmissive layer even
+        // when the system configuration reports night mode. Precompositing the
+        // separate system bottom bar against black turns it nearly pure black.
+        // Composite against the same light surface used behind the keyboard.
+        val base = 255
+        fun composite(channel: Int): Int =
+            ((channel * alpha + base * (255 - alpha)) / 255).coerceIn(0, 255)
+        return Color.rgb(composite(red), composite(green), composite(blue))
+    }
+
+    private fun updateBottomBarAppearance(
+        service: android.inputmethodservice.InputMethodService,
+        backgroundColor: Int
+    ) {
         try {
             val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
             val iconColor = if (isDark) Color.parseColor("#9E9E9E") else Color.parseColor("#757575")
             val rippleColor = if (isDark) Color.parseColor("#33FFFFFF") else Color.parseColor("#1F000000")
 
-            // 1. Call InputMethodServiceInjector.customizeBottomViewColor(true, 0, iconColor, rippleColor)
+            // 1. HyperOS renders this accessory/navigation strip separately.
             val injectorClass = Class.forName("android.inputmethodservice.InputMethodServiceInjector")
             val customizeMethod = injectorClass.declaredMethods.find { it.name == "customizeBottomViewColor" }
             if (customizeMethod != null) {
                 customizeMethod.isAccessible = true
                 if (customizeMethod.parameterTypes.size == 4) {
-                    customizeMethod.invoke(null, true, 0, iconColor, rippleColor)
+                    customizeMethod.invoke(null, true, backgroundColor, iconColor, rippleColor)
                 } else if (customizeMethod.parameterTypes.size == 2) {
-                    customizeMethod.invoke(null, true, 0)
+                    customizeMethod.invoke(null, true, backgroundColor)
                 }
             }
         } catch (_: Throwable) {}
 
         try {
-            // 2. Clear background on bottom views in DecorView
+            // 2. Match any explicit bottom container in DecorView as well.
             val window = service.window?.window
             val decor = window?.decorView as? ViewGroup
             if (decor != null) {
@@ -730,7 +780,7 @@ object KeyboardStyleHook {
                     val child = decor.getChildAt(i)
                     val className = child.javaClass.name
                     if (className.contains("Bottom", ignoreCase = true) || className.contains("NavigationBar", ignoreCase = true)) {
-                        child.background = null
+                        child.setBackgroundColor(backgroundColor)
                     }
                 }
             }
@@ -744,6 +794,11 @@ object KeyboardStyleHook {
         val marginTopDp = ConfigManager.getMarginTop()
         val marginBottomDp = ConfigManager.getMarginBottom()
         val marginHorizontalDp = ConfigManager.getMarginHorizontal()
+        val cornerRadiusDp = ConfigManager.getCornerRadius()
+        val opacity = ConfigManager.getOpacity()
+        val bgType = ConfigManager.getBgType()
+        val bottomBarColor = resolveBottomBarColor(service, bgType, opacity)
+        activeBottomBarColor = bottomBarColor
 
         val density = service.resources.displayMetrics.density
         val topMarginPx = (marginTopDp * density).toInt()
@@ -756,7 +811,7 @@ object KeyboardStyleHook {
                 val window = service.window?.window
                 if (window != null) {
                     window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                    window.setNavigationBarColor(Color.TRANSPARENT)
+                    window.setNavigationBarColor(bottomBarColor)
                     window.setNavigationBarContrastEnforced(false)
                     window.setDimAmount(0f)
                     window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
@@ -765,8 +820,8 @@ object KeyboardStyleHook {
                     decor?.setBackgroundColor(Color.TRANSPARENT)
                 }
 
-                // 2. Make bottom navigation/accessory bar completely transparent
-                updateBottomBarTransparency(service)
+                // 2. Blend the separately rendered bottom strip into the glass.
+                updateBottomBarAppearance(service, bottomBarColor)
 
                 // 3. Clear background on full-screen container views so nothing bleeds to top
                 rootView.background = null
@@ -777,7 +832,73 @@ object KeyboardStyleHook {
                 } else {
                     rootView
                 }
-                targetView.background = null
+                targetView.background = if (bgType == 0) {
+                    val contentTop = getImeContentTopInset(service)?.let { windowTop ->
+                        val decor = service.window?.window?.decorView
+                        if (decor != null) {
+                            val decorLocation = IntArray(2)
+                            val targetLocation = IntArray(2)
+                            decor.getLocationOnScreen(decorLocation)
+                            targetView.getLocationOnScreen(targetLocation)
+                            windowTop + decorLocation[1] - targetLocation[1]
+                        } else {
+                            windowTop
+                        }
+                    }
+                    if (contentTop != null && contentTop < targetView.height) {
+                        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+                        val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
+                        val colors = if (isDark) {
+                            intArrayOf(
+                                Color.argb((105 + 110 * strength).toInt(), 24, 28, 36),
+                                Color.argb((95 + 115 * strength).toInt(), 35, 41, 52),
+                                Color.argb((85 + 115 * strength).toInt(), 50, 61, 79)
+                            )
+                        } else {
+                            intArrayOf(
+                                Color.argb((155 + 80 * strength).toInt(), 135, 148, 168),
+                                Color.argb((145 + 85 * strength).toInt(), 103, 118, 142),
+                                Color.argb((135 + 90 * strength).toInt(), 76, 94, 122)
+                            )
+                        }
+                        val tint = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
+                            shape = GradientDrawable.RECTANGLE
+                            cornerRadii = floatArrayOf(
+                                cornerRadiusDp * density, cornerRadiusDp * density,
+                                cornerRadiusDp * density, cornerRadiusDp * density,
+                                0f, 0f, 0f, 0f
+                            )
+                            setStroke(
+                                density.toInt().coerceAtLeast(1),
+                                Color.argb((36 + 80 * strength).toInt(), 255, 255, 255)
+                            )
+                        }
+                        // The system bottom strip accepts only one solid color,
+                        // while the keyboard card above is diagonal. Gradually
+                        // converge the lower third of the card to that exact solid
+                        // color so there is no visible horizontal join.
+                        val seamRed = Color.red(bottomBarColor)
+                        val seamGreen = Color.green(bottomBarColor)
+                        val seamBlue = Color.blue(bottomBarColor)
+                        val bottomBlend = GradientDrawable(
+                            GradientDrawable.Orientation.TOP_BOTTOM,
+                            intArrayOf(
+                                Color.argb(0, seamRed, seamGreen, seamBlue),
+                                Color.argb(0, seamRed, seamGreen, seamBlue),
+                                Color.argb(56, seamRed, seamGreen, seamBlue),
+                                bottomBarColor
+                            )
+                        )
+                        LayerDrawable(arrayOf(tint, bottomBlend)).apply {
+                            setLayerInset(0, 0, contentTop, 0, 0)
+                            setLayerInset(1, 0, contentTop, 0, 0)
+                        }
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
 
                 // For keyboard foreground keys and text, keep them solid and crisp!
                 targetView.alpha = 1.0f
