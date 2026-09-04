@@ -1,4 +1,4 @@
 minApiVersion=102
 targetApiVersion=102
-defaultScope=com.xiaomi.type
+staticScope=true
 autoHotReload=true

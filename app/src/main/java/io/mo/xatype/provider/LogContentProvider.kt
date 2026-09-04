@@ -29,6 +29,7 @@ class LogContentProvider : ContentProvider() {
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, true))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, true))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, true))
+                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, true))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, true))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_STYLE_ENABLED, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_STYLE_ENABLED, true))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_CORNER_RADIUS, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_CORNER_RADIUS, 16))
@@ -36,9 +37,6 @@ class LogContentProvider : ContentProvider() {
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_BLUR_RADIUS, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_BLUR_RADIUS, 50))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_BG_TYPE, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_BG_TYPE, 0))
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E")
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_MARGIN_TOP, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_MARGIN_TOP, 0))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_MARGIN_BOTTOM, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_MARGIN_BOTTOM, 0))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_MARGIN_HORIZONTAL, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_MARGIN_HORIZONTAL, 0))
                     result.putLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, sp.getLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, 0L))
                 }
             }

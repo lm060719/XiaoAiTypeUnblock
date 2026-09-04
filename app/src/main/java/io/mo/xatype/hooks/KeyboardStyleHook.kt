@@ -10,13 +10,11 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
-import android.widget.FrameLayout
 import io.github.libxposed.api.XposedModule
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
@@ -506,16 +504,11 @@ object KeyboardStyleHook {
         view: View,
         isDark: Boolean,
         opacity: Int,
-        radiusPx: Float,
-        floating: Boolean
+        radiusPx: Float
     ) {
         val density = view.resources.displayMetrics.density
         val strength = ((opacity.coerceIn(10, 100) - 10) / 90.0f).coerceIn(0f, 1f)
-        val radii = if (floating) {
-            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx, radiusPx)
-        } else {
-            floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
-        }
+        val radii = floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
 
         val softLight = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
@@ -586,15 +579,10 @@ object KeyboardStyleHook {
         val bgColorStr = ConfigManager.getBgColor()
         val opacity = ConfigManager.getOpacity()
         val cornerRadiusDp = ConfigManager.getCornerRadius()
-        val hMarginDp = ConfigManager.getMarginHorizontal()
-        val bMarginDp = ConfigManager.getMarginBottom()
         val blurRadiusDp = ConfigManager.getBlurRadius()
 
         val density = f3500h.resources.displayMetrics.density
         val radiusPx = cornerRadiusDp * density
-        val hMarginPx = (hMarginDp * density).toInt()
-        val bMarginPx = (bMarginDp * density).toInt()
-        val floating = hMarginPx > 0 || bMarginPx > 0
         val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
         f3500h.post {
@@ -620,7 +608,7 @@ object KeyboardStyleHook {
                             false
                         }
 
-                        applySoftGlassForeground(f3500h, isDark, opacity, radiusPx, floating)
+                        applySoftGlassForeground(f3500h, isDark, opacity, radiusPx)
                         f3500h.visibility = View.VISIBLE
 
                         if (ConfigManager.isVerboseLogEnabled()) {
@@ -683,15 +671,7 @@ object KeyboardStyleHook {
                     }
                 }
 
-                // 2. Layout Margins on f3500h (aligned to bottom)
-                val lp = f3500h.layoutParams as? FrameLayout.LayoutParams
-                if (lp != null) {
-                    lp.gravity = Gravity.BOTTOM
-                    lp.setMargins(hMarginPx, 0, hMarginPx, bMarginPx)
-                    f3500h.layoutParams = lp
-                }
-
-                // 3. Rounded Corners & Clipping on f3500h (Top corners only)
+                // 2. Rounded Corners & Clipping on f3500h (Top corners only)
                 if (radiusPx > 0f) {
                     f3500h.clipToOutline = true
                     f3500h.outlineProvider = object : ViewOutlineProvider() {
@@ -702,7 +682,7 @@ object KeyboardStyleHook {
                             outline.setRoundRect(0, 0, w, h + radiusPx.toInt(), radiusPx)
                         }
                     }
-                    f3500h.elevation = if (bgType == 0) 0f else if (hMarginPx > 0 || bMarginPx > 0 || radiusPx > 0f) 16f else 0f
+                    f3500h.elevation = if (bgType == 0) 0f else if (radiusPx > 0f) 16f else 0f
                     f3500h.translationZ = 0f
                     f3500h.invalidateOutline()
                 } else {
@@ -791,9 +771,6 @@ object KeyboardStyleHook {
         ConfigManager.syncFromProvider(service)
         if (!ConfigManager.isStyleEnabled()) return
 
-        val marginTopDp = ConfigManager.getMarginTop()
-        val marginBottomDp = ConfigManager.getMarginBottom()
-        val marginHorizontalDp = ConfigManager.getMarginHorizontal()
         val cornerRadiusDp = ConfigManager.getCornerRadius()
         val opacity = ConfigManager.getOpacity()
         val bgType = ConfigManager.getBgType()
@@ -801,10 +778,6 @@ object KeyboardStyleHook {
         activeBottomBarColor = bottomBarColor
 
         val density = service.resources.displayMetrics.density
-        val topMarginPx = (marginTopDp * density).toInt()
-        val bottomMarginPx = (marginBottomDp * density).toInt()
-        val horizontalMarginPx = (marginHorizontalDp * density).toInt()
-
         rootView.post {
             try {
                 // 1. Transparent window & navigation bar (Do NOT add FLAG_BLUR_BEHIND to window as it blurs the entire screen!)
@@ -825,7 +798,6 @@ object KeyboardStyleHook {
 
                 // 3. Clear background on full-screen container views so nothing bleeds to top
                 rootView.background = null
-                rootView.setPadding(horizontalMarginPx, topMarginPx, horizontalMarginPx, bottomMarginPx)
 
                 val targetView: View = if (rootView is ViewGroup && rootView.childCount > 0) {
                     rootView.getChildAt(0)

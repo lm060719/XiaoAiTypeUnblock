@@ -11,7 +11,6 @@ import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.Button
 import android.widget.EditText
@@ -45,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchVoiceModeration: SwitchCompat
     private lateinit var switchCloudBlacklist: SwitchCompat
     private lateinit var switchClipboardSensitive: SwitchCompat
+    private lateinit var switchClipboardPermanent: SwitchCompat
     private lateinit var switchOsVersionUnblock: SwitchCompat
     private lateinit var switchVerboseLog: SwitchCompat
 
@@ -57,12 +57,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sbOpacity: SeekBar
     private lateinit var tvBlurRadiusValue: TextView
     private lateinit var sbBlurRadius: SeekBar
-    private lateinit var tvMarginTopValue: TextView
-    private lateinit var sbMarginTop: SeekBar
-    private lateinit var tvMarginBottomValue: TextView
-    private lateinit var sbMarginBottom: SeekBar
-    private lateinit var tvMarginHorizontalValue: TextView
-    private lateinit var sbMarginHorizontal: SeekBar
     private lateinit var rgBgType: RadioGroup
     private lateinit var rbBgDefault: RadioButton
     private lateinit var rbBgColor: RadioButton
@@ -115,6 +109,7 @@ class MainActivity : AppCompatActivity() {
         switchVoiceModeration = findViewById(R.id.switchVoiceModeration)
         switchCloudBlacklist = findViewById(R.id.switchCloudBlacklist)
         switchClipboardSensitive = findViewById(R.id.switchClipboardSensitive)
+        switchClipboardPermanent = findViewById(R.id.switchClipboardPermanent)
         switchOsVersionUnblock = findViewById(R.id.switchOsVersionUnblock)
         switchVerboseLog = findViewById(R.id.switchVerboseLog)
 
@@ -127,12 +122,6 @@ class MainActivity : AppCompatActivity() {
         sbOpacity = findViewById(R.id.sbOpacity)
         tvBlurRadiusValue = findViewById(R.id.tvBlurRadiusValue)
         sbBlurRadius = findViewById(R.id.sbBlurRadius)
-        tvMarginTopValue = findViewById(R.id.tvMarginTopValue)
-        sbMarginTop = findViewById(R.id.sbMarginTop)
-        tvMarginBottomValue = findViewById(R.id.tvMarginBottomValue)
-        sbMarginBottom = findViewById(R.id.sbMarginBottom)
-        tvMarginHorizontalValue = findViewById(R.id.tvMarginHorizontalValue)
-        sbMarginHorizontal = findViewById(R.id.sbMarginHorizontal)
         rgBgType = findViewById(R.id.rgBgType)
         rbBgDefault = findViewById(R.id.rbBgDefault)
         rbBgColor = findViewById(R.id.rbBgColor)
@@ -201,6 +190,12 @@ class MainActivity : AppCompatActivity() {
         switchClipboardSensitive.isChecked = prefs.getBoolean(ConfigManager.KEY_CLIPBOARD_SENSITIVE, true)
         switchClipboardSensitive.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_CLIPBOARD_SENSITIVE, isChecked).apply()
+            showRestartHint()
+        }
+
+        switchClipboardPermanent.isChecked = prefs.getBoolean(ConfigManager.KEY_CLIPBOARD_PERMANENT, true)
+        switchClipboardPermanent.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean(ConfigManager.KEY_CLIPBOARD_PERMANENT, isChecked).apply()
             showRestartHint()
         }
 
@@ -279,53 +274,7 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
         })
 
-        // 3. Margins
-        val marginTop = prefs.getInt(ConfigManager.KEY_MARGIN_TOP, 0)
-        sbMarginTop.progress = marginTop
-        tvMarginTopValue.text = "$marginTop dp"
-        sbMarginTop.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvMarginTopValue.text = "$progress dp"
-                if (fromUser) {
-                    prefs.edit().putInt(ConfigManager.KEY_MARGIN_TOP, progress).apply()
-                    updateStylePreview()
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
-        })
-
-        val marginBottom = prefs.getInt(ConfigManager.KEY_MARGIN_BOTTOM, 0)
-        sbMarginBottom.progress = marginBottom
-        tvMarginBottomValue.text = "$marginBottom dp"
-        sbMarginBottom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvMarginBottomValue.text = "$progress dp"
-                if (fromUser) {
-                    prefs.edit().putInt(ConfigManager.KEY_MARGIN_BOTTOM, progress).apply()
-                    updateStylePreview()
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
-        })
-
-        val marginHorizontal = prefs.getInt(ConfigManager.KEY_MARGIN_HORIZONTAL, 0)
-        sbMarginHorizontal.progress = marginHorizontal
-        tvMarginHorizontalValue.text = "$marginHorizontal dp"
-        sbMarginHorizontal.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvMarginHorizontalValue.text = "$progress dp"
-                if (fromUser) {
-                    prefs.edit().putInt(ConfigManager.KEY_MARGIN_HORIZONTAL, progress).apply()
-                    updateStylePreview()
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
-        })
-
-        // 4. Background Type
+        // 3. Background Type
         val bgType = prefs.getInt(ConfigManager.KEY_BG_TYPE, 0)
         when (bgType) {
             1 -> rbBgColor.isChecked = true
@@ -445,9 +394,6 @@ class MainActivity : AppCompatActivity() {
         val opacity = prefs.getInt(ConfigManager.KEY_OPACITY, 100)
         val bgType = prefs.getInt(ConfigManager.KEY_BG_TYPE, 0)
         val bgColorStr = prefs.getString(ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E"
-        val marginTop = prefs.getInt(ConfigManager.KEY_MARGIN_TOP, 0)
-        val marginBottom = prefs.getInt(ConfigManager.KEY_MARGIN_BOTTOM, 0)
-        val marginHorizontal = prefs.getInt(ConfigManager.KEY_MARGIN_HORIZONTAL, 0)
 
         val density = resources.displayMetrics.density
         val radiusPx = (if (isEnabled) cornerRadius else 0) * density
@@ -457,16 +403,6 @@ class MainActivity : AppCompatActivity() {
             try {
                 // Alpha
                 previewKeyboardCard.alpha = alpha
-
-                // Margins on preview layout
-                val lp = previewKeyboardCard.layoutParams as? ViewGroup.MarginLayoutParams
-                if (lp != null) {
-                    val hMarginPx = if (isEnabled) (marginHorizontal * density * 0.5f).toInt() else 0
-                    val topMarginPx = if (isEnabled) (marginTop * density * 0.5f).toInt() else 0
-                    val botMarginPx = if (isEnabled) (marginBottom * density * 0.5f).toInt() else 0
-                    lp.setMargins(hMarginPx, topMarginPx, hMarginPx, botMarginPx)
-                    previewKeyboardCard.layoutParams = lp
-                }
 
                 // Background
                 if (isEnabled) {
@@ -526,12 +462,13 @@ class MainActivity : AppCompatActivity() {
                 .setTitle("关于模块")
                 .setMessage(
                     "【模块功能】\n" +
-                            "1. 键盘外观个性化定制：支持边角圆角弧度滑块、背景透明度、自定义背景图/纯色及上下左右悬浮边距。\n" +
+                            "1. 键盘外观个性化定制：支持边角圆角弧度、背景透明度、动态液态玻璃、自定义背景图及纯色。\n" +
                             "2. 澎湃 OS4+ 版本限制解除：伪装系统版本并清除 z7.s0 阻断标记，在旧系统与第三方 ROM 上正常使用。\n" +
                             "3. AI 表达安全拦截解除：去除 AI 润色与智能回复时的 '已屏蔽敏感内容' 阻断。\n" +
                             "4. 语音转写合规审查解除：拦截 CONTENT_MODERATION 风控弹窗与 30002 错误中断。\n" +
                             "5. 云端黑名单词库下发拦截：阻断 key_blackliststr 下发，保留所有云端候选与热词。\n" +
-                            "6. 剪贴板敏感标记忽略绕过：忽略 IS_SENSITIVE 标记，允许快捷记录与联想。\n\n" +
+                            "6. 剪贴板敏感标记忽略绕过：忽略 IS_SENSITIVE 标记，允许快捷记录与联想。\n" +
+                            "7. 剪贴板永久保存：解除 20 条、72 小时和单条文字长度限制。\n\n" +
                             "【实时日志】\n" +
                             "模块通过跨进程日志桥接，将输入法内部的每次净化/样式应用事件实时汇报到此界面。\n\n" +
                             "【技术架构】\n" +
@@ -549,6 +486,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 val process = Runtime.getRuntime().exec("su")
                 val os = DataOutputStream(process.outputStream)
+                os.writeBytes("am force-stop com.miui.phrase\n")
                 os.writeBytes("am force-stop com.xiaomi.type\n")
                 os.writeBytes("exit\n")
                 os.flush()
