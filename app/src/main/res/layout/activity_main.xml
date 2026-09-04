@@ -74,284 +74,7 @@
 
             </LinearLayout>
 
-            <!-- Section Title: Stats -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:layout_marginBottom="8dp"
-                android:text="实时拦截统计"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
 
-            <!-- Stats Grid (Row 1: 3 Cards) -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:orientation="horizontal">
-
-                <!-- Stat 1: AI Safety -->
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="4dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_card"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="AI安全拦截"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
-
-                    <TextView
-                        android:id="@+id/tvCountAi"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="0"
-                        android:textColor="#10B981"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                </LinearLayout>
-
-                <!-- Stat 2: Voice Moderation -->
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_card"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="语音风控"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
-
-                    <TextView
-                        android:id="@+id/tvCountVoice"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="0"
-                        android:textColor="#F59E0B"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                </LinearLayout>
-
-                <!-- Stat 3: Cloud Blacklist -->
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_card"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="黑名单清除"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
-
-                    <TextView
-                        android:id="@+id/tvCountBlacklist"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="0"
-                        android:textColor="#8B5CF6"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                </LinearLayout>
-
-            </LinearLayout>
-
-            <!-- Stats Grid (Row 2: 3 Cards) -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:orientation="horizontal">
-
-                <!-- Stat 4: Clipboard -->
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="4dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_card"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="剪贴板绕过"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
-
-                    <TextView
-                        android:id="@+id/tvCountClipboard"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="0"
-                        android:textColor="#EC4899"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                </LinearLayout>
-
-                <!-- Stat 5: OS Version Unblock -->
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_card"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="OS4限制解除"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
-
-                    <TextView
-                        android:id="@+id/tvCountOsVersion"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="0"
-                        android:textColor="#06B6D4"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                </LinearLayout>
-
-                <!-- Stat 6: Custom Style Applied -->
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_card"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="样式美化"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
-
-                    <TextView
-                        android:id="@+id/tvCountStyle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="0"
-                        android:textColor="#F43F5E"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                </LinearLayout>
-
-            </LinearLayout>
-
-            <!-- Section Title: Live Logs Header -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:layout_marginEnd="4dp"
-                android:layout_marginBottom="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="实时生效日志"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/btnRefreshLogs"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:padding="4dp"
-                    android:text="刷新"
-                    android:textColor="@color/primary"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/btnClearLogs"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:padding="4dp"
-                    android:text="清空"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <!-- Live Logs Card Container -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:background="@drawable/bg_card"
-                android:minHeight="140dp"
-                android:orientation="vertical"
-                android:padding="12dp">
-
-                <!-- Empty State -->
-                <TextView
-                    android:id="@+id/tvEmptyLogs"
-                    android:layout_width="match_parent"
-                    android:layout_height="120dp"
-                    android:gravity="center"
-                    android:lineSpacingExtra="4dp"
-                    android:text="暂无拦截记录\n在输入法中使用 AI润色 / 语音输入 / 剪贴板时\n将在此实时显示拦截生效日志"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
-
-                <!-- RecyclerView for Logs -->
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvLogs"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false"
-                    android:visibility="gone" />
-
-            </LinearLayout>
 
             <!-- Section Title: Switches -->
             <TextView
@@ -408,7 +131,7 @@
                         android:id="@+id/switchAiSafety"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -455,7 +178,7 @@
                         android:id="@+id/switchVoiceModeration"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -502,7 +225,7 @@
                         android:id="@+id/switchCloudBlacklist"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -549,11 +272,65 @@
                         android:id="@+id/switchClipboardSensitive"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
-                <!-- Switch 5: OS Version Unblock -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="14dp"
+                    android:layout_marginEnd="14dp"
+                    android:background="@color/card_stroke" />
+
+                <!-- Switch 5: Permanent Clipboard -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="剪贴板永久保存"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="解除 20 条、72 小时与单条文字长度限制"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                    </LinearLayout>
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switchClipboardPermanent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="false" />
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="14dp"
+                    android:layout_marginEnd="14dp"
+                    android:background="@color/card_stroke" />
+
+                <!-- Switch 6: OS Version Unblock -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -579,7 +356,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="绕过非 HyperOS 4.0+ 系统的弹窗阻断与自退限制，在旧系统与第三方 ROM 上正常使用"
+                            android:text="绕过非 HyperOS 4.0+ 系统的弹窗阻断与自退限制"
                             android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
@@ -589,7 +366,7 @@
                         android:id="@+id/switchOsVersionUnblock"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -600,7 +377,7 @@
                     android:layout_marginEnd="14dp"
                     android:background="@color/card_stroke" />
 
-                <!-- Switch 6: Verbose Log -->
+                <!-- Switch 7: Verbose Log -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -636,7 +413,7 @@
                         android:id="@+id/switchVerboseLog"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -688,7 +465,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="自定义圆角弧度、背景透明度、背景图及上下左右边距"
+                            android:text="自定义圆角弧度、背景透明度、动态液态玻璃、背景图及纯色"
                             android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
@@ -698,7 +475,7 @@
                         android:id="@+id/switchStyleEnabled"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:checked="false" />
 
                 </LinearLayout>
 
@@ -816,7 +593,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="毛玻璃模糊强度 (动态玻璃)"
+                                android:text="毛玻璃模糊强度 (柔光玻璃)"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="12sp" />
 
@@ -848,130 +625,7 @@
                         android:layout_marginEnd="14dp"
                         android:background="@color/card_stroke" />
 
-                    <!-- 3. Margins & Insets -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="键盘边距微调 (卡片浮岛)"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-
-                        <!-- Top Margin -->
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="顶部边距"
-                                android:textColor="@color/text_secondary"
-                                android:textSize="12sp" />
-
-                            <TextView
-                                android:id="@+id/tvMarginTopValue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="0 dp"
-                                android:textColor="@color/primary"
-                                android:textSize="12sp"
-                                android:textStyle="bold" />
-
-                        </LinearLayout>
-
-                        <SeekBar
-                            android:id="@+id/sbMarginTop"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:max="40"
-                            android:progress="0" />
-
-                        <!-- Bottom Margin -->
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="底部边距"
-                                android:textColor="@color/text_secondary"
-                                android:textSize="12sp" />
-
-                            <TextView
-                                android:id="@+id/tvMarginBottomValue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="0 dp"
-                                android:textColor="@color/primary"
-                                android:textSize="12sp"
-                                android:textStyle="bold" />
-
-                        </LinearLayout>
-
-                        <SeekBar
-                            android:id="@+id/sbMarginBottom"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:max="48"
-                            android:progress="0" />
-
-                        <!-- Horizontal Margin -->
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="左右边距"
-                                android:textColor="@color/text_secondary"
-                                android:textSize="12sp" />
-
-                            <TextView
-                                android:id="@+id/tvMarginHorizontalValue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="0 dp"
-                                android:textColor="@color/primary"
-                                android:textSize="12sp"
-                                android:textStyle="bold" />
-
-                        </LinearLayout>
-
-                        <SeekBar
-                            android:id="@+id/sbMarginHorizontal"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:max="32"
-                            android:progress="0" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 4. Background Customization -->
+                    <!-- 3. Background Customization -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -999,7 +653,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginEnd="8dp"
                                 android:checked="true"
-                                android:text="动态毛玻璃 (HyperOS 动态液态玻璃)"
+                                android:text="动态毛玻璃 (柔光玻璃)"
                                 android:textSize="12sp" />
 
                             <RadioButton
@@ -1183,209 +837,6 @@
 
                     </LinearLayout>
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 5. Realtime Preview Container -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginBottom="8dp"
-                            android:text="实时样式模拟预览："
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
-                        <FrameLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="120dp"
-                            android:background="@drawable/bg_preview_container"
-                            android:padding="8dp">
-
-                            <!-- Keyboard Mock Card -->
-                            <FrameLayout
-                                android:id="@+id/previewKeyboardCard"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:background="#1E1E2E"
-                                android:elevation="6dp">
-
-                                <LinearLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="match_parent"
-                                    android:orientation="vertical"
-                                    android:padding="6dp">
-
-                                    <!-- Mock Candidates Bar -->
-                                    <LinearLayout
-                                        android:layout_width="match_parent"
-                                        android:layout_height="22dp"
-                                        android:gravity="center_vertical"
-                                        android:orientation="horizontal">
-
-                                        <TextView
-                                            android:layout_width="wrap_content"
-                                            android:layout_height="wrap_content"
-                                            android:layout_marginEnd="12dp"
-                                            android:text="1. 小爱"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="11sp"
-                                            android:textStyle="bold" />
-
-                                        <TextView
-                                            android:layout_width="wrap_content"
-                                            android:layout_height="wrap_content"
-                                            android:layout_marginEnd="12dp"
-                                            android:text="2. 输入法"
-                                            android:textColor="#CBD5E1"
-                                            android:textSize="11sp" />
-
-                                        <TextView
-                                            android:layout_width="wrap_content"
-                                            android:layout_height="wrap_content"
-                                            android:text="3. 净化"
-                                            android:textColor="#CBD5E1"
-                                            android:textSize="11sp" />
-
-                                    </LinearLayout>
-
-                                    <!-- Mock Keys Row 1 -->
-                                    <LinearLayout
-                                        android:layout_width="match_parent"
-                                        android:layout_height="0dp"
-                                        android:layout_marginTop="4dp"
-                                        android:layout_weight="1"
-                                        android:orientation="horizontal">
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#334155"
-                                            android:gravity="center"
-                                            android:text="Q"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="10sp" />
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#334155"
-                                            android:gravity="center"
-                                            android:text="W"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="10sp" />
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#334155"
-                                            android:gravity="center"
-                                            android:text="E"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="10sp" />
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#334155"
-                                            android:gravity="center"
-                                            android:text="R"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="10sp" />
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#334155"
-                                            android:gravity="center"
-                                            android:text="T"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="10sp" />
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#334155"
-                                            android:gravity="center"
-                                            android:text="Y"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="10sp" />
-
-                                    </LinearLayout>
-
-                                    <!-- Mock Spacebar Row -->
-                                    <LinearLayout
-                                        android:layout_width="match_parent"
-                                        android:layout_height="0dp"
-                                        android:layout_marginTop="2dp"
-                                        android:layout_weight="1"
-                                        android:orientation="horizontal">
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#475569"
-                                            android:gravity="center"
-                                            android:text="符"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="9sp" />
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="3"
-                                            android:background="#334155"
-                                            android:gravity="center"
-                                            android:text="中 / 英 空格"
-                                            android:textColor="#CBD5E1"
-                                            android:textSize="9sp" />
-
-                                        <TextView
-                                            android:layout_width="0dp"
-                                            android:layout_height="match_parent"
-                                            android:layout_margin="2dp"
-                                            android:layout_weight="1"
-                                            android:background="#2563EB"
-                                            android:gravity="center"
-                                            android:text="发送"
-                                            android:textColor="#FFFFFF"
-                                            android:textSize="9sp"
-                                            android:textStyle="bold" />
-
-                                    </LinearLayout>
-
-                                </LinearLayout>
-
-                            </FrameLayout>
-
-                        </FrameLayout>
-
-                    </LinearLayout>
 
                 </LinearLayout>
 
