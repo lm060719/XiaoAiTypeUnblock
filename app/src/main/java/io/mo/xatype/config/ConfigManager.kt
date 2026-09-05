@@ -23,6 +23,11 @@ object ConfigManager {
     const val KEY_BLUR_RADIUS = "pref_blur_radius" // 20 to 100
     const val KEY_BG_TYPE = "pref_bg_type" // 0: DYNAMIC_GLASS, 1: COLOR, 2: IMAGE
     const val KEY_BG_COLOR = "pref_bg_color"
+    const val KEY_TEXT_COLOR = "pref_text_color" // Empty: automatic contrast, otherwise HEX color
+    // Keep the original preference key so existing users retain the color they
+    // selected before this setting was correctly identified as function-key-only.
+    const val KEY_FUNCTION_KEYCAP_COLOR = "pref_keycap_color" // Empty: system color
+    const val KEY_LETTER_KEYCAP_COLOR = "pref_letter_keycap_color" // Empty: system color
     const val KEY_BG_IMAGE_VERSION = "pref_bg_image_version"
 
     private var remotePrefs: SharedPreferences? = null
@@ -40,6 +45,9 @@ object ConfigManager {
     @Volatile private var cachedBlurRadius = 50
     @Volatile private var cachedBgType = 0
     @Volatile private var cachedBgColor = "#1E1E2E"
+    @Volatile private var cachedTextColor = ""
+    @Volatile private var cachedFunctionKeycapColor = ""
+    @Volatile private var cachedLetterKeycapColor = ""
     @Volatile private var cachedBgImageVersion = 0L
     @Volatile private var hasSyncedFromProvider = false
 
@@ -68,6 +76,9 @@ object ConfigManager {
                 cachedBlurRadius = bundle.getInt(KEY_BLUR_RADIUS, 50)
                 cachedBgType = bundle.getInt(KEY_BG_TYPE, 0)
                 cachedBgColor = bundle.getString(KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E"
+                cachedTextColor = bundle.getString(KEY_TEXT_COLOR, "") ?: ""
+                cachedFunctionKeycapColor = bundle.getString(KEY_FUNCTION_KEYCAP_COLOR, "") ?: ""
+                cachedLetterKeycapColor = bundle.getString(KEY_LETTER_KEYCAP_COLOR, "") ?: ""
                 cachedBgImageVersion = bundle.getLong(KEY_BG_IMAGE_VERSION, 0L)
                 hasSyncedFromProvider = true
             }
@@ -133,6 +144,23 @@ object ConfigManager {
     fun getBgColor(): String {
         if (hasSyncedFromProvider) return cachedBgColor
         return remotePrefs?.getString(KEY_BG_COLOR, cachedBgColor) ?: cachedBgColor
+    }
+
+    fun getTextColor(): String {
+        if (hasSyncedFromProvider) return cachedTextColor
+        return remotePrefs?.getString(KEY_TEXT_COLOR, cachedTextColor) ?: cachedTextColor
+    }
+
+    fun getFunctionKeycapColor(): String {
+        if (hasSyncedFromProvider) return cachedFunctionKeycapColor
+        return remotePrefs?.getString(KEY_FUNCTION_KEYCAP_COLOR, cachedFunctionKeycapColor)
+            ?: cachedFunctionKeycapColor
+    }
+
+    fun getLetterKeycapColor(): String {
+        if (hasSyncedFromProvider) return cachedLetterKeycapColor
+        return remotePrefs?.getString(KEY_LETTER_KEYCAP_COLOR, cachedLetterKeycapColor)
+            ?: cachedLetterKeycapColor
     }
 
     fun getBgImageVersion(): Long {

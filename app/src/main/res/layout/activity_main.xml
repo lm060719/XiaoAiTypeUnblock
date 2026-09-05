@@ -465,7 +465,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="自定义圆角弧度、背景透明度、动态液态玻璃、背景图及纯色"
+                            android:text="自定义圆角、背景、透明度、字体与键帽颜色"
                             android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
@@ -664,13 +664,6 @@
                                 android:text="纯色背景"
                                 android:textSize="12sp" />
 
-                            <RadioButton
-                                android:id="@+id/rbBgImage"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="自定义图片"
-                                android:textSize="12sp" />
-
                         </RadioGroup>
 
                         <!-- Solid Color Config Area -->
@@ -752,88 +745,198 @@
 
                             </LinearLayout>
 
-                            <!-- Custom Hex Input -->
+                            <!-- RGB Sliders -->
                             <LinearLayout
+                                android:id="@+id/rgbBackgroundControls"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
-
-                                <EditText
-                                    android:id="@+id/etCustomColor"
-                                    android:layout_width="0dp"
-                                    android:layout_height="40dp"
-                                    android:layout_weight="1"
-                                    android:background="@drawable/bg_preview_container"
-                                    android:hint="#1E1E2E"
-                                    android:paddingStart="10dp"
-                                    android:paddingEnd="10dp"
-                                    android:singleLine="true"
-                                    android:textColor="@color/text_primary"
-                                    android:textSize="13sp" />
-
-                                <Button
-                                    android:id="@+id/btnApplyCustomColor"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="40dp"
-                                    android:layout_marginStart="8dp"
-                                    android:background="@drawable/bg_button_primary"
-                                    android:text="应用颜色"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="12sp" />
-
-                            </LinearLayout>
+                                android:orientation="vertical" />
 
                         </LinearLayout>
 
-                        <!-- Custom Image Config Area -->
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 4. Key Text Color -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
                         <LinearLayout
-                            android:id="@+id/layoutBgImageConfig"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="自定义按键字体颜色"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="关闭时根据键盘底色自动使用黑色或白色"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                            </LinearLayout>
+
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchCustomTextColor"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layoutTextColorConfig"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
                             android:orientation="vertical"
-                            android:visibility="gone">
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 5. Function Keycap Color -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
 
                             <LinearLayout
-                                android:layout_width="match_parent"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal">
+                                android:layout_weight="1"
+                                android:orientation="vertical">
 
-                                <Button
-                                    android:id="@+id/btnPickBgImage"
-                                    android:layout_width="0dp"
-                                    android:layout_height="40dp"
-                                    android:layout_marginEnd="6dp"
-                                    android:layout_weight="1"
-                                    android:background="@drawable/bg_button_primary"
-                                    android:text="从相册选择图片..."
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="12sp" />
-
-                                <Button
-                                    android:id="@+id/btnClearBgImage"
+                                <TextView
                                     android:layout_width="wrap_content"
-                                    android:layout_height="40dp"
-                                    android:layout_marginStart="6dp"
-                                    android:background="@drawable/bg_button_outlined"
-                                    android:text="清除图片"
-                                    android:textColor="@color/primary"
-                                    android:textSize="12sp" />
+                                    android:layout_height="wrap_content"
+                                    android:text="自定义功能键键帽颜色"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="分词、退格、符号、123、中/英等功能键"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
 
                             </LinearLayout>
 
-                            <ImageView
-                                android:id="@+id/ivBgImagePreview"
-                                android:layout_width="match_parent"
-                                android:layout_height="80dp"
-                                android:layout_marginTop="8dp"
-                                android:background="@drawable/bg_preview_container"
-                                android:scaleType="centerCrop"
-                                android:visibility="gone" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchCustomFunctionKeycapColor"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
 
                         </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layoutFunctionKeycapColorConfig"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 6. Letter Keycap Color -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="自定义字母键键帽颜色"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="字母、数字等主键的常态键帽颜色"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                            </LinearLayout>
+
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchCustomLetterKeycapColor"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layoutLetterKeycapColorConfig"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone" />
 
                     </LinearLayout>
 

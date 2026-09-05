@@ -130,13 +130,40 @@ object KeyboardStyleHook {
                                 colors,
                                 ConfigManager.isStyleEnabled(),
                                 ConfigManager.getBgType(),
-                                ConfigManager.getBgColor()
+                                ConfigManager.getBgColor(),
+                                ConfigManager.getTextColor(),
+                                ConfigManager.getFunctionKeycapColor(),
+                                ConfigManager.getLetterKeycapColor()
                             )
                         }
                         colors
                     }
                     XposedUtils.log(module, "KeyboardStyleHook: Hooked na.m.w (Keyboard contrast)")
                 }
+            }
+
+            // In 0.2.599.905736fd the main QWERTY key renderer (aa.s6.a)
+            // obtains the normal letter/number keycap color through na.d.d().
+            // Hooking this accessor is deliberately narrower than mutating the
+            // backing `c` field, which is also reused by cards and voice panels.
+            val colorsClass = XposedUtils.findClass("na.d", classLoader)
+            val normalKeycapMethod = colorsClass?.declaredMethods?.find {
+                it.name == "d" &&
+                    it.parameterTypes.isEmpty() &&
+                    it.returnType == Long::class.javaPrimitiveType
+            }
+            if (normalKeycapMethod != null) {
+                module.hook(normalKeycapMethod).intercept { chain ->
+                    val customColor = parseOptionalColor(ConfigManager.getLetterKeycapColor())
+                    if (ConfigManager.isStyleEnabled() && customColor != null) {
+                        composeColor(customColor)
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                XposedUtils.log(module, "KeyboardStyleHook: Hooked na.d.d (Letter keycap color)")
+            } else {
+                XposedUtils.logError(module, "na.d.d() not found for letter keycap color", null)
             }
         } catch (t: Throwable) {
             XposedUtils.logError(module, "Error hooking Compose style tokens", t)
@@ -469,9 +496,12 @@ object KeyboardStyleHook {
         colors: Any,
         enabled: Boolean,
         bgType: Int,
-        bgColor: String
+        bgColor: String,
+        textColor: String,
+        functionKeycapColor: String,
+        letterKeycapColor: String
     ) {
-        val coreFields = arrayOf("h", "i", "k", "l", "m", "w", "x", "z", "A", "B")
+        val coreFields = arrayOf("d", "e", "h", "i", "k", "l", "m", "w", "x", "z", "A", "B")
         val appsPanelFields = arrayOf("B0", "C0", "D0", "E0", "F0", "G0", "H0", "I0", "J0", "K0", "L0")
         val fieldNames = coreFields + appsPanelFields
         synchronized(originalAppsPanelColors) {
@@ -498,8 +528,38 @@ object KeyboardStyleHook {
             } else {
                 systemDark
             }
-            val primary = if (surfaceDark) Color.argb(242, 255, 255, 255) else Color.argb(230, 0, 0, 0)
-            val secondary = if (surfaceDark) Color.argb(217, 255, 255, 255) else Color.argb(178, 0, 0, 0)
+            val customText = textColor.takeIf { it.isNotBlank() }?.let {
+                try {
+                    Color.parseColor(it)
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+            val customFunctionKeycap = parseOptionalColor(functionKeycapColor)
+            val customLetterKeycap = parseOptionalColor(letterKeycapColor)
+            val keySurfaceDark = (customLetterKeycap ?: customFunctionKeycap)?.let {
+                (299 * Color.red(it) + 587 * Color.green(it) + 114 * Color.blue(it)) / 1000 < 150
+            } ?: surfaceDark
+            val primary = customText
+                ?: if (surfaceDark) Color.argb(242, 255, 255, 255) else Color.argb(230, 0, 0, 0)
+            val secondary = customText?.let {
+                Color.argb(
+                    (Color.alpha(it) * 0.82f).toInt(),
+                    Color.red(it),
+                    Color.green(it),
+                    Color.blue(it)
+                )
+            } ?: if (surfaceDark) Color.argb(217, 255, 255, 255) else Color.argb(178, 0, 0, 0)
+            val keyPrimary = customText
+                ?: if (keySurfaceDark) Color.argb(242, 255, 255, 255) else Color.argb(230, 0, 0, 0)
+            val keySecondary = customText?.let {
+                Color.argb(
+                    (Color.alpha(it) * 0.82f).toInt(),
+                    Color.red(it),
+                    Color.green(it),
+                    Color.blue(it)
+                )
+            } ?: if (keySurfaceDark) Color.argb(217, 255, 255, 255) else Color.argb(178, 0, 0, 0)
             val divider = if (surfaceDark) Color.argb(54, 255, 255, 255) else Color.argb(42, 0, 0, 0)
             val card = if (surfaceDark) Color.argb(46, 255, 255, 255) else Color.argb(105, 255, 255, 255)
             val tooltip = if (surfaceDark) Color.rgb(45, 48, 53) else Color.rgb(250, 250, 250)
@@ -516,28 +576,54 @@ object KeyboardStyleHook {
                 "G0" to accent,
                 "H0" to primary,
                 "I0" to tooltip,
-                "J0" to (if (surfaceDark) Color.WHITE else Color.BLACK),
+                "J0" to (customText ?: if (surfaceDark) Color.WHITE else Color.BLACK),
                 "K0" to tooltipBorder,
                 "L0" to tooltipShadow
             )
-            if (bgType == 1) {
+            if (customFunctionKeycap != null) {
+                replacements["e"] = customFunctionKeycap
+                replacements["d"] = resolvePressedKeycapColor(customFunctionKeycap, keySurfaceDark)
+            }
+            if (bgType == 1 || customText != null || customFunctionKeycap != null || customLetterKeycap != null) {
                 replacements.putAll(
                     mapOf(
-                        "h" to primary,
-                        "i" to secondary,
-                        "k" to secondary,
-                        "l" to primary,
-                        "m" to primary,
-                        "w" to primary,
-                        "x" to primary,
-                        "z" to primary,
-                        "A" to divider,
-                        "B" to divider
+                        "h" to keyPrimary,
+                        "i" to keySecondary,
+                        "k" to keySecondary,
+                        "l" to keyPrimary,
+                        "m" to keyPrimary,
+                        "w" to keyPrimary,
+                        "x" to keyPrimary,
+                        "z" to keyPrimary
                     )
                 )
             }
+            if (bgType == 1) {
+                replacements["A"] = divider
+                replacements["B"] = divider
+            }
             replacements.forEach { (name, value) -> writeLongField(colors, name, composeColor(value)) }
         }
+    }
+
+    private fun parseOptionalColor(value: String): Int? = value.takeIf { it.isNotBlank() }?.let {
+        try {
+            Color.parseColor(it)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun resolvePressedKeycapColor(color: Int, dark: Boolean): Int {
+        val target = if (dark) 255 else 0
+        val amount = if (dark) 0.18f else 0.14f
+        fun blend(channel: Int): Int = (channel + (target - channel) * amount).toInt().coerceIn(0, 255)
+        return Color.argb(
+            Color.alpha(color),
+            blend(Color.red(color)),
+            blend(Color.green(color)),
+            blend(Color.blue(color))
+        )
     }
 
     private fun getOrLoadBitmap(service: android.content.Context): Bitmap? {
@@ -724,6 +810,25 @@ object KeyboardStyleHook {
             Color.red(parsedColor),
             Color.green(parsedColor),
             Color.blue(parsedColor)
+        )
+    }
+
+    /**
+     * HyperOS draws the navigation/accessory strip on a separate system surface.
+     * Passing the translucent keyboard color to that surface makes it blend over
+     * the system's dark backing (and sometimes through two bottom-bar layers), so
+     * it appears much darker than the keyboard card. Flatten it over the light IME
+     * backing first; an opaque result also avoids repeated alpha composition.
+     */
+    private fun resolveSolidBottomBarColor(colorString: String, opacity: Int): Int {
+        val color = resolveSolidColor(colorString, opacity)
+        val alpha = Color.alpha(color)
+        fun compositeOverWhite(channel: Int): Int =
+            ((channel * alpha + 255 * (255 - alpha)) / 255).coerceIn(0, 255)
+        return Color.rgb(
+            compositeOverWhite(Color.red(color)),
+            compositeOverWhite(Color.green(color)),
+            compositeOverWhite(Color.blue(color))
         )
     }
 
@@ -947,7 +1052,7 @@ object KeyboardStyleHook {
         opacity: Int,
         bgColor: String
     ): Int {
-        if (bgType == 1) return resolveSolidColor(bgColor, opacity)
+        if (bgType == 1) return resolveSolidBottomBarColor(bgColor, opacity)
         if (bgType != 0) return Color.TRANSPARENT
         val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)

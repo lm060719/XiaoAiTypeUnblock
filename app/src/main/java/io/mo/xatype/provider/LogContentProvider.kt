@@ -37,6 +37,9 @@ class LogContentProvider : ContentProvider() {
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_BLUR_RADIUS, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_BLUR_RADIUS, 50))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_BG_TYPE, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_BG_TYPE, 0))
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E")
+                    result.putString(io.mo.xatype.config.ConfigManager.KEY_TEXT_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_TEXT_COLOR, "") ?: "")
+                    result.putString(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, "") ?: "")
+                    result.putString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, "") ?: "")
                     result.putLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, sp.getLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, 0L))
                 }
             }
