@@ -1,6 +1,7 @@
 package io.mo.xatype.hooks
 
 import android.content.res.Configuration
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -9,17 +10,22 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.widget.ImageView
+import android.widget.PopupWindow
+import android.widget.TextView
 import io.github.libxposed.api.XposedModule
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
 import java.util.WeakHashMap
+import java.util.concurrent.ConcurrentHashMap
 
 object KeyboardStyleHook {
 
@@ -30,6 +36,7 @@ object KeyboardStyleHook {
     // so identity keys are required to keep restoration reliable after patching.
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
     private val materialRefreshGenerations = WeakHashMap<View, Int>()
+    private val clipboardAdapterHooks = ConcurrentHashMap.newKeySet<Class<*>>()
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
@@ -37,6 +44,8 @@ object KeyboardStyleHook {
             XposedUtils.logError(module, "MiInputMethodService class not found for KeyboardStyleHook", null)
             return
         }
+
+        installClipboardPopupHook(module)
 
         // 1. Hook onCreateInputView()
         val onCreateInputViewMethod = XposedUtils.findMethodExact(imeServiceClass, "onCreateInputView")
@@ -133,6 +142,7 @@ object KeyboardStyleHook {
                                 ConfigManager.getBgColor(),
                                 ConfigManager.getTextColor(),
                                 ConfigManager.getFunctionKeycapColor(),
+                                ConfigManager.getMenuCardColor(),
                                 ConfigManager.getLetterKeycapColor()
                             )
                         }
@@ -499,6 +509,7 @@ object KeyboardStyleHook {
         bgColor: String,
         textColor: String,
         functionKeycapColor: String,
+        menuCardColor: String,
         letterKeycapColor: String
     ) {
         val coreFields = arrayOf("d", "e", "h", "i", "k", "l", "m", "w", "x", "z", "A", "B")
@@ -536,20 +547,11 @@ object KeyboardStyleHook {
                 }
             }
             val customFunctionKeycap = parseOptionalColor(functionKeycapColor)
+            val customMenuCard = parseOptionalColor(menuCardColor)
             val customLetterKeycap = parseOptionalColor(letterKeycapColor)
             val keySurfaceDark = (customLetterKeycap ?: customFunctionKeycap)?.let {
                 (299 * Color.red(it) + 587 * Color.green(it) + 114 * Color.blue(it)) / 1000 < 150
             } ?: surfaceDark
-            val primary = customText
-                ?: if (surfaceDark) Color.argb(242, 255, 255, 255) else Color.argb(230, 0, 0, 0)
-            val secondary = customText?.let {
-                Color.argb(
-                    (Color.alpha(it) * 0.82f).toInt(),
-                    Color.red(it),
-                    Color.green(it),
-                    Color.blue(it)
-                )
-            } ?: if (surfaceDark) Color.argb(217, 255, 255, 255) else Color.argb(178, 0, 0, 0)
             val keyPrimary = customText
                 ?: if (keySurfaceDark) Color.argb(242, 255, 255, 255) else Color.argb(230, 0, 0, 0)
             val keySecondary = customText?.let {
@@ -560,6 +562,19 @@ object KeyboardStyleHook {
                     Color.blue(it)
                 )
             } ?: if (keySurfaceDark) Color.argb(217, 255, 255, 255) else Color.argb(178, 0, 0, 0)
+            val menuSurfaceDark = customMenuCard?.let {
+                (299 * Color.red(it) + 587 * Color.green(it) + 114 * Color.blue(it)) / 1000 < 150
+            } ?: surfaceDark
+            val menuPrimary = customText
+                ?: if (menuSurfaceDark) Color.argb(242, 255, 255, 255) else Color.argb(230, 0, 0, 0)
+            val menuSecondary = customText?.let {
+                Color.argb(
+                    (Color.alpha(it) * 0.82f).toInt(),
+                    Color.red(it),
+                    Color.green(it),
+                    Color.blue(it)
+                )
+            } ?: if (menuSurfaceDark) Color.argb(217, 255, 255, 255) else Color.argb(178, 0, 0, 0)
             val divider = if (surfaceDark) Color.argb(54, 255, 255, 255) else Color.argb(42, 0, 0, 0)
             val card = if (surfaceDark) Color.argb(46, 255, 255, 255) else Color.argb(105, 255, 255, 255)
             val tooltip = if (surfaceDark) Color.rgb(45, 48, 53) else Color.rgb(250, 250, 250)
@@ -569,12 +584,12 @@ object KeyboardStyleHook {
 
             val replacements = mutableMapOf(
                 "B0" to Color.TRANSPARENT,
-                "C0" to card,
-                "D0" to secondary,
-                "E0" to primary,
+                "C0" to (customMenuCard ?: card),
+                "D0" to menuSecondary,
+                "E0" to menuPrimary,
                 "F0" to Color.argb(48, 52, 130, 255),
                 "G0" to accent,
-                "H0" to primary,
+                "H0" to menuPrimary,
                 "I0" to tooltip,
                 "J0" to (customText ?: if (surfaceDark) Color.WHITE else Color.BLACK),
                 "K0" to tooltipBorder,
@@ -605,6 +620,340 @@ object KeyboardStyleHook {
             replacements.forEach { (name, value) -> writeLongField(colors, name, composeColor(value)) }
         }
     }
+
+    /**
+     * MIUIFrequentPhrase supplies this PopupWindow class, but the Xiaomi IME
+     * loads and displays it in its own process. Hooking the framework show call
+     * avoids racing the APK's dynamic class loader and runs after all stock
+     * panel backgrounds have been assigned.
+     */
+    private fun installClipboardPopupHook(module: XposedModule) {
+        PopupWindow::class.java.declaredMethods
+            .filter { it.name == "showAtLocation" && it.parameterTypes.size == 4 }
+            .forEach { method ->
+                method.isAccessible = true
+                module.hook(method).intercept { chain ->
+                    val result = chain.proceed()
+                    val popup = chain.thisObject as? PopupWindow
+                    if (popup?.javaClass?.name == CLIPBOARD_POPUP_CLASS) {
+                        applyClipboardPopupStyle(module, popup)
+                    }
+                    result
+                }
+            }
+        XposedUtils.log(module, "KeyboardStyleHook: Hooked clipboard PopupWindow glass styling")
+    }
+
+    private fun applyClipboardPopupStyle(module: XposedModule, popup: PopupWindow) {
+        val service = XposedUtils.getObjectField(popup, "mInputMethodService") as?
+            android.inputmethodservice.InputMethodService ?: return
+        ConfigManager.syncFromProvider(service)
+        if (!ConfigManager.isStyleEnabled()) return
+
+        val root = popup.contentView ?: return
+        val inside = findViewByResourceName(root, "inside_view") ?: root
+        popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        root.background = null
+        findViewByResourceName(root, "outside_view")?.background = null
+
+        popup.javaClass.classLoader?.let { loader ->
+            installClipboardAdapterHooks(module, loader)
+        }
+        inside.post {
+            try {
+                val density = inside.resources.displayMetrics.density
+                val radiusPx = ConfigManager.getCornerRadius().coerceAtLeast(0) * density
+                when (ConfigManager.getBgType()) {
+                    0 -> {
+                        inside.setBackgroundColor(Color.TRANSPARENT)
+                        val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+                        if (helper != null) {
+                            updateCachedGlassTokens(
+                                helper,
+                                ConfigManager.getBlurRadius(),
+                                ConfigManager.getOpacity()
+                            )
+                            try {
+                                invokeHelperMethod(helper, "c", inside)
+                            } catch (t: Throwable) {
+                                XposedUtils.logError(
+                                    module,
+                                    "KeyboardStyleHook: clipboard native HyperMaterial apply failed",
+                                    t
+                                )
+                            }
+                        }
+                        val isDark = isDarkSurface(service)
+                        applySoftGlassForeground(
+                            inside,
+                            isDark,
+                            ConfigManager.getOpacity(),
+                            radiusPx
+                        )
+                    }
+                    1 -> {
+                        inside.foreground = null
+                        inside.background = ColorDrawable(
+                            resolveSolidColor(
+                                ConfigManager.getBgColor(),
+                                ConfigManager.getOpacity()
+                            )
+                        )
+                    }
+                    2 -> {
+                        inside.foreground = null
+                        getOrLoadBitmap(service)?.takeIf { !it.isRecycled }?.let { bitmap ->
+                            inside.background = BitmapDrawable(service.resources, bitmap).apply {
+                                alpha = ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100
+                            }
+                        }
+                    }
+                }
+
+                applyTopCornerOutline(inside, radiusPx)
+                styleClipboardViewTree(root)
+                root.postDelayed({ styleClipboardViewTree(root) }, 120L)
+                root.postDelayed({ styleClipboardViewTree(root) }, 480L)
+                if (ConfigManager.isVerboseLogEnabled()) {
+                    XposedUtils.log(
+                        module,
+                        "KeyboardStyleHook: clipboard panel synchronized with keyboard background"
+                    )
+                }
+            } catch (t: Throwable) {
+                XposedUtils.logError(module, "KeyboardStyleHook: clipboard panel styling failed", t)
+            }
+        }
+    }
+
+    private fun installClipboardAdapterHooks(module: XposedModule, classLoader: ClassLoader) {
+        CLIPBOARD_ADAPTER_CLASSES.forEach { className ->
+            val adapterClass = XposedUtils.findClass(className, classLoader) ?: return@forEach
+            if (!clipboardAdapterHooks.add(adapterClass)) return@forEach
+
+            adapterClass.declaredMethods
+                .filter {
+                    (it.name == "onBindViewHolder" && it.parameterTypes.size >= 2) ||
+                        (it.name == "onCreateViewHolder" && it.parameterTypes.size >= 2)
+                }
+                .forEach { method ->
+                    method.isAccessible = true
+                    module.hook(method).intercept { chain ->
+                        val result = chain.proceed()
+                        if (ConfigManager.isStyleEnabled()) {
+                            val holder = if (method.name == "onCreateViewHolder") {
+                                result
+                            } else {
+                                chain.getArg(0)
+                            }
+                            val itemView = holder?.let {
+                                XposedUtils.getObjectField(it, "itemView") as? View
+                            }
+                            itemView?.post { styleClipboardViewTree(itemView) }
+                        }
+                        result
+                    }
+                }
+        }
+    }
+
+    private fun styleClipboardViewTree(view: View) {
+        val name = resourceEntryName(view)
+        val palette = clipboardPalette(view)
+        val density = view.resources.displayMetrics.density
+        val itemRadius = 18f * density
+        val smallRadius = 12f * density
+
+        when (name) {
+            "outside_view", "clipboard_title_bar", "list_view_layout", "recycler_view" -> {
+                view.background = null
+            }
+            "clipboard_item_layout", "phrase_item_layout" -> {
+                view.background = statefulRoundedBackground(
+                    palette.card,
+                    palette.cardPressed,
+                    itemRadius
+                )
+                view.elevation = 0f
+            }
+            "clipboard_loading" -> {
+                view.background = roundedBackground(palette.card, itemRadius)
+            }
+            "clipboard_text", "phrase_text" -> {
+                view.background = selectedRoundedBackground(
+                    palette.tabSelected,
+                    Color.TRANSPARENT,
+                    smallRadius
+                )
+                if (view is TextView) {
+                    view.setTextColor(
+                        ColorStateList(
+                            arrayOf(intArrayOf(android.R.attr.state_selected), intArrayOf()),
+                            intArrayOf(palette.primaryText, palette.secondaryText)
+                        )
+                    )
+                }
+            }
+            "clipboard_text_item_top", "clipboard_text_item_bottom", "image_end_show",
+            "phrase_text_item", "text_view" -> (view as? TextView)?.setTextColor(palette.primaryText)
+            "clipboard_no_items", "loading_text", "clipboard_across_devices_tip_text" -> {
+                (view as? TextView)?.setTextColor(palette.secondaryText)
+            }
+            "pack_up_view", "delete_and_add_action_button" -> {
+                (view as? ImageView)?.setColorFilter(palette.primaryText)
+            }
+        }
+
+        if (view is ViewGroup) {
+            if (containsNamedChildren(view, "clipboard_text", "phrase_text")) {
+                view.background = roundedBackground(palette.tabTrack, smallRadius)
+            }
+            if (name == "clipboard_tip_view" && view.childCount > 0) {
+                view.getChildAt(0).background = roundedBackground(palette.card, itemRadius)
+            }
+            for (index in 0 until view.childCount) {
+                styleClipboardViewTree(view.getChildAt(index))
+            }
+        }
+    }
+
+    private fun clipboardPalette(view: View): ClipboardPalette {
+        val opacityStrength = ConfigManager.getOpacity().coerceIn(0, 100) / 100f
+        val customCard = parseOptionalColor(ConfigManager.getMenuCardColor())
+        val dark = when (ConfigManager.getBgType()) {
+            1 -> isDarkColor(parseOptionalColor(ConfigManager.getBgColor()) ?: Color.WHITE)
+            else -> (view.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+        }
+        val customText = parseOptionalColor(ConfigManager.getTextColor())
+        val primary = customText ?: if (dark) Color.rgb(245, 247, 252) else Color.rgb(20, 22, 27)
+        val secondary = withAlpha(primary, if (dark) 178 else 150)
+        val card = customCard ?: if (dark) {
+            Color.argb((92 * opacityStrength).toInt(), 255, 255, 255)
+        } else {
+            Color.argb((145 * opacityStrength).toInt(), 255, 255, 255)
+        }
+        val pressed = if (dark) {
+            Color.argb((135 * opacityStrength).toInt(), 255, 255, 255)
+        } else {
+            Color.argb((190 * opacityStrength).toInt(), 255, 255, 255)
+        }
+        val tabTrack = if (dark) {
+            Color.argb((62 * opacityStrength).toInt(), 255, 255, 255)
+        } else {
+            Color.argb((105 * opacityStrength).toInt(), 255, 255, 255)
+        }
+        val tabSelected = customCard ?: if (dark) {
+            Color.argb((118 * opacityStrength).toInt(), 255, 255, 255)
+        } else {
+            Color.argb((205 * opacityStrength).toInt(), 255, 255, 255)
+        }
+        return ClipboardPalette(card, pressed, tabTrack, tabSelected, primary, secondary)
+    }
+
+    private fun applyTopCornerOutline(view: View, radiusPx: Float) {
+        if (radiusPx <= 0f) {
+            view.clipToOutline = false
+            return
+        }
+        view.clipToOutline = true
+        view.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(target: View, outline: Outline) {
+                if (target.width > 0 && target.height > 0) {
+                    outline.setRoundRect(
+                        0,
+                        0,
+                        target.width,
+                        target.height + radiusPx.toInt(),
+                        radiusPx
+                    )
+                }
+            }
+        }
+        view.invalidateOutline()
+    }
+
+    private fun roundedBackground(color: Int, radius: Float) = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        setColor(color)
+        cornerRadius = radius
+    }
+
+    private fun statefulRoundedBackground(normal: Int, pressed: Int, radius: Float) =
+        StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                roundedBackground(pressed, radius)
+            )
+            addState(intArrayOf(), roundedBackground(normal, radius))
+        }
+
+    private fun selectedRoundedBackground(selected: Int, normal: Int, radius: Float) =
+        StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_selected),
+                roundedBackground(selected, radius)
+            )
+            addState(intArrayOf(), roundedBackground(normal, radius))
+        }
+
+    private fun containsNamedChildren(group: ViewGroup, vararg names: String): Boolean {
+        val found = group.childrenResourceNames().toSet()
+        return names.all(found::contains)
+    }
+
+    private fun ViewGroup.childrenResourceNames(): List<String> =
+        (0 until childCount).mapNotNull { resourceEntryName(getChildAt(it)) }
+
+    private fun findViewByResourceName(view: View, name: String): View? {
+        if (resourceEntryName(view) == name) return view
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                findViewByResourceName(view.getChildAt(index), name)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun resourceEntryName(view: View): String? {
+        if (view.id == View.NO_ID) return null
+        return try {
+            view.resources.getResourceEntryName(view.id)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun isDarkSurface(context: android.content.Context): Boolean =
+        (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    private fun isDarkColor(color: Int): Boolean =
+        (299 * Color.red(color) + 587 * Color.green(color) + 114 * Color.blue(color)) / 1000 < 150
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
+        alpha.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color)
+    )
+
+    private data class ClipboardPalette(
+        val card: Int,
+        val cardPressed: Int,
+        val tabTrack: Int,
+        val tabSelected: Int,
+        val primaryText: Int,
+        val secondaryText: Int
+    )
+
+    private const val CLIPBOARD_POPUP_CLASS =
+        "com.miui.inputmethod.InputMethodClipboardPhrasePopupView"
+    private val CLIPBOARD_ADAPTER_CLASSES = arrayOf(
+        "com.miui.inputmethod.InputMethodClipboardAdapter",
+        "com.miui.inputmethod.InputMethodClipboardHeaderAdapter",
+        "com.miui.inputmethod.InputMethodPhraseAdapter"
+    )
 
     private fun parseOptionalColor(value: String): Int? = value.takeIf { it.isNotBlank() }?.let {
         try {
@@ -667,19 +1016,19 @@ object KeyboardStyleHook {
                 XposedUtils.setObjectField(token, "p", blurRadiusDp.coerceIn(0, 400))
 
                 // Keep Xiaomi's blend modes, but replace its heavy masks with
-                // translucent neutral tints. This preserves the full native blur
-                // while the slider changes glass clarity instead of View opacity.
+                // translucent neutral tints. Start every tint at zero so 0%
+                // leaves only the native blur instead of a permanent gray veil.
                 val blendColors = if (index == 0) {
                     intArrayOf(
-                        Color.argb((4 + 106 * strength).toInt(), 255, 255, 255),
-                        Color.argb((2 + 68 * strength).toInt(), 246, 249, 255),
-                        Color.argb((1 + 39 * strength).toInt(), 187, 205, 232)
+                        Color.argb((110 * strength).toInt(), 255, 255, 255),
+                        Color.argb((70 * strength).toInt(), 246, 249, 255),
+                        Color.argb((40 * strength).toInt(), 187, 205, 232)
                     )
                 } else {
                     intArrayOf(
-                        Color.argb((5 + 95 * strength).toInt(), 27, 30, 38),
-                        Color.argb((2 + 53 * strength).toInt(), 255, 255, 255),
-                        Color.argb((1 + 34 * strength).toInt(), 153, 178, 216)
+                        Color.argb((100 * strength).toInt(), 27, 30, 38),
+                        Color.argb((55 * strength).toInt(), 255, 255, 255),
+                        Color.argb((35 * strength).toInt(), 153, 178, 216)
                     )
                 }
                 XposedUtils.setObjectField(token, "e", blendColors)
@@ -710,15 +1059,15 @@ object KeyboardStyleHook {
             GradientDrawable.Orientation.TL_BR,
             if (isDark) {
                 intArrayOf(
-                    Color.argb((3 + 67 * strength).toInt(), 255, 255, 255),
+                    Color.argb((70 * strength).toInt(), 255, 255, 255),
                     Color.TRANSPARENT,
-                    Color.argb((1 + 34 * strength).toInt(), 111, 151, 205)
+                    Color.argb((35 * strength).toInt(), 111, 151, 205)
                 )
             } else {
                 intArrayOf(
-                    Color.argb((4 + 76 * strength).toInt(), 255, 255, 255),
-                    Color.argb((1 + 31 * strength).toInt(), 255, 255, 255),
-                    Color.argb((1 + 39 * strength).toInt(), 184, 205, 232)
+                    Color.argb((80 * strength).toInt(), 255, 255, 255),
+                    Color.argb((32 * strength).toInt(), 255, 255, 255),
+                    Color.argb((40 * strength).toInt(), 184, 205, 232)
                 )
             }
         ).apply {
@@ -731,7 +1080,7 @@ object KeyboardStyleHook {
             setColor(Color.TRANSPARENT)
             setStroke(
                 (0.8f * density).toInt().coerceAtLeast(1),
-                Color.argb((18 + 102 * strength).toInt(), 255, 255, 255)
+                Color.argb((120 * strength).toInt(), 255, 255, 255)
             )
             cornerRadii = radii
         }
@@ -1056,6 +1405,7 @@ object KeyboardStyleHook {
         if (bgType != 0) return Color.TRANSPARENT
         val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
+        if (strength == 0f) return Color.TRANSPARENT
         val alpha: Int
         val red: Int
         val green: Int
@@ -1078,7 +1428,12 @@ object KeyboardStyleHook {
         val base = 255
         fun composite(channel: Int): Int =
             ((channel * alpha + base * (255 - alpha)) / 255).coerceIn(0, 255)
-        return Color.rgb(composite(red), composite(green), composite(blue))
+        return Color.argb(
+            (255 * strength).toInt(),
+            composite(red),
+            composite(green),
+            composite(blue)
+        )
     }
 
     private fun updateBottomBarAppearance(
@@ -1168,15 +1523,15 @@ object KeyboardStyleHook {
                         val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
                         val colors = if (isDark) {
                             intArrayOf(
-                                Color.argb((105 + 110 * strength).toInt(), 24, 28, 36),
-                                Color.argb((95 + 115 * strength).toInt(), 35, 41, 52),
-                                Color.argb((85 + 115 * strength).toInt(), 50, 61, 79)
+                                Color.argb((215 * strength).toInt(), 24, 28, 36),
+                                Color.argb((210 * strength).toInt(), 35, 41, 52),
+                                Color.argb((200 * strength).toInt(), 50, 61, 79)
                             )
                         } else {
                             intArrayOf(
-                                Color.argb((155 + 80 * strength).toInt(), 135, 148, 168),
-                                Color.argb((145 + 85 * strength).toInt(), 103, 118, 142),
-                                Color.argb((135 + 90 * strength).toInt(), 76, 94, 122)
+                                Color.argb((235 * strength).toInt(), 135, 148, 168),
+                                Color.argb((230 * strength).toInt(), 103, 118, 142),
+                                Color.argb((225 * strength).toInt(), 76, 94, 122)
                             )
                         }
                         val tint = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
@@ -1188,7 +1543,7 @@ object KeyboardStyleHook {
                             )
                             setStroke(
                                 density.toInt().coerceAtLeast(1),
-                                Color.argb((36 + 80 * strength).toInt(), 255, 255, 255)
+                                Color.argb((116 * strength).toInt(), 255, 255, 255)
                             )
                         }
                         // The system bottom strip accepts only one solid color,
@@ -1203,7 +1558,7 @@ object KeyboardStyleHook {
                             intArrayOf(
                                 Color.argb(0, seamRed, seamGreen, seamBlue),
                                 Color.argb(0, seamRed, seamGreen, seamBlue),
-                                Color.argb(56, seamRed, seamGreen, seamBlue),
+                                Color.argb((56 * strength).toInt(), seamRed, seamGreen, seamBlue),
                                 bottomBarColor
                             )
                         )

@@ -886,7 +886,68 @@
                         android:layout_marginEnd="14dp"
                         android:background="@color/card_stroke" />
 
-                    <!-- 6. Letter Keycap Color -->
+                    <!-- 6. Menu Card Color -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="自定义菜单功能卡片颜色"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="菜单键展开后的语音键盘、表情、剪贴板等卡片"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                            </LinearLayout>
+
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchCustomMenuCardColor"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layoutMenuCardColorConfig"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@color/card_stroke" />
+
+                    <!-- 7. Letter Keycap Color -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

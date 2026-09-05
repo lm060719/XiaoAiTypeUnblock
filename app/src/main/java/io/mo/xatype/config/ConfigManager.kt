@@ -27,6 +27,7 @@ object ConfigManager {
     // Keep the original preference key so existing users retain the color they
     // selected before this setting was correctly identified as function-key-only.
     const val KEY_FUNCTION_KEYCAP_COLOR = "pref_keycap_color" // Empty: system color
+    const val KEY_MENU_CARD_COLOR = "pref_menu_card_color" // Empty: system color
     const val KEY_LETTER_KEYCAP_COLOR = "pref_letter_keycap_color" // Empty: system color
     const val KEY_BG_IMAGE_VERSION = "pref_bg_image_version"
 
@@ -47,6 +48,7 @@ object ConfigManager {
     @Volatile private var cachedBgColor = "#1E1E2E"
     @Volatile private var cachedTextColor = ""
     @Volatile private var cachedFunctionKeycapColor = ""
+    @Volatile private var cachedMenuCardColor = ""
     @Volatile private var cachedLetterKeycapColor = ""
     @Volatile private var cachedBgImageVersion = 0L
     @Volatile private var hasSyncedFromProvider = false
@@ -78,6 +80,7 @@ object ConfigManager {
                 cachedBgColor = bundle.getString(KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E"
                 cachedTextColor = bundle.getString(KEY_TEXT_COLOR, "") ?: ""
                 cachedFunctionKeycapColor = bundle.getString(KEY_FUNCTION_KEYCAP_COLOR, "") ?: ""
+                cachedMenuCardColor = bundle.getString(KEY_MENU_CARD_COLOR, "") ?: ""
                 cachedLetterKeycapColor = bundle.getString(KEY_LETTER_KEYCAP_COLOR, "") ?: ""
                 cachedBgImageVersion = bundle.getLong(KEY_BG_IMAGE_VERSION, 0L)
                 hasSyncedFromProvider = true
@@ -155,6 +158,12 @@ object ConfigManager {
         if (hasSyncedFromProvider) return cachedFunctionKeycapColor
         return remotePrefs?.getString(KEY_FUNCTION_KEYCAP_COLOR, cachedFunctionKeycapColor)
             ?: cachedFunctionKeycapColor
+    }
+
+    fun getMenuCardColor(): String {
+        if (hasSyncedFromProvider) return cachedMenuCardColor
+        return remotePrefs?.getString(KEY_MENU_CARD_COLOR, cachedMenuCardColor)
+            ?: cachedMenuCardColor
     }
 
     fun getLetterKeycapColor(): String {

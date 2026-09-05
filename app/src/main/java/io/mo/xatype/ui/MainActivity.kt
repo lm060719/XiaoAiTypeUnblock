@@ -72,6 +72,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchCustomFunctionKeycapColor: SwitchCompat
     private lateinit var layoutFunctionKeycapColorConfig: LinearLayout
     private lateinit var functionKeycapRgb: RgbControls
+    private lateinit var switchCustomMenuCardColor: SwitchCompat
+    private lateinit var layoutMenuCardColorConfig: LinearLayout
+    private lateinit var menuCardRgb: RgbControls
     private lateinit var switchCustomLetterKeycapColor: SwitchCompat
     private lateinit var layoutLetterKeycapColorConfig: LinearLayout
     private lateinit var letterKeycapRgb: RgbControls
@@ -127,6 +130,9 @@ class MainActivity : AppCompatActivity() {
         switchCustomFunctionKeycapColor = findViewById(R.id.switchCustomFunctionKeycapColor)
         layoutFunctionKeycapColorConfig = findViewById(R.id.layoutFunctionKeycapColorConfig)
         functionKeycapRgb = createRgbControls(layoutFunctionKeycapColorConfig)
+        switchCustomMenuCardColor = findViewById(R.id.switchCustomMenuCardColor)
+        layoutMenuCardColorConfig = findViewById(R.id.layoutMenuCardColorConfig)
+        menuCardRgb = createRgbControls(layoutMenuCardColorConfig)
         switchCustomLetterKeycapColor = findViewById(R.id.switchCustomLetterKeycapColor)
         layoutLetterKeycapColorConfig = findViewById(R.id.layoutLetterKeycapColorConfig)
         letterKeycapRgb = createRgbControls(layoutLetterKeycapColorConfig)
@@ -338,7 +344,26 @@ class MainActivity : AppCompatActivity() {
             showRestartHint()
         }
 
-        // 6. Letter/number main keycap color. na.d.d() returns this normal-key token.
+        // 6. Menu card color. This controls the APPS panel C0 token independently.
+        val savedMenuCardColor = prefs.getString(ConfigManager.KEY_MENU_CARD_COLOR, "") ?: ""
+        val customMenuCardColorEnabled = savedMenuCardColor.isNotBlank()
+        configureRgbControls(menuCardRgb, savedMenuCardColor.ifBlank { "#FFFFFF" }) { hex ->
+            prefs.edit().putString(ConfigManager.KEY_MENU_CARD_COLOR, hex).apply()
+        }
+        switchCustomMenuCardColor.isChecked = customMenuCardColorEnabled
+        layoutMenuCardColorConfig.visibility = if (customMenuCardColorEnabled) View.VISIBLE else View.GONE
+
+        switchCustomMenuCardColor.setOnCheckedChangeListener { _, isChecked ->
+            layoutMenuCardColorConfig.visibility = if (isChecked) View.VISIBLE else View.GONE
+            if (isChecked) {
+                prefs.edit().putString(ConfigManager.KEY_MENU_CARD_COLOR, currentRgbHex(menuCardRgb)).apply()
+            } else {
+                prefs.edit().putString(ConfigManager.KEY_MENU_CARD_COLOR, "").apply()
+            }
+            showRestartHint()
+        }
+
+        // 7. Letter/number main keycap color. na.d.d() returns this normal-key token.
         val savedLetterKeycapColor = prefs.getString(ConfigManager.KEY_LETTER_KEYCAP_COLOR, "") ?: ""
         val customLetterKeycapColorEnabled = savedLetterKeycapColor.isNotBlank()
         configureRgbControls(letterKeycapRgb, savedLetterKeycapColor.ifBlank { "#FFFFFF" }) { hex ->

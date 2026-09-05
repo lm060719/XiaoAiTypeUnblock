@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "53e86cd5439d501e856648d3245451783be6a7a0",
-    "indexed_at": "2026-09-05T07:29:54Z",
+    "commit": "e1d4f6eab9ebfd385a13200c80cd6fd8ba68d6ec",
+    "indexed_at": "2026-09-05T07:30:21Z",
     "project": "E-Users-limo2-Desktop-project-Github-XiaoAiTypeUnblock",
     "nodes": 459,
     "edges": 1522,
-    "original_size": 3407872,
-    "compressed_size": 358569,
+    "original_size": 1703936,
+    "compressed_size": 283755,
     "compression_level": 3
 }
