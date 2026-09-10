@@ -5,14 +5,11 @@ import android.content.Context
 import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.config.ConfigManager
-import io.mo.xatype.data.LogType
-import io.mo.xatype.util.LogBridge
 import io.mo.xatype.util.XposedUtils
 import java.lang.reflect.Modifier
 
 object HyperOsVersionHook {
 
-    private var hasPatchedS0 = false
     private var hasLoggedSysProp = false
 
     fun install(module: XposedInterface, classLoader: ClassLoader) {
@@ -147,11 +144,6 @@ object HyperOsVersionHook {
             if (ConfigManager.isVerboseLogEnabled()) {
                 XposedUtils.log(module, "[HyperOS Unblock] SystemProperties.$key -> mock '$mockVal'")
             }
-            LogBridge.record(
-                LogType.OS_VERSION,
-                "伪装澎湃OS 4.0+ 属性",
-                "属性: $key -> 返回 $mockVal，向输入法声明当前处于 HyperOS 4.0+ 环境"
-            )
         }
     }
 
@@ -162,25 +154,15 @@ object HyperOsVersionHook {
         try {
             val s0Class = XposedUtils.findClass("z7.s0", classLoader)
             if (s0Class != null) {
-                var patchedAny = false
                 for (field in s0Class.declaredFields) {
                     if (Modifier.isStatic(field.modifiers) && (field.type == Boolean::class.javaPrimitiveType || field.type == java.lang.Boolean.TYPE)) {
                         field.isAccessible = true
                         val oldVal = field.getBoolean(null)
                         field.setBoolean(null, false)
-                        patchedAny = true
                         if (ConfigManager.isVerboseLogEnabled()) {
                             XposedUtils.log(module, "[HyperOS Unblock] Patched z7.s0.${field.name} from $oldVal to false")
                         }
                     }
-                }
-                if (patchedAny && !hasPatchedS0) {
-                    hasPatchedS0 = true
-                    LogBridge.record(
-                        LogType.OS_VERSION,
-                        "清除 OS4 版本阻断标记",
-                        "已在内存中将 z7.s0 版本判断标记重置为 false，彻底解除键盘退出与不支持弹窗"
-                    )
                 }
             } else {
                 XposedUtils.logWarn(module, "[HyperOS Unblock] Class z7.s0 not found")
@@ -302,11 +284,6 @@ object HyperOsVersionHook {
                             if (ConfigManager.isVerboseLogEnabled()) {
                                 XposedUtils.log(module, "[HyperOS Unblock] Suppressed OS_VERSION_UNSUPPORTED DialogHostActivity")
                             }
-                            LogBridge.record(
-                                LogType.OS_VERSION,
-                                "拦截版本不兼容提示弹窗",
-                                "已拦截 DialogHostActivity(OS_VERSION_UNSUPPORTED) 弹窗并自动关闭"
-                            )
                             activity.finish()
                             return@intercept null
                         }
