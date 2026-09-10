@@ -13,9 +13,13 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
+import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.ViewTreeObserver
+import android.view.Window
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.ImageView
@@ -27,12 +31,40 @@ import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 object KeyboardStyleHook {
 
     private var cachedBitmap: Bitmap? = null
     private var cachedImageVersion: Long = -1L
     @Volatile private var activeBottomBarColor: Int = Color.TRANSPARENT
+    @Volatile private var activeSteadyBottomBarColor: Int = Color.TRANSPARENT
+    @Volatile private var activeImeWindow: Window? = null
+    @Volatile private var bottomTransitionGuardUntil: Long = 0L
+    @Volatile private var hideMaterialDuringBottomTransition: Boolean = false
+    private val bottomDiagSequence = AtomicInteger(0)
+    private val toolbarDiagCount = AtomicInteger(0)
+    private val decorNavigationGuardDiagnosticCount = AtomicInteger(0)
+    private val preserveDynamicGlassCleanup = ThreadLocal<Boolean>()
+    private val dynamicGlassSurfaceHoldGeneration = AtomicInteger(0)
+    private val dynamicGlassSurfaceHoldDiagnosticCount = AtomicInteger(0)
+    @Volatile private var dynamicGlassContentHoldActive = false
+    @Volatile private var dynamicGlassHiddenBufferPrimed = false
+    private val dynamicGlassHeldContentViews = WeakHashMap<View, Boolean>()
+    @Volatile private var dynamicGlassSurfacePrimer: Any? = null
+    @Volatile private var dynamicGlassSurfacePrimerParent: Any? = null
+    private var dynamicGlassTrackedMaterial: View? = null
+    private var dynamicGlassGeometryObserver: ViewTreeObserver? = null
+    private var dynamicGlassPreDrawListener: ViewTreeObserver.OnPreDrawListener? = null
+    private var dynamicGlassDetachListener: View.OnAttachStateChangeListener? = null
+    private var dynamicGlassGeometry: GlassGeometry? = null
+    private data class GlassGeometry(
+        val x: Int, val y: Int, val width: Int, val height: Int,
+        val decorHeight: Int, val shown: Boolean
+    )
+    private const val BOTTOM_TRANSITION_GUARD_MS = 420L
+    private const val DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY = 10
+    private const val NAV_BAR_BACKGROUND_APPEARANCE_MASK = 2 or 64
     // na.d is a data-style class whose hashCode includes these mutable fields,
     // so identity keys are required to keep restoration reliable after patching.
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
@@ -48,6 +80,7 @@ object KeyboardStyleHook {
         }
 
         installClipboardPopupHook(module)
+        installImeWindowTransitionHooks(module)
 
         // 1. Hook onCreateInputView()
         val onCreateInputViewMethod = XposedUtils.findMethodExact(imeServiceClass, "onCreateInputView")
@@ -109,6 +142,27 @@ object KeyboardStyleHook {
                 result
             }
             XposedUtils.log(module, "KeyboardStyleHook: Hooked onWindowShown")
+        }
+
+        // Xiaomi tears down both HyperMaterial views from onWindowHidden().
+        // Recreating them before the next show is still too late for the
+        // already-cached first IME buffer. Keep the live glass layers attached
+        // while the window is hidden; the hide transition guard still makes
+        // them invisible until the leash has completely left the screen.
+        val onWindowHiddenMethod = XposedUtils.findMethodExact(imeServiceClass, "onWindowHidden")
+        if (onWindowHiddenMethod != null) {
+            module.hook(onWindowHiddenMethod).intercept { chain ->
+                val service = chain.thisObject as? android.inputmethodservice.InputMethodService
+                if (service != null) ConfigManager.syncFromProvider(service)
+                val preserve = ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0
+                if (preserve) preserveDynamicGlassCleanup.set(true)
+                try {
+                    chain.proceed()
+                } finally {
+                    if (preserve) preserveDynamicGlassCleanup.remove()
+                }
+            }
+            XposedUtils.log(module, "KeyboardStyleHook: Hooked onWindowHidden glass retention")
         }
 
         // 4. Hook Compose keyboard container corner radius: na.m.F0(s0.p)
@@ -184,6 +238,28 @@ object KeyboardStyleHook {
         // 6. Hook HyperMaterial Helper support & package whitelist bypass
         val bbUClass = XposedUtils.findClass("bb.u", classLoader)
         if (bbUClass != null) {
+            // During onWindowHidden bb.u.f/m/n(false) remove the material
+            // views, clear their Surface blur and mark them GONE. Suppress only
+            // those cleanup calls for dynamic glass. Calls made while disabling
+            // the feature or changing modes retain Xiaomi's normal behavior.
+            listOf("f", "m").forEach { name ->
+                val cleanupMethod = bbUClass.declaredMethods.find {
+                    it.name == name && it.parameterTypes.isEmpty()
+                }
+                if (cleanupMethod != null) {
+                    module.hook(cleanupMethod).intercept { chain ->
+                        if (preserveDynamicGlassCleanup.get() == true) {
+                            null
+                        } else {
+                            // m() also runs during compositor takeover; only f()
+                            // destroys the keyboard material and its ownership.
+                            if (name == "f") removeDynamicGlassSurfacePrimer()
+                            chain.proceed()
+                        }
+                    }
+                }
+            }
+
             // Hook bb.u.h(): Unblock HyperMaterial support check
             val hMethod = bbUClass.declaredMethods.find { it.name == "h" }
             if (hMethod != null) {
@@ -256,6 +332,10 @@ object KeyboardStyleHook {
             if (cMethod != null) {
                 module.hook(cMethod).intercept { chain ->
                     val result = chain.proceed()
+                    useCompositorGlassForTransparentMaterial(module, chain.thisObject, chain.getArg(0) as? View)
+                    if (isToolbarTransitionGuardActive()) {
+                        forceHyperMaterialLayersInvisible(chain.thisObject)
+                    }
                     if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() != 0) {
                         val helper = chain.thisObject
                         val materialView = chain.getArg(0) as? View
@@ -278,6 +358,9 @@ object KeyboardStyleHook {
             if (bMethod != null) {
                 module.hook(bMethod).intercept { chain ->
                     val res = chain.proceed()
+                    if (isToolbarTransitionGuardActive()) {
+                        forceHyperMaterialLayersInvisible(chain.thisObject)
+                    }
                     if (ConfigManager.isStyleEnabled()) {
                         val helper = chain.thisObject
                         val view = chain.getArg(0) as? View
@@ -297,10 +380,41 @@ object KeyboardStyleHook {
                 XposedUtils.log(module, "KeyboardStyleHook: Hooked bb.u.b (RuntimeShader uRadii sync)")
             }
 
+            // Xiaomi toggles both material views back to VISIBLE from bb.u.n(true)
+            // while the IME leash is already moving.  That write happens between
+            // our scheduled snapshots and exposes the opaque dark fallback for a
+            // single frame.  Keep the layers hidden continuously for the short
+            // transition guard; the normal state is restored when the guard ends.
+            val nMethod = bbUClass.declaredMethods.find {
+                it.name == "n" &&
+                    it.parameterTypes.size == 1 &&
+                    it.parameterTypes[0] == Boolean::class.javaPrimitiveType
+            }
+            if (nMethod != null) {
+                module.hook(nMethod).intercept { chain ->
+                    if (
+                        preserveDynamicGlassCleanup.get() == true &&
+                        chain.getArg(0) == false
+                    ) {
+                        null
+                    } else if (isToolbarTransitionGuardActive() && chain.getArg(0) == true) {
+                        val result = chain.proceed(arrayOf(false))
+                        forceHyperMaterialLayersInvisible(chain.thisObject)
+                        result
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                XposedUtils.log(module, "KeyboardStyleHook: Hooked bb.u.n (transition visibility guard)")
+            }
+
             // Hook bb.u.g(boolean, FrameLayout, int): Update views on attach
             val gMethod = bbUClass.declaredMethods.find { it.name == "g" }
             if (gMethod != null) {
                 module.hook(gMethod).intercept { chain ->
+                    // Floating mode owns a different PopupWindow. Its native
+                    // material must not leave the docked IME effect layer alive.
+                    if (chain.getArg(0) == true) removeDynamicGlassSurfacePrimer()
                     val res = chain.proceed()
                     if (ConfigManager.isStyleEnabled()) {
                         val helper = chain.thisObject
@@ -327,7 +441,14 @@ object KeyboardStyleHook {
             if (oMethod != null) {
                 module.hook(oMethod).intercept { chain ->
                     val res = chain.proceed()
-                    if (ConfigManager.isStyleEnabled()) {
+                    val tracksTransparentGeometry = shouldKeepGlassNavigationTransparent() &&
+                        ConfigManager.getOpacity() == 0 && dynamicGlassSurfacePrimer != null &&
+                        dynamicGlassTrackedMaterial === XposedUtils.getObjectField(chain.thisObject, "h")
+                    // o() runs throughout Compose's translation-card animation.
+                    // For fully transparent glass, native layout + pre-draw
+                    // geometry sync suffice; do not reapply all material tokens
+                    // and enqueue 64/240ms settle passes on every animation frame.
+                    if (ConfigManager.isStyleEnabled() && !tracksTransparentGeometry) {
                         val helper = chain.thisObject
                         val service = XposedUtils.getObjectField(helper, "a") as? android.inputmethodservice.InputMethodService
                         if (service != null) {
@@ -405,18 +526,34 @@ object KeyboardStyleHook {
                 val sMethod = bbG1Class.declaredMethods.find { it.name == "S" }
                 if (sMethod != null) {
                     module.hook(sMethod).intercept { chain ->
+                        val g1Obj = chain.thisObject
+                        val bField = XposedUtils.getObjectField(g1Obj, "b")
+                        val service = bField?.let { XposedUtils.getObjectField(it, "b") } as?
+                            android.inputmethodservice.InputMethodService
+                        if (service != null) {
+                            logBottomSnapshot(
+                                module,
+                                service,
+                                bottomDiagSequence.get(),
+                                "bb.g1.S:enter args=${(0 until 3).joinToString { chain.getArg(it).toString() }}"
+                            )
+                        }
                         val res = chain.proceed()
                         if (ConfigManager.isStyleEnabled()) {
-                            val g1Obj = chain.thisObject
-                            val bField = XposedUtils.getObjectField(g1Obj, "b")
-                            if (bField != null) {
-                                val bInner = XposedUtils.getObjectField(bField, "b") as? android.content.Context
-                                if (bInner is android.inputmethodservice.InputMethodService) {
-                                    val window = bInner.window?.window
+                            if (service != null) {
+                                    val window = service.window?.window
+                                    activeImeWindow = window
                                     window?.setNavigationBarColor(activeBottomBarColor)
                                     window?.setNavigationBarContrastEnforced(false)
-                                }
                             }
+                        }
+                        if (service != null) {
+                            logBottomSnapshot(
+                                module,
+                                service,
+                                bottomDiagSequence.get(),
+                                "bb.g1.S:exit"
+                            )
                         }
                         res
                     }
@@ -429,6 +566,16 @@ object KeyboardStyleHook {
                 if (staticSMethod != null) {
                     module.hook(staticSMethod).intercept { chain ->
                         if (ConfigManager.isStyleEnabled()) {
+                            if (ConfigManager.isVerboseLogEnabled()) {
+                                XposedUtils.log(
+                                    module,
+                                    "[BottomDiag] bb.g1.s requested=${colorHex(chain.getArg(0) as? Int ?: 0)} " +
+                                        "icon=${colorHex(chain.getArg(1) as? Int ?: 0)} " +
+                                        "ripple=${colorHex(chain.getArg(2) as? Int ?: 0)} " +
+                                        "custom=${chain.getArg(3)} configured=${colorHex(activeSteadyBottomBarColor)} " +
+                                        "pluginBefore=${readPluginBottomSnapshot()}"
+                                )
+                            }
                             val iconColor = chain.getArg(1) as? Int ?: 0
                             val rippleColor = chain.getArg(2) as? Int ?: 0
                             try {
@@ -436,9 +583,20 @@ object KeyboardStyleHook {
                                 val customizeMethod = injectorClass.declaredMethods.find { it.name == "customizeBottomViewColor" }
                                 if (customizeMethod != null) {
                                     customizeMethod.isAccessible = true
-                                customizeMethod.invoke(null, true, activeBottomBarColor, iconColor, rippleColor)
+                                    // The opaque transition guard belongs only to
+                                    // PhoneWindow's navigation surface. Applying it
+                                    // to MIUI's in-keyboard bottom view leaves a
+                                    // pale band until the next input event redraws
+                                    // the plugin.
+                                    customizeMethod.invoke(null, true, activeSteadyBottomBarColor, iconColor, rippleColor)
                                 }
                             } catch (_: Throwable) {}
+                            if (ConfigManager.isVerboseLogEnabled()) {
+                                XposedUtils.log(
+                                    module,
+                                    "[BottomDiag] bb.g1.s pluginAfter=${readPluginBottomSnapshot()}"
+                                )
+                            }
                             null
                         } else {
                             chain.proceed()
@@ -451,6 +609,939 @@ object KeyboardStyleHook {
             XposedUtils.logError(module, "Error hooking bb.g1", t)
         }
     }
+
+    /**
+     * InputMethodService submits the insets animation before onWindowShown /
+     * onWindowHidden are dispatched. Color the system-owned strip on both
+     * sides of that submission so WindowManager never snapshots the native
+     * black fallback during an IME transition.
+     */
+    private fun installImeWindowTransitionHooks(module: XposedModule) {
+        try {
+            val inputMethodServiceClass = android.inputmethodservice.InputMethodService::class.java
+            val showWindowMethod = inputMethodServiceClass.getDeclaredMethod(
+                "showWindow",
+                Boolean::class.javaPrimitiveType ?: java.lang.Boolean.TYPE
+            )
+            module.hook(showWindowMethod).intercept { chain ->
+                val service = chain.thisObject as? android.inputmethodservice.InputMethodService
+                val sequence = bottomDiagSequence.incrementAndGet()
+                var surfaceHoldGeneration: Int? = null
+                if (service != null) {
+                    beginBottomTransitionGuard(hideMaterial = false)
+                    prepareDynamicGlassBeforeShow(module, service)
+                    surfaceHoldGeneration = armDynamicGlassWindowForFirstCommit(module, service)
+                    logBottomSnapshot(module, service, sequence, "show:enter")
+                    synchronizeBottomBarBeforeTransition(service)
+                    logBottomSnapshot(module, service, sequence, "show:after-pre-sync")
+                }
+                val result = chain.proceed()
+                if (service != null) {
+                    surfaceHoldGeneration?.let {
+                        reassertDynamicGlassWindowHold(module, service, it)
+                    }
+                    beginBottomTransitionGuard(hideMaterial = false)
+                    logBottomSnapshot(module, service, sequence, "show:after-native")
+                    synchronizeBottomBarBeforeTransition(service)
+                    logBottomSnapshot(module, service, sequence, "show:exit")
+                    scheduleBottomSnapshots(module, service, sequence, "show")
+                }
+                result
+            }
+
+            val hideWindowMethod = inputMethodServiceClass.getDeclaredMethod("hideWindow")
+            module.hook(hideWindowMethod).intercept { chain ->
+                val service = chain.thisObject as? android.inputmethodservice.InputMethodService
+                val sequence = bottomDiagSequence.incrementAndGet()
+                if (service != null) {
+                    beginBottomTransitionGuard(hideMaterial = true)
+                    logBottomSnapshot(module, service, sequence, "hide:enter")
+                    synchronizeBottomBarBeforeTransition(service)
+                    logBottomSnapshot(module, service, sequence, "hide:after-pre-sync")
+                }
+                val result = chain.proceed()
+                if (service != null) {
+                    beginBottomTransitionGuard(hideMaterial = true)
+                    logBottomSnapshot(module, service, sequence, "hide:after-native")
+                    synchronizeBottomBarBeforeTransition(service)
+                    logBottomSnapshot(module, service, sequence, "hide:exit")
+                    scheduleBottomSnapshots(module, service, sequence, "hide")
+                }
+                result
+            }
+
+            installNavigationBarWriteDiagnostics(module)
+            installSystemBarsAppearanceGuard(module)
+            installDecorNavigationColorGuard(module)
+            XposedUtils.log(module, "KeyboardStyleHook: Hooked IME show/hide transition boundaries")
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "Error hooking IME window transitions", t)
+        }
+    }
+
+    /**
+     * Device A/B captures reproduce the moving dark band with Xiaomi material
+     * alone, but not with compositor blur alone. Switch only low-opacity glass;
+     * keep native material if the replacement surface is not ready.
+     */
+    private fun useCompositorGlassForTransparentMaterial(
+        module: XposedModule,
+        helper: Any,
+        material: View?
+    ) {
+        // bb.u.c(View) is also reused by applyClipboardPopupStyle for
+        // inside_view in a different PopupWindow. Its (0,0) coordinates must
+        // never reposition the IME's compositor layer, nor trigger m(), whose
+        // cleanup targets helper.h/i rather than the supplied popup view.
+        val keyboardMaterial = XposedUtils.getObjectField(helper, "h") as? View
+        if (material == null || material !== keyboardMaterial) {
+            if (material != null && ConfigManager.isVerboseLogEnabled()) {
+                XposedUtils.log(module, "[BottomDiag] compositor skipped non-keyboard material " +
+                    "size=${material.width}x${material.height}")
+            }
+            return
+        }
+        if (!ConfigManager.isStyleEnabled() || ConfigManager.getBgType() != 0 ||
+            ConfigManager.getOpacity() > DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY ||
+            ConfigManager.getBlurRadius() <= 0
+        ) {
+            removeDynamicGlassSurfacePrimer()
+            return
+        }
+        val service = XposedUtils.getObjectField(helper, "a") as?
+            android.inputmethodservice.InputMethodService ?: return
+        if (!material.isAttachedToWindow || material.width <= 0 || material.height <= 0) return
+        try {
+            if (ensureDynamicGlassSurfacePrimer(module, service, material)) {
+                invokeHelperMethod(helper, "m")
+            }
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "KeyboardStyleHook: compositor glass fallback failed", t)
+        }
+    }
+
+    /**
+     * Pass-window blur is latched by SurfaceFlinger with the first new IME
+     * buffer. The insets animation can expose keyboard content one vsync
+     * earlier, so keep content transparent while the material layer primes.
+     */
+    private fun armDynamicGlassWindowForFirstCommit(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService
+    ): Int? {
+        val ineligible =
+            !ConfigManager.isStyleEnabled() ||
+            ConfigManager.getBgType() != 0 ||
+            ConfigManager.getOpacity() > DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY ||
+            ConfigManager.getBlurRadius() <= 0
+        if (ineligible) {
+            if (dynamicGlassHiddenBufferPrimed) {
+                releaseDynamicGlassHeldContent(service)
+            }
+            removeDynamicGlassSurfacePrimer()
+            return null
+        }
+        val inputRoot = XposedUtils.getObjectField(service, "currentImeRootView") as? View
+            ?: return null
+        val generation = dynamicGlassSurfaceHoldGeneration.incrementAndGet()
+        dynamicGlassHiddenBufferPrimed = false
+        dynamicGlassContentHoldActive = true
+        holdDynamicGlassContentView(inputRoot)
+
+        if (dynamicGlassSurfaceHoldDiagnosticCount.getAndIncrement() < 8) {
+            XposedUtils.log(
+                module,
+                "[BottomDiag] dynamic glass IME Surface held until first commit gen=$generation"
+            )
+        }
+        return generation
+    }
+
+    private fun reassertDynamicGlassWindowHold(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        generation: Int
+    ) {
+        if (dynamicGlassSurfaceHoldGeneration.get() != generation) return
+        val decor = service.window?.window?.decorView ?: return
+        val inputRoot = XposedUtils.getObjectField(service, "currentImeRootView") as? View
+        if (inputRoot == null) {
+            XposedUtils.logError(
+                module,
+                "KeyboardStyleHook: failed to reassert dynamic glass Surface hold"
+            )
+        } else {
+            holdDynamicGlassContentView(inputRoot)
+        }
+
+        // Register only after InputMethodService.showWindow() has completed.
+        // Registering during the pre-show material pass can consume the callback
+        // on an off-screen warm-up frame and release the content too early.
+        try {
+            decor.viewTreeObserver.registerFrameCommitCallback {
+                decor.postDelayed(
+                    {
+                        restoreDynamicGlassWindowHold(
+                            service,
+                            generation,
+                            "visible-frame-commit+34ms"
+                        )
+                    },
+                    34L
+                )
+            }
+            decor.postInvalidateOnAnimation()
+        } catch (_: Throwable) {}
+        decor.postDelayed(
+            { restoreDynamicGlassWindowHold(service, generation, "fallback") },
+            200L
+        )
+    }
+
+    private fun restoreDynamicGlassWindowHold(
+        service: android.inputmethodservice.InputMethodService,
+        generation: Int,
+        reason: String
+    ) {
+        if (dynamicGlassSurfaceHoldGeneration.get() != generation) return
+        dynamicGlassContentHoldActive = false
+        dynamicGlassHiddenBufferPrimed = false
+        releaseDynamicGlassHeldContent(service)
+        dynamicGlassSurfaceHoldGeneration.compareAndSet(generation, generation + 1)
+        if (dynamicGlassSurfaceHoldDiagnosticCount.getAndIncrement() < 8) {
+            Log.i(
+                "XiaoAiTypeUnblock",
+                "[BottomDiag] dynamic glass IME content restored reason=$reason gen=$generation"
+            )
+        }
+        // Keep the effect layer attached while the IME parent surface is
+        // hidden below the display. Recreating it before every show is still
+        // one SurfaceFlinger latch too late; a retained layer is already warm
+        // when WindowManager exposes the animation leash on the next show.
+    }
+
+    private fun releaseDynamicGlassHeldContent(
+        service: android.inputmethodservice.InputMethodService
+    ) {
+        dynamicGlassContentHoldActive = false
+        dynamicGlassHiddenBufferPrimed = false
+        val currentInputRoot = XposedUtils.getObjectField(service, "currentImeRootView") as? View
+        val heldViews = synchronized(dynamicGlassHeldContentViews) {
+            dynamicGlassHeldContentViews.keys.toList().also {
+                dynamicGlassHeldContentViews.clear()
+            }
+        }
+        (heldViews + listOfNotNull(currentInputRoot))
+            .distinct()
+            .forEach { it.alpha = 1f }
+    }
+
+    private fun holdDynamicGlassContentView(view: View) {
+        synchronized(dynamicGlassHeldContentViews) {
+            dynamicGlassHeldContentViews[view] = true
+        }
+        view.alpha = 0f
+    }
+
+    private fun trackDynamicGlassGeometry(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        material: View
+    ) {
+        if (dynamicGlassTrackedMaterial === material) return
+        stopTrackingDynamicGlassGeometry()
+        dynamicGlassTrackedMaterial = material
+        val observer = material.viewTreeObserver
+        val listener = ViewTreeObserver.OnPreDrawListener {
+            val decor = service.window?.window?.decorView
+            val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+            if (!shouldKeepGlassNavigationTransparent() || !material.isAttachedToWindow ||
+                material.rootView !== decor || helper == null || XposedUtils.getObjectField(helper, "h") !== material
+            ) {
+                removeDynamicGlassSurfacePrimer()
+            } else if (decor != null) {
+                val position = IntArray(2)
+                material.getLocationInWindow(position)
+                val geometry = GlassGeometry(position[0], position[1], material.width,
+                    material.height, decor.height, material.isShown)
+                if (geometry != dynamicGlassGeometry) {
+                    ensureDynamicGlassSurfacePrimer(module, service, material, syncWithDraw = true)
+                }
+            }
+            true
+        }
+        val detachListener = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) = Unit
+            override fun onViewDetachedFromWindow(view: View) {
+                if (dynamicGlassTrackedMaterial === view) removeDynamicGlassSurfacePrimer()
+            }
+        }
+        dynamicGlassGeometryObserver = observer
+        dynamicGlassPreDrawListener = listener
+        dynamicGlassDetachListener = detachListener
+        observer.addOnPreDrawListener(listener)
+        material.addOnAttachStateChangeListener(detachListener)
+    }
+
+    private fun stopTrackingDynamicGlassGeometry() {
+        val observer = dynamicGlassGeometryObserver
+        dynamicGlassPreDrawListener?.let { if (observer?.isAlive == true) observer.removeOnPreDrawListener(it) }
+        dynamicGlassDetachListener?.let { dynamicGlassTrackedMaterial?.removeOnAttachStateChangeListener(it) }
+        dynamicGlassTrackedMaterial = null
+        dynamicGlassGeometryObserver = null
+        dynamicGlassPreDrawListener = null
+        dynamicGlassDetachListener = null
+        dynamicGlassGeometry = null
+    }
+
+    private fun ensureDynamicGlassSurfacePrimer(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        material: View,
+        syncWithDraw: Boolean = false
+    ): Boolean {
+        try {
+            val decor = service.window?.window?.decorView ?: return false
+            // Coordinates below are local to this exact window, not screen
+            // coordinates. Reject popup roots even if they share the service.
+            if (!material.isAttachedToWindow || material.rootView !== decor) return false
+            val getViewRootImpl = View::class.java.getDeclaredMethod("getViewRootImpl").apply {
+                isAccessible = true
+            }
+            val viewRoot = getViewRootImpl.invoke(decor) ?: return false
+            val parent = XposedUtils.getObjectField(viewRoot, "mSurfaceControl") ?: return false
+            val surfaceClass = Class.forName("android.view.SurfaceControl")
+            val validMethod = surfaceClass.getDeclaredMethod("isValid").apply { isAccessible = true }
+            if (validMethod.invoke(parent) != true) return false
+            var primer = dynamicGlassSurfacePrimer
+            if (
+                primer == null ||
+                dynamicGlassSurfacePrimerParent !== parent ||
+                validMethod.invoke(primer) != true
+            ) {
+                removeDynamicGlassSurfacePrimer()
+                val builderClass = Class.forName("android.view.SurfaceControl\$Builder")
+                val builder = builderClass.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+                builderClass.getDeclaredMethod("setName", String::class.java)
+                    .apply { isAccessible = true }
+                    .invoke(builder, "XaTypeGlassPrimer")
+                builderClass.getDeclaredMethod("setEffectLayer")
+                    .apply { isAccessible = true }
+                    .invoke(builder)
+                builderClass.getDeclaredMethod("setParent", surfaceClass)
+                    .apply { isAccessible = true }
+                    .invoke(builder, parent)
+                primer = builderClass.getDeclaredMethod("build")
+                    .apply { isAccessible = true }
+                    .invoke(builder)
+                dynamicGlassSurfacePrimer = primer
+                dynamicGlassSurfacePrimerParent = parent
+            }
+
+            val location = IntArray(2)
+            material.getLocationInWindow(location)
+            val cornerRadiusPx = ConfigManager.getCornerRadius() * material.resources.displayMetrics.density
+            // Docked keyboards only round their top corners. Move the lower
+            // corners below the window edge; floating materials keep all four.
+            val cropHeight = material.height + if (location[1] + material.height >= decor.height) {
+                kotlin.math.ceil(cornerRadiusPx.toDouble()).toInt()
+            } else 0
+            val transactionClass = Class.forName("android.view.SurfaceControl\$Transaction")
+            val transaction = transactionClass.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+            // ViewRootImpl reuses the Java SurfaceControl wrapper when its
+            // native surface changes. Object identity cannot detect that; an
+            // old child otherwise remains orphaned in SF's offscreen hierarchy.
+            transactionClass.getDeclaredMethod("reparent", surfaceClass, surfaceClass)
+                .apply { isAccessible = true }
+                .invoke(transaction, primer, parent)
+            transactionClass.getDeclaredMethod(
+                "setLayer",
+                surfaceClass,
+                Int::class.javaPrimitiveType
+            ).apply { isAccessible = true }.invoke(transaction, primer, -1)
+            transactionClass.getDeclaredMethod(
+                "setPosition",
+                surfaceClass,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType
+            ).apply { isAccessible = true }.invoke(
+                transaction,
+                primer,
+                location[0].toFloat(),
+                location[1].toFloat()
+            )
+            transactionClass.getDeclaredMethod(
+                "setWindowCrop",
+                surfaceClass,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType
+            ).apply { isAccessible = true }.invoke(transaction, primer, material.width, cropHeight)
+            transactionClass.getDeclaredMethod(
+                "setCornerRadius",
+                surfaceClass,
+                Float::class.javaPrimitiveType
+            ).apply { isAccessible = true }.invoke(
+                transaction,
+                primer,
+                cornerRadiusPx
+            )
+            transactionClass.getDeclaredMethod(
+                "setBackgroundBlurRadius",
+                surfaceClass,
+                Int::class.javaPrimitiveType
+            ).apply { isAccessible = true }.invoke(
+                transaction,
+                primer,
+                (ConfigManager.getBlurRadius() * material.resources.displayMetrics.density + 0.5f)
+                    .toInt().coerceIn(0, 400)
+            )
+            transactionClass.getDeclaredMethod(
+                if (material.isShown && material.width > 0 && material.height > 0) "show" else "hide",
+                surfaceClass
+            )
+                .apply { isAccessible = true }
+                .invoke(transaction, primer)
+            if (syncWithDraw) {
+                // Merge geometry with the buffer from this traversal, rather
+                // than moving blur one compositor frame ahead of the card.
+                viewRoot.javaClass.getMethod("applyTransactionOnDraw", transactionClass)
+                    .invoke(viewRoot, transaction)
+            } else {
+                transactionClass.getDeclaredMethod("apply").invoke(transaction)
+            }
+            trackDynamicGlassGeometry(module, service, material)
+            val geometry = GlassGeometry(location[0], location[1], material.width,
+                material.height, decor.height, material.isShown)
+            if (geometry != dynamicGlassGeometry && ConfigManager.isVerboseLogEnabled()) {
+                XposedUtils.log(module, "[BottomDiag] glass Surface geometry " +
+                    "bounds=${material.width}x${material.height}@${location[0]},${location[1]} " +
+                    "shown=${material.isShown} drawSync=$syncWithDraw")
+            }
+            dynamicGlassGeometry = geometry
+            (transaction as? AutoCloseable)?.close()
+            return true
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "KeyboardStyleHook: glass Surface primer failed", t)
+            removeDynamicGlassSurfacePrimer()
+            return false
+        }
+    }
+
+    private fun removeDynamicGlassSurfacePrimer() {
+        stopTrackingDynamicGlassGeometry()
+        val primer = dynamicGlassSurfacePrimer ?: return
+        dynamicGlassSurfacePrimer = null
+        dynamicGlassSurfacePrimerParent = null
+        try {
+            val surfaceClass = Class.forName("android.view.SurfaceControl")
+            val transactionClass = Class.forName("android.view.SurfaceControl\$Transaction")
+            val transaction = transactionClass.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+            transactionClass.getDeclaredMethod("remove", surfaceClass)
+                .apply { isAccessible = true }
+                .invoke(transaction, primer)
+            transactionClass.getDeclaredMethod("apply")
+                .apply { isAccessible = true }
+                .invoke(transaction)
+            (transaction as? AutoCloseable)?.close()
+            surfaceClass.getDeclaredMethod("release").invoke(primer)
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * The IME surface remains attached and translated below the display after
+     * hide. Commit a glass-only buffer there so the next show animation cannot
+     * reuse the previous sharp keyboard buffer for its first frame.
+     */
+    private fun primeDynamicGlassHiddenBuffer(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService
+    ) {
+        if (
+            !ConfigManager.isStyleEnabled() ||
+            ConfigManager.getBgType() != 0 ||
+            ConfigManager.getOpacity() > DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY ||
+            ConfigManager.getBlurRadius() <= 0
+        ) return
+        val inputRoot = XposedUtils.getObjectField(service, "currentImeRootView") as? View
+            ?: return
+        dynamicGlassContentHoldActive = true
+        dynamicGlassHiddenBufferPrimed = true
+        holdDynamicGlassContentView(inputRoot)
+        inputRoot.invalidate()
+        val decor = service.window?.window?.decorView
+        decor?.postInvalidateOnAnimation()
+        var forcedCommit = false
+        if (decor != null) {
+            try {
+                val getViewRootImpl = View::class.java.getDeclaredMethod("getViewRootImpl").apply {
+                    isAccessible = true
+                }
+                val viewRoot = getViewRootImpl.invoke(decor)
+                val performDraw = viewRoot?.javaClass?.declaredMethods?.firstOrNull {
+                    it.name == "performDraw" && it.parameterTypes.size == 1
+                }?.apply { isAccessible = true }
+                forcedCommit = performDraw?.invoke(viewRoot, null) == true
+            } catch (t: Throwable) {
+                XposedUtils.logError(module, "KeyboardStyleHook: hidden glass buffer commit failed", t)
+            }
+        }
+        XposedUtils.log(
+            module,
+            "[BottomDiag] dynamic glass hidden buffer draw committed=$forcedCommit"
+        )
+        if (dynamicGlassSurfaceHoldDiagnosticCount.getAndIncrement() < 8) {
+            XposedUtils.log(module, "[BottomDiag] dynamic glass hidden buffer primed")
+        }
+    }
+
+    private fun synchronizeBottomBarBeforeTransition(
+        service: android.inputmethodservice.InputMethodService
+    ) {
+        ConfigManager.syncFromProvider(service)
+        if (!ConfigManager.isStyleEnabled()) return
+        applyBottomBarAppearanceImmediately(service)
+        applyImeToolbarTransitionGuard(service)
+    }
+
+    /**
+     * Commit pass-window blur before InputMethodService exposes its surface.
+     * The normal style path posts this work behind layout, which is correct for
+     * creation but too late for a reused keyboard window: WindowManager can
+     * snapshot several raw-transparent animation frames before that post runs.
+     */
+    private fun prepareDynamicGlassBeforeShow(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService
+    ) {
+        ConfigManager.syncFromProvider(service)
+        if (!ConfigManager.isStyleEnabled() || ConfigManager.getBgType() != 0) return
+        val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper") ?: return
+        var material = XposedUtils.getObjectField(helper, "h") as? View
+
+        // Xiaomi removes the material view in onWindowHidden(). On the next
+        // show, waiting for onWindowShown() to rebuild it leaves the first
+        // animated buffer raw-transparent. Recreate the native material layer
+        // while the IME window is still hidden so its first visible buffer
+        // already contains a live blur region.
+        if (material == null || !material.isAttachedToWindow || material.width <= 0 || material.height <= 0) {
+            try {
+                val reapply = service.javaClass.declaredMethods.firstOrNull {
+                    it.name == "reapplyHyperMaterialState" &&
+                        it.parameterTypes.contentEquals(arrayOf(Boolean::class.javaPrimitiveType))
+                }
+                reapply?.isAccessible = true
+                reapply?.invoke(service, false)
+                material = XposedUtils.getObjectField(helper, "h") as? View
+            } catch (t: Throwable) {
+                XposedUtils.logError(module, "KeyboardStyleHook: pre-show material rebuild failed", t)
+            }
+        }
+
+        val readyMaterial = material ?: return
+        if (!readyMaterial.isAttachedToWindow || readyMaterial.width <= 0 || readyMaterial.height <= 0) return
+        try {
+            readyMaterial.setBackgroundColor(Color.TRANSPARENT)
+            readyMaterial.alpha = 1f
+            readyMaterial.visibility = View.VISIBLE
+            readyMaterial.elevation = 0f
+            readyMaterial.translationZ = 0f
+            updateCachedGlassTokens(
+                helper,
+                ConfigManager.getBlurRadius(),
+                ConfigManager.getOpacity()
+            )
+            invokeHelperMethod(helper, "c", readyMaterial)
+            (XposedUtils.getObjectField(helper, "i") as? View)?.let { rim ->
+                invokeHelperMethod(helper, "b", rim)
+                rim.visibility = View.VISIBLE
+            }
+            readyMaterial.invalidate()
+            if (
+                ConfigManager.getOpacity() <= DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY &&
+                ConfigManager.getBlurRadius() > 0
+            ) {
+                ensureDynamicGlassSurfacePrimer(module, service, readyMaterial)
+            }
+            XposedUtils.log(
+                module,
+                "[BottomDiag] dynamic glass committed before show " +
+                    "size=${readyMaterial.width}x${readyMaterial.height} blur=${ConfigManager.getBlurRadius()}"
+            )
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "KeyboardStyleHook: pre-show glass commit failed", t)
+        }
+    }
+
+    /**
+     * The leading/trailing edge visible in the Surface animation is Xiaomi's
+     * transparent toolbar band, not the system navigation bar.  Fill only that
+     * narrow band while the leash moves; filling DecorView would create the
+     * large white curtain seen in earlier builds.
+     */
+    private fun applyImeToolbarTransitionGuard(
+        service: android.inputmethodservice.InputMethodService
+    ) {
+        if (
+            !hideMaterialDuringBottomTransition ||
+            SystemClock.uptimeMillis() >= bottomTransitionGuardUntil ||
+            ConfigManager.getOpacity() >= 100
+        ) return
+        val root = XposedUtils.getObjectField(service, "currentImeRootView") as? View ?: return
+        val target = if (root is ViewGroup && root.childCount > 0) root.getChildAt(0) else root
+        val contentTop = resolveKeyboardContentTop(service, target)
+        // h/i are background-only layers inserted below the Compose keyboard.
+        // h starts life with Xiaomi's opaque #18191B fallback and is resized
+        // during the IME leash animation, which is the actual black crescent.
+        val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+        val material = helper?.let { XposedUtils.getObjectField(it, "h") as? View }
+        val rim = helper?.let { XposedUtils.getObjectField(it, "i") as? View }
+        material?.visibility = View.INVISIBLE
+        rim?.visibility = View.INVISIBLE
+        if (toolbarDiagCount.getAndIncrement() < 2) {
+            Log.i(
+                "XiaoAiTypeUnblock",
+                "[BottomDiag][ToolbarGuard] target=${viewSnapshot(target)} " +
+                    "contentTop=$contentTop transparent=true material=${viewSnapshot(material)} " +
+                    "tree=${compactViewTree(root)}"
+            )
+        }
+    }
+
+    private fun compactViewTree(root: View): String {
+        val parts = ArrayList<String>()
+        fun visit(view: View, depth: Int) {
+            if (parts.size >= 40 || depth > 6) return
+            val location = IntArray(2)
+            try { view.getLocationOnScreen(location) } catch (_: Throwable) {}
+            parts += "${depth}:${view.javaClass.name.substringAfterLast('.')}" +
+                "@${location[0]},${location[1]}:${view.width}x${view.height}:" +
+                viewSnapshot(view).substringAfter("bg=").substringBefore('}')
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) visit(view.getChildAt(index), depth + 1)
+            }
+        }
+        visit(root, 0)
+        return parts.joinToString("|")
+    }
+
+    private fun restoreImeToolbarTransitionGuard(
+        service: android.inputmethodservice.InputMethodService
+    ) {
+        if (ConfigManager.getBgType() == 0) {
+            val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+            (helper?.let { XposedUtils.getObjectField(it, "h") as? View })?.apply {
+                visibility = View.VISIBLE
+                invalidate()
+            }
+            (helper?.let { XposedUtils.getObjectField(it, "i") as? View })?.apply {
+                visibility = View.VISIBLE
+                invalidate()
+            }
+        }
+    }
+
+    private fun beginBottomTransitionGuard(hideMaterial: Boolean) {
+        hideMaterialDuringBottomTransition = hideMaterial
+        bottomTransitionGuardUntil = SystemClock.uptimeMillis() + BOTTOM_TRANSITION_GUARD_MS
+    }
+
+    private fun isToolbarTransitionGuardActive(): Boolean =
+        ConfigManager.isStyleEnabled() &&
+            hideMaterialDuringBottomTransition &&
+            ConfigManager.getOpacity() < 100 &&
+            SystemClock.uptimeMillis() < bottomTransitionGuardUntil
+
+    private fun forceHyperMaterialLayersInvisible(helper: Any) {
+        (XposedUtils.getObjectField(helper, "h") as? View)?.visibility = View.INVISIBLE
+        (XposedUtils.getObjectField(helper, "i") as? View)?.visibility = View.INVISIBLE
+    }
+
+    private fun installNavigationBarWriteDiagnostics(module: XposedModule) {
+        try {
+            val phoneWindowClass = Class.forName("com.android.internal.policy.PhoneWindow")
+            val setColorMethod = phoneWindowClass.getDeclaredMethod(
+                "setNavigationBarColor",
+                Int::class.javaPrimitiveType ?: Integer.TYPE
+            )
+            module.hook(setColorMethod).intercept { chain ->
+                val window = chain.thisObject as? Window ?: return@intercept chain.proceed()
+                if (window !== activeImeWindow) {
+                    return@intercept chain.proceed()
+                }
+                val requested = chain.getArg(0) as? Int ?: Color.TRANSPARENT
+                val keepGlassNavigation = shouldKeepGlassNavigationTransparent()
+                val applied = if (keepGlassNavigation) activeSteadyBottomBarColor else requested
+                val flattenAnimationSurface =
+                    ConfigManager.isStyleEnabled() &&
+                        !keepGlassNavigation &&
+                        Color.alpha(activeSteadyBottomBarColor) < 255 &&
+                        Color.alpha(requested) == 255 &&
+                        SystemClock.uptimeMillis() < bottomTransitionGuardUntil
+                val originalEdgeToEdge = if (flattenAnimationSurface) {
+                    XposedUtils.getObjectField(window, "mEdgeToEdgeEnforced") as? Boolean
+                } else {
+                    null
+                }
+                if (originalEdgeToEdge != null) {
+                    // Keep edge-to-edge disabled until PhoneWindow has notified
+                    // its navigation-bar callback. Limiting this to DecorView's
+                    // nested color calculation leaves that callback skipped and
+                    // the animation leash keeps its black fallback.
+                    XposedUtils.setObjectField(window, "mEdgeToEdgeEnforced", false)
+                }
+                try {
+                    if (ConfigManager.isVerboseLogEnabled()) {
+                        val before = try {
+                            window.navigationBarColor
+                        } catch (_: Throwable) {
+                            Color.TRANSPARENT
+                        }
+                        val caller = Throwable().stackTrace
+                            .drop(1)
+                            .take(8)
+                            .joinToString(" <- ") {
+                                "${it.className}.${it.methodName}:${it.lineNumber}"
+                            }
+                        XposedUtils.log(
+                            module,
+                            "[BottomDiag] nav-write requested=${colorHex(requested)} " +
+                                "applied=${colorHex(applied)} glassNavigation=$keepGlassNavigation " +
+                                "before=${colorHex(before)} fullCallFlatten=$flattenAnimationSurface " +
+                                "caller=$caller"
+                        )
+                    }
+                    val result = chain.proceed(arrayOf(applied))
+                    if (ConfigManager.isVerboseLogEnabled()) {
+                        val after = try {
+                            window.navigationBarColor
+                        } catch (_: Throwable) {
+                            Color.TRANSPARENT
+                        }
+                        XposedUtils.log(module, "[BottomDiag] nav-write result=${colorHex(after)}")
+                    }
+                    result
+                } finally {
+                    if (originalEdgeToEdge != null) {
+                        XposedUtils.setObjectField(window, "mEdgeToEdgeEnforced", originalEdgeToEdge)
+                    }
+                }
+            }
+            XposedUtils.log(module, "KeyboardStyleHook: BottomDiag PhoneWindow color hook installed")
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "KeyboardStyleHook: BottomDiag PhoneWindow hook failed", t)
+        }
+    }
+
+    private fun installSystemBarsAppearanceGuard(module: XposedModule) {
+        try {
+            val insetsControllerClass = Class.forName("android.view.InsetsController")
+            val setAppearanceMethod = insetsControllerClass.getDeclaredMethod(
+                "setSystemBarsAppearance",
+                Int::class.javaPrimitiveType ?: Integer.TYPE,
+                Int::class.javaPrimitiveType ?: Integer.TYPE
+            )
+            module.hook(setAppearanceMethod).intercept { chain ->
+                val activeController = try { activeImeWindow?.insetsController } catch (_: Throwable) { null }
+                if (
+                    chain.thisObject !== activeController ||
+                    !ConfigManager.isStyleEnabled() ||
+                    Color.alpha(activeSteadyBottomBarColor) == 255
+                ) {
+                    return@intercept chain.proceed()
+                }
+
+                val requestedAppearance = chain.getArg(0) as? Int ?: 0
+                val requestedMask = chain.getArg(1) as? Int ?: 0
+                val guardedAppearance = requestedAppearance and NAV_BAR_BACKGROUND_APPEARANCE_MASK.inv()
+                val guardedMask = requestedMask or NAV_BAR_BACKGROUND_APPEARANCE_MASK
+                if (ConfigManager.isVerboseLogEnabled()) {
+                    XposedUtils.log(
+                        module,
+                        "[BottomDiag] bars-appearance requested=0x${requestedAppearance.toUInt().toString(16)} " +
+                            "mask=0x${requestedMask.toUInt().toString(16)} guarded=" +
+                            "0x${guardedAppearance.toUInt().toString(16)}/" +
+                            "0x${guardedMask.toUInt().toString(16)}"
+                    )
+                }
+                chain.proceed(arrayOf(guardedAppearance, guardedMask))
+            }
+            XposedUtils.log(module, "KeyboardStyleHook: BottomDiag InsetsController guard installed")
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "KeyboardStyleHook: InsetsController guard failed", t)
+        }
+    }
+
+    /**
+     * Android's edge-to-edge enforcement deliberately makes DecorView ignore
+     * PhoneWindow's navigation-bar color and calculate a transparent color
+     * view instead. That is correct while the IME is steady, but during the
+     * insets animation the transparent strip is composed over the leash's
+     * black backing surface. Temporarily disable only the color calculation's
+     * edge-to-edge branch while our transition guard is active. The field is
+     * restored before returning, so layout/insets remain edge-to-edge and the
+     * steady transparent result is restored after the animation.
+     */
+    private fun installDecorNavigationColorGuard(module: XposedModule) {
+        try {
+            val decorViewClass = Class.forName("com.android.internal.policy.DecorView")
+            XposedUtils.log(
+                module,
+                "KeyboardStyleHook: probing DecorView navigation color guard " +
+                    "methods=${decorViewClass.declaredMethods.count { it.name == "updateColorViews" }}"
+            )
+            val updateColorViewsMethod = decorViewClass.declaredMethods.firstOrNull {
+                it.name == "updateColorViews" && it.parameterTypes.size == 2
+            }?.apply { isAccessible = true } ?: run {
+                XposedUtils.logError(module, "KeyboardStyleHook: DecorView.updateColorViews not found")
+                return
+            }
+            module.hook(updateColorViewsMethod).intercept { chain ->
+                val window = activeImeWindow ?: return@intercept chain.proceed()
+                val shouldFlatten =
+                    chain.thisObject === window.decorView &&
+                        ConfigManager.isStyleEnabled() &&
+                        !shouldKeepGlassNavigationTransparent() &&
+                        Color.alpha(activeSteadyBottomBarColor) < 255 &&
+                        SystemClock.uptimeMillis() < bottomTransitionGuardUntil
+                if (!shouldFlatten) return@intercept chain.proceed()
+
+                val originalEdgeToEdge = XposedUtils.getObjectField(
+                    window,
+                    "mEdgeToEdgeEnforced"
+                ) as? Boolean ?: return@intercept chain.proceed()
+                XposedUtils.setObjectField(window, "mEdgeToEdgeEnforced", false)
+                try {
+                    val result = chain.proceed()
+                    if (
+                        ConfigManager.isVerboseLogEnabled() &&
+                        decorNavigationGuardDiagnosticCount.getAndIncrement() < 24
+                    ) {
+                        val state = XposedUtils.getObjectField(
+                            chain.thisObject,
+                            "mNavigationColorViewState"
+                        )
+                        val navView = state?.let { XposedUtils.getObjectField(it, "view") as? View }
+                        val storedColor = XposedUtils.getObjectField(window, "mNavigationBarColor") as? Int
+                        XposedUtils.log(
+                            module,
+                            "[BottomDiag] DecorView nav calculation flattened " +
+                                "stored=${colorHex(storedColor ?: Color.TRANSPARENT)} " +
+                                "view=${viewSnapshot(navView)}"
+                        )
+                    }
+                    result
+                } finally {
+                    XposedUtils.setObjectField(window, "mEdgeToEdgeEnforced", originalEdgeToEdge)
+                }
+            }
+            XposedUtils.log(module, "KeyboardStyleHook: DecorView navigation color guard installed")
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "KeyboardStyleHook: DecorView navigation color guard failed", t)
+        }
+    }
+
+    private fun scheduleBottomSnapshots(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        sequence: Int,
+        phase: String
+    ) {
+        val decor = service.window?.window?.decorView ?: return
+        longArrayOf(0L, 16L, 50L, 100L, 200L, 350L).forEach { delay ->
+            decor.postDelayed({ applyImeToolbarTransitionGuard(service) }, delay)
+        }
+        if (ConfigManager.isVerboseLogEnabled()) {
+            longArrayOf(0L, 16L, 50L, 100L, 200L, 350L, 500L).forEach { delay ->
+                decor.postDelayed(
+                    { logBottomSnapshot(module, service, sequence, "$phase:+${delay}ms") },
+                    delay
+                )
+            }
+        }
+        decor.postDelayed(
+            {
+                // A newer show/hide request owns the color now; an older
+                // callback must never clear its transition guard.
+                if (bottomDiagSequence.get() == sequence) {
+                    bottomTransitionGuardUntil = 0L
+                    hideMaterialDuringBottomTransition = false
+                    restoreImeToolbarTransitionGuard(service)
+                    if (ConfigManager.isStyleEnabled()) {
+                        applyBottomBarAppearanceImmediately(service)
+                    }
+                    logBottomSnapshot(module, service, sequence, "$phase:steady-restored")
+                    // Sequence ownership above proves no newer show request has
+                    // arrived. InputMethodService.isInputViewShown can remain
+                    // true briefly after the surface is already hidden, so it
+                    // is not a reliable gate for this off-screen prewarm.
+                    if (phase == "hide") {
+                        prepareDynamicGlassBeforeShow(module, service)
+                        primeDynamicGlassHiddenBuffer(module, service)
+                    }
+                }
+            },
+            BOTTOM_TRANSITION_GUARD_MS + 32L
+        )
+    }
+
+    private fun logBottomSnapshot(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        sequence: Int,
+        phase: String
+    ) {
+        if (!ConfigManager.isVerboseLogEnabled()) return
+        val now = SystemClock.uptimeMillis()
+        val window = service.window?.window
+        val decor = window?.decorView
+        val root = XposedUtils.getObjectField(service, "currentImeRootView") as? View
+        val attrs = window?.attributes
+        val plugin = readPluginBottomSnapshot()
+        XposedUtils.log(
+            module,
+            "[BottomDiag][$sequence][$phase] t=$now configured=${colorHex(activeBottomBarColor)} " +
+                "bgType=${ConfigManager.getBgType()} opacity=${ConfigManager.getOpacity()} " +
+                "guardRemaining=${(bottomTransitionGuardUntil - now).coerceAtLeast(0L)}ms " +
+                "windowNav=${colorHex(try { window?.navigationBarColor ?: Color.TRANSPARENT } catch (_: Throwable) { Color.TRANSPARENT })} " +
+                "barAppearance=${try { window?.insetsController?.systemBarsAppearance?.let { "0x${it.toUInt().toString(16)}" } } catch (_: Throwable) { null }} " +
+                "contrast=${try { window?.isNavigationBarContrastEnforced } catch (_: Throwable) { null }} " +
+                "flags=${attrs?.flags?.let { "0x${it.toUInt().toString(16)}" }} format=${attrs?.format} " +
+                "decor=${viewSnapshot(decor)} root=${viewSnapshot(root)} plugin=$plugin"
+        )
+    }
+
+    private fun readPluginBottomSnapshot(): String {
+        return try {
+            val injectorClass = Class.forName("android.inputmethodservice.InputMethodServiceInjector")
+            val loaderField = injectorClass.getDeclaredField("sClassLoader").apply { isAccessible = true }
+            val loader = loaderField.get(null) as? ClassLoader ?: return "loader=null"
+            val managerClass = Class.forName("com.miui.inputmethod.InputMethodBottomManager", false, loader)
+            fun staticField(name: String): Any? = try {
+                managerClass.getDeclaredField(name).apply { isAccessible = true }.get(null)
+            } catch (_: Throwable) {
+                null
+            }
+            val view = staticField("sBottomView") as? View
+            "view=${viewSnapshot(view)},current=${(staticField("currentBottomViewColor") as? Int)?.let(::colorHex)}," +
+                "default=${(staticField("sDefBottomViewColor") as? Int)?.let(::colorHex)}"
+        } catch (t: Throwable) {
+            "unavailable:${t.javaClass.simpleName}"
+        }
+    }
+
+    private fun viewSnapshot(view: View?): String {
+        if (view == null) return "null"
+        val background = when (val drawable = view.background) {
+            is ColorDrawable -> colorHex(drawable.color)
+            null -> "null"
+            else -> drawable.javaClass.simpleName
+        }
+        return "${view.javaClass.simpleName}{vis=${view.visibility},shown=${view.isShown}," +
+            "attached=${view.isAttachedToWindow},size=${view.width}x${view.height}," +
+            "alpha=${view.alpha},bg=$background}"
+    }
+
+    private fun colorHex(color: Int): String = "#%08X".format(color)
 
     /**
      * bb.u.k() removes both material views when the current editor package is
@@ -514,7 +1605,7 @@ object KeyboardStyleHook {
         menuCardColor: String,
         letterKeycapColor: String
     ) {
-        val coreFields = arrayOf("d", "e", "h", "i", "k", "l", "m", "w", "x", "z", "A", "B")
+        val coreFields = arrayOf("a", "b", "d", "e", "h", "i", "k", "l", "m", "u", "w", "x", "z", "A", "B")
         val appsPanelFields = arrayOf("B0", "C0", "D0", "E0", "F0", "G0", "H0", "I0", "J0", "K0", "L0")
         val fieldNames = coreFields + appsPanelFields
         synchronized(originalAppsPanelColors) {
@@ -618,6 +1709,16 @@ object KeyboardStyleHook {
             if (bgType == 1) {
                 replacements["A"] = divider
                 replacements["B"] = divider
+            }
+            // na.d.u is the Compose toolbar row background.  At very low
+            // material opacity it must stay transparent so the guarded IME
+            // surface underneath remains continuous while the leash moves.
+            // Leaving Xiaomi's stock token here creates the dark rounded band
+            // that is visible only during show/hide animation.
+            if (bgType == 0) {
+                replacements["a"] = Color.TRANSPARENT
+                replacements["b"] = Color.TRANSPARENT
+                replacements["u"] = Color.TRANSPARENT
             }
             replacements.forEach { (name, value) -> writeLongField(colors, name, composeColor(value)) }
         }
@@ -1423,7 +2524,10 @@ object KeyboardStyleHook {
                         }
 
                         applySoftGlassForeground(f3500h, isDark, opacity, radiusPx)
-                        f3500h.visibility = View.VISIBLE
+                        val guarded = hideMaterialDuringBottomTransition &&
+                            SystemClock.uptimeMillis() < bottomTransitionGuardUntil &&
+                            opacity < 100
+                        f3500h.visibility = if (guarded) View.INVISIBLE else View.VISIBLE
 
                         if (ConfigManager.isVerboseLogEnabled()) {
                             XposedUtils.log(
@@ -1438,7 +2542,7 @@ object KeyboardStyleHook {
                                 f3501i.alpha = 0.55f + 0.25f * glassStrength
                                 val bMethod = helper.javaClass.declaredMethods.find { it.name == "b" && it.parameterTypes.size == 1 }
                                 bMethod?.invoke(helper, f3501i)
-                                f3501i.visibility = View.VISIBLE
+                                f3501i.visibility = if (guarded) View.INVISIBLE else View.VISIBLE
                             } catch (_: Throwable) {
                                 f3501i.visibility = View.GONE
                             }
@@ -1510,12 +2614,13 @@ object KeyboardStyleHook {
         val base = 255
         fun composite(channel: Int): Int =
             ((channel * alpha + base * (255 - alpha)) / 255).coerceIn(0, 255)
-        return Color.argb(
-            (255 * strength).toInt(),
-            composite(red),
-            composite(green),
-            composite(blue)
-        )
+        // WindowManager snapshots the navigation-bar color when the IME enter
+        // animation starts. A translucent color is composited over its black
+        // animation leash, so low opacity briefly looks black even though the
+        // bottom view later draws the same color over the app. The RGB values
+        // above are already flattened onto the keyboard's light backing; keep
+        // the system-owned strip opaque to avoid applying alpha a second time.
+        return Color.rgb(composite(red), composite(green), composite(blue))
     }
 
     private fun updateBottomBarAppearance(
@@ -1556,6 +2661,98 @@ object KeyboardStyleHook {
         } catch (_: Throwable) {}
     }
 
+    /** The compositor glass already covers the navigation area. Do not place
+     * the legacy opaque animation backing over it, even during the first show. */
+    private fun shouldKeepGlassNavigationTransparent(): Boolean =
+        ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0 &&
+            ConfigManager.getOpacity() <= DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY &&
+            ConfigManager.getBlurRadius() > 0
+
+    /** Apply every system/plugin bottom-strip color synchronously. */
+    private fun applyBottomBarAppearanceImmediately(
+        service: android.inputmethodservice.InputMethodService
+    ): Int {
+        val steadyColor = resolveBottomBarColor(
+            service,
+            ConfigManager.getBgType(),
+            ConfigManager.getOpacity(),
+            ConfigManager.getBgColor()
+        )
+        activeSteadyBottomBarColor = steadyColor
+        val transitionGuarded = SystemClock.uptimeMillis() < bottomTransitionGuardUntil
+        val guardTransparentSurface = transitionGuarded && Color.alpha(steadyColor) < 255 &&
+            !shouldKeepGlassNavigationTransparent()
+        val bottomBarColor = if (guardTransparentSurface) {
+            flattenBottomBarForAnimation(service, steadyColor)
+        } else {
+            steadyColor
+        }
+        activeBottomBarColor = bottomBarColor
+
+        try {
+            service.window?.window?.let { window ->
+                activeImeWindow = window
+                // Make PhoneWindow actually draw the requested navigation-bar
+                // color instead of retaining a translucent black fallback.
+                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+                window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+                window.setNavigationBarColor(bottomBarColor)
+                window.setNavigationBarContrastEnforced(false)
+                applyImeTransitionSurface(window)
+                try {
+                    val dividerMethod = window.javaClass.methods.find {
+                        it.name == "setNavigationBarDividerColor" && it.parameterTypes.size == 1
+                    }
+                    dividerMethod?.invoke(window, bottomBarColor)
+                } catch (_: Throwable) {}
+            }
+        } catch (_: Throwable) {}
+
+        // The MIUI phrase plugin owns a strip inside the keyboard surface. It
+        // must always receive the steady material color; bottomBarColor may be
+        // an opaque color used only by the system navigation animation leash.
+        // Mixing the two made the plugin flash pale and remain that way until a
+        // key press caused another draw.
+        updateBottomBarAppearance(service, steadyColor)
+        return bottomBarColor
+    }
+
+    /** Keep the IME request itself in transparent navigation-bar mode. */
+    private fun applyImeTransitionSurface(window: Window) {
+        try {
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.decorView.setBackgroundColor(Color.TRANSPARENT)
+            if (Color.alpha(activeSteadyBottomBarColor) < 255) {
+                window.insetsController?.setSystemBarsAppearance(
+                    0,
+                    NAV_BAR_BACKGROUND_APPEARANCE_MASK
+                )
+            }
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * The IME animation leash is black and cannot preserve transparent pixels.
+     * Flatten only while the leash exists, then restore the real transparent
+     * color after the transition guard expires.
+     */
+    private fun flattenBottomBarForAnimation(
+        service: android.inputmethodservice.InputMethodService,
+        color: Int
+    ): Int {
+        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val base = if (isDark) 24 else 255
+        val alpha = Color.alpha(color)
+        fun composite(channel: Int): Int =
+            ((channel * alpha + base * (255 - alpha)) / 255).coerceIn(0, 255)
+        return Color.rgb(
+            composite(Color.red(color)),
+            composite(Color.green(color)),
+            composite(Color.blue(color))
+        )
+    }
+
     fun applyStyle(module: XposedModule, service: android.inputmethodservice.InputMethodService, rootView: View) {
         ConfigManager.syncFromProvider(service)
         if (!ConfigManager.isStyleEnabled()) return
@@ -1563,32 +2760,31 @@ object KeyboardStyleHook {
         val cornerRadiusDp = ConfigManager.getCornerRadius()
         val opacity = ConfigManager.getOpacity()
         val bgType = ConfigManager.getBgType()
-        val bottomBarColor = resolveBottomBarColor(
-            service,
-            bgType,
-            opacity,
-            ConfigManager.getBgColor()
-        )
-        activeBottomBarColor = bottomBarColor
+        applyBottomBarAppearanceImmediately(service)
 
         val density = service.resources.displayMetrics.density
         rootView.post {
             try {
                 // 1. Transparent window & navigation bar (Do NOT add FLAG_BLUR_BEHIND to window as it blurs the entire screen!)
+                // Re-resolve at execution time. The post can run after the
+                // transition guard has expired; replaying a color captured
+                // before posting would reintroduce the stale pale strip.
+                val currentBottomBarColor = applyBottomBarAppearanceImmediately(service)
+                val steadyBottomBarColor = activeSteadyBottomBarColor
                 val window = service.window?.window
                 if (window != null) {
-                    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                    window.setNavigationBarColor(bottomBarColor)
+                    // applyBottomBarAppearanceImmediately() owns the Window
+                    // background/format. Do not clear its temporary opaque
+                    // animation guard from this posted styling pass.
+                    window.setNavigationBarColor(currentBottomBarColor)
                     window.setNavigationBarContrastEnforced(false)
                     window.setDimAmount(0f)
                     window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
                     window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    val decor = window.decorView as? ViewGroup
-                    decor?.setBackgroundColor(Color.TRANSPARENT)
                 }
 
                 // 2. Blend the separately rendered bottom strip into the glass.
-                updateBottomBarAppearance(service, bottomBarColor)
+                updateBottomBarAppearance(service, activeSteadyBottomBarColor)
 
                 // 3. Clear background on full-screen container views so nothing bleeds to top
                 rootView.background = null
@@ -1598,7 +2794,7 @@ object KeyboardStyleHook {
                 } else {
                     rootView
                 }
-                targetView.background = if (bgType == 0) {
+                val styledBackground = if (bgType == 0) {
                     val contentTop = resolveKeyboardContentTop(service, targetView)
                     if (contentTop != null && contentTop < targetView.height) {
                         val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -1632,16 +2828,16 @@ object KeyboardStyleHook {
                         // while the keyboard card above is diagonal. Gradually
                         // converge the lower third of the card to that exact solid
                         // color so there is no visible horizontal join.
-                        val seamRed = Color.red(bottomBarColor)
-                        val seamGreen = Color.green(bottomBarColor)
-                        val seamBlue = Color.blue(bottomBarColor)
+                        val seamRed = Color.red(steadyBottomBarColor)
+                        val seamGreen = Color.green(steadyBottomBarColor)
+                        val seamBlue = Color.blue(steadyBottomBarColor)
                         val bottomBlend = GradientDrawable(
                             GradientDrawable.Orientation.TOP_BOTTOM,
                             intArrayOf(
                                 Color.argb(0, seamRed, seamGreen, seamBlue),
                                 Color.argb(0, seamRed, seamGreen, seamBlue),
                                 Color.argb((56 * strength).toInt(), seamRed, seamGreen, seamBlue),
-                                bottomBarColor
+                                steadyBottomBarColor
                             )
                         )
                         LayerDrawable(arrayOf(tint, bottomBlend)).apply {
@@ -1654,9 +2850,16 @@ object KeyboardStyleHook {
                 } else {
                     null
                 }
+                targetView.background = styledBackground
+                applyImeToolbarTransitionGuard(service)
 
-                // For keyboard foreground keys and text, keep them solid and crisp!
-                targetView.alpha = 1.0f
+                // Keep the first raw-transparent IME buffer hidden. The hold is
+                // cleared immediately after the first blur-bearing frame commits.
+                if (dynamicGlassContentHoldActive) {
+                    holdDynamicGlassContentView(targetView)
+                } else {
+                    targetView.alpha = 1f
+                }
 
                 // 4. Update HyperMaterialHelper's f3500h view which is the true keyboard bottom card
                 val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")

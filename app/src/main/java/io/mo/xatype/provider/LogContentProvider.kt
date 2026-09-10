@@ -31,6 +31,7 @@ class LogContentProvider : ContentProvider() {
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, false))
+                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_VERBOSE_LOG, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_VERBOSE_LOG, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_STYLE_ENABLED, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_STYLE_ENABLED, false))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_CORNER_RADIUS, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_CORNER_RADIUS, 16))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_OPACITY, 85))

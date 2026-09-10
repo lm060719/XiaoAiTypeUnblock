@@ -40,6 +40,7 @@ object ConfigManager {
     @Volatile private var cachedClipboardSensitive = false
     @Volatile private var cachedClipboardPermanent = false
     @Volatile private var cachedOsVersionUnblock = false
+    @Volatile private var cachedVerboseLog = false
     @Volatile private var cachedStyleEnabled = false
     @Volatile private var cachedCornerRadius = 16
     @Volatile private var cachedOpacity = 85
@@ -72,6 +73,7 @@ object ConfigManager {
                 cachedClipboardSensitive = bundle.getBoolean(KEY_CLIPBOARD_SENSITIVE, false)
                 cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, false)
                 cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, false)
+                cachedVerboseLog = bundle.getBoolean(KEY_VERBOSE_LOG, false)
                 cachedStyleEnabled = bundle.getBoolean(KEY_STYLE_ENABLED, false)
                 cachedCornerRadius = bundle.getInt(KEY_CORNER_RADIUS, 16)
                 cachedOpacity = bundle.getInt(KEY_OPACITY, 85)
@@ -178,7 +180,8 @@ object ConfigManager {
     }
 
     fun isVerboseLogEnabled(): Boolean {
-        return remotePrefs?.getBoolean(KEY_VERBOSE_LOG, false) ?: false
+        if (hasSyncedFromProvider) return cachedVerboseLog
+        return remotePrefs?.getBoolean(KEY_VERBOSE_LOG, cachedVerboseLog) ?: cachedVerboseLog
     }
 
     fun getLocalPrefs(context: Context): SharedPreferences {

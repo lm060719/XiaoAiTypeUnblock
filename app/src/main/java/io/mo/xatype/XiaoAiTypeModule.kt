@@ -9,6 +9,7 @@ import io.mo.xatype.hooks.ClipboardSensitiveHook
 import io.mo.xatype.hooks.CloudBlacklistHook
 import io.mo.xatype.hooks.HyperOsVersionHook
 import io.mo.xatype.hooks.KeyboardStyleHook
+import io.mo.xatype.hooks.SystemUiNavigationGuardHook
 import io.mo.xatype.hooks.VoiceModerationHook
 import io.mo.xatype.util.XposedUtils
 
@@ -17,11 +18,16 @@ class XiaoAiTypeModule : XposedModule() {
     companion object {
         const val TARGET_PACKAGE = "com.xiaomi.type"
         const val PHRASE_PACKAGE = "com.miui.phrase"
+        const val SYSTEM_UI_PACKAGE = "com.android.systemui"
     }
 
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         super.onPackageLoaded(param)
-        if (param.packageName != TARGET_PACKAGE && param.packageName != PHRASE_PACKAGE) return
+        if (
+            param.packageName != TARGET_PACKAGE &&
+            param.packageName != PHRASE_PACKAGE &&
+            param.packageName != SYSTEM_UI_PACKAGE
+        ) return
 
         // Initialize remote preferences
         ConfigManager.initRemote(this)
@@ -32,6 +38,15 @@ class XiaoAiTypeModule : XposedModule() {
         XposedUtils.log(this, "Target: ${param.packageName} (FirstPackage=${param.isFirstPackage})")
         XposedUtils.log(this, "Framework: $frameworkName $frameworkVersion (API ${apiVersion})")
         XposedUtils.log(this, "================================================")
+
+        if (param.packageName == SYSTEM_UI_PACKAGE) {
+            try {
+                SystemUiNavigationGuardHook.install(this, classLoader)
+            } catch (t: Throwable) {
+                XposedUtils.logError(this, "Error installing SystemUiNavigationGuardHook", t)
+            }
+            return
+        }
 
         try {
             ClipboardPermanentHook.install(this, classLoader)
