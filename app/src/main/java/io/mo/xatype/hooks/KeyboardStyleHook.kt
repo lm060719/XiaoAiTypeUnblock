@@ -1,5 +1,6 @@
 package io.mo.xatype.hooks
 
+import android.annotation.SuppressLint
 import android.content.res.Configuration
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
@@ -894,6 +895,10 @@ object KeyboardStyleHook {
         dynamicGlassGeometry = null
     }
 
+    // Intentional non-SDK access inside the Xposed-injected IME process.
+    // Public SDK APIs cannot configure this child blur surface. Availability
+    // is checked at runtime; failures retain the native material fallback.
+    @SuppressLint("BlockedPrivateApi")
     private fun ensureDynamicGlassSurfacePrimer(
         module: XposedModule,
         service: android.inputmethodservice.InputMethodService,
@@ -1027,6 +1032,8 @@ object KeyboardStyleHook {
         }
     }
 
+    // Paired cleanup of the non-SDK surface above; reflection failures are caught.
+    @SuppressLint("BlockedPrivateApi")
     private fun removeDynamicGlassSurfacePrimer() {
         stopTrackingDynamicGlassGeometry()
         val primer = dynamicGlassSurfacePrimer ?: return

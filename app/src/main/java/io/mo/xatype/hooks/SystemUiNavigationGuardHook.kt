@@ -1,6 +1,7 @@
 package io.mo.xatype.hooks
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -154,6 +155,10 @@ object SystemUiNavigationGuardHook {
     }
 
     /** Keep SurfaceFlinger's background-blur path active between IME shows. */
+    // Intentional non-SDK access inside the Xposed-injected SystemUI process.
+    // The blur warm-up surface has no public SDK equivalent; unsupported
+    // implementations are handled by the existing exception fallback.
+    @SuppressLint("BlockedPrivateApi")
     private fun ensureBlurWarmSentinel(module: XposedModule, view: View) {
         try {
             val getViewRootImpl = View::class.java.getDeclaredMethod("getViewRootImpl").apply {
@@ -228,6 +233,8 @@ object SystemUiNavigationGuardHook {
         }
     }
 
+    // Paired cleanup of the non-SDK sentinel above; reflection failures are caught.
+    @SuppressLint("BlockedPrivateApi")
     private fun removeBlurWarmSentinel() {
         val sentinel = blurWarmSentinel ?: return
         blurWarmSentinel = null
