@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import io.mo.xatype.R
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.hooks.BackgroundOpacity
 import java.io.DataOutputStream
 
 class MainActivity : AppCompatActivity() {
@@ -31,7 +32,9 @@ class MainActivity : AppCompatActivity() {
         val green: SeekBar,
         val greenValue: TextView,
         val blue: SeekBar,
-        val blueValue: TextView
+        val blueValue: TextView,
+        val opacity: SeekBar?,
+        val opacityValue: TextView?
     )
 
     private lateinit var viewStatusDot: View
@@ -129,13 +132,13 @@ class MainActivity : AppCompatActivity() {
         textRgb = createRgbControls(layoutTextColorConfig)
         switchCustomFunctionKeycapColor = findViewById(R.id.switchCustomFunctionKeycapColor)
         layoutFunctionKeycapColorConfig = findViewById(R.id.layoutFunctionKeycapColorConfig)
-        functionKeycapRgb = createRgbControls(layoutFunctionKeycapColorConfig)
+        functionKeycapRgb = createRgbControls(layoutFunctionKeycapColorConfig, includeOpacity = true)
         switchCustomMenuCardColor = findViewById(R.id.switchCustomMenuCardColor)
         layoutMenuCardColorConfig = findViewById(R.id.layoutMenuCardColorConfig)
-        menuCardRgb = createRgbControls(layoutMenuCardColorConfig)
+        menuCardRgb = createRgbControls(layoutMenuCardColorConfig, includeOpacity = true)
         switchCustomLetterKeycapColor = findViewById(R.id.switchCustomLetterKeycapColor)
         layoutLetterKeycapColorConfig = findViewById(R.id.layoutLetterKeycapColorConfig)
-        letterKeycapRgb = createRgbControls(layoutLetterKeycapColorConfig)
+        letterKeycapRgb = createRgbControls(layoutLetterKeycapColorConfig, includeOpacity = true)
         btnRestartIme = findViewById(R.id.btnRestartIme)
         btnAbout = findViewById(R.id.btnAbout)
     }
@@ -328,7 +331,7 @@ class MainActivity : AppCompatActivity() {
         // 5. Function keycap color. The existing preference key is retained for migration.
         val savedFunctionKeycapColor = prefs.getString(ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, "") ?: ""
         val customFunctionKeycapColorEnabled = savedFunctionKeycapColor.isNotBlank()
-        configureRgbControls(functionKeycapRgb, savedFunctionKeycapColor.ifBlank { "#FFFFFF" }) { hex ->
+        configureRgbControls(functionKeycapRgb, savedFunctionKeycapColor.ifBlank { "#FFFFFF" }, ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY) { hex ->
             prefs.edit().putString(ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, hex).apply()
         }
         switchCustomFunctionKeycapColor.isChecked = customFunctionKeycapColorEnabled
@@ -347,7 +350,7 @@ class MainActivity : AppCompatActivity() {
         // 6. Menu card color. This controls the APPS panel C0 token independently.
         val savedMenuCardColor = prefs.getString(ConfigManager.KEY_MENU_CARD_COLOR, "") ?: ""
         val customMenuCardColorEnabled = savedMenuCardColor.isNotBlank()
-        configureRgbControls(menuCardRgb, savedMenuCardColor.ifBlank { "#FFFFFF" }) { hex ->
+        configureRgbControls(menuCardRgb, savedMenuCardColor.ifBlank { "#FFFFFF" }, ConfigManager.KEY_MENU_CARD_OPACITY) { hex ->
             prefs.edit().putString(ConfigManager.KEY_MENU_CARD_COLOR, hex).apply()
         }
         switchCustomMenuCardColor.isChecked = customMenuCardColorEnabled
@@ -366,7 +369,7 @@ class MainActivity : AppCompatActivity() {
         // 7. Letter/number main keycap color. na.d.d() returns this normal-key token.
         val savedLetterKeycapColor = prefs.getString(ConfigManager.KEY_LETTER_KEYCAP_COLOR, "") ?: ""
         val customLetterKeycapColorEnabled = savedLetterKeycapColor.isNotBlank()
-        configureRgbControls(letterKeycapRgb, savedLetterKeycapColor.ifBlank { "#FFFFFF" }) { hex ->
+        configureRgbControls(letterKeycapRgb, savedLetterKeycapColor.ifBlank { "#FFFFFF" }, ConfigManager.KEY_LETTER_KEYCAP_OPACITY) { hex ->
             prefs.edit().putString(ConfigManager.KEY_LETTER_KEYCAP_COLOR, hex).apply()
         }
         switchCustomLetterKeycapColor.isChecked = customLetterKeycapColorEnabled
@@ -384,7 +387,7 @@ class MainActivity : AppCompatActivity() {
 
     }
 
-    private fun createRgbControls(container: LinearLayout): RgbControls {
+    private fun createRgbControls(container: LinearLayout, includeOpacity: Boolean = false): RgbControls {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -401,11 +404,12 @@ class MainActivity : AppCompatActivity() {
         header.addView(hexValue)
         container.addView(header)
 
-        fun addChannel(label: String): Pair<SeekBar, TextView> {
+        fun addChannel(label: String, maximum: Int = 255): Pair<SeekBar, TextView> {
             val channelColor = when (label) {
                 "R" -> Color.rgb(239, 68, 68)
                 "G" -> Color.rgb(34, 197, 94)
-                else -> Color.rgb(59, 130, 246)
+                "B" -> Color.rgb(59, 130, 246)
+                else -> getColor(R.color.primary)
             }
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -419,7 +423,8 @@ class MainActivity : AppCompatActivity() {
                 gravity = android.view.Gravity.CENTER
             }
             val seekBar = SeekBar(this).apply {
-                max = 255
+                max = maximum
+                contentDescription = label
                 progressTintList = ColorStateList.valueOf(channelColor)
                 thumbTintList = ColorStateList.valueOf(channelColor)
             }
@@ -428,7 +433,7 @@ class MainActivity : AppCompatActivity() {
                 textSize = 12f
                 gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
             }
-            row.addView(title, LinearLayout.LayoutParams(dp(24), LinearLayout.LayoutParams.WRAP_CONTENT))
+            row.addView(title, LinearLayout.LayoutParams(dp(if (label.length > 1) 64 else 24), LinearLayout.LayoutParams.WRAP_CONTENT))
             row.addView(seekBar, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(value, LinearLayout.LayoutParams(dp(38), LinearLayout.LayoutParams.WRAP_CONTENT))
             container.addView(row)
@@ -438,10 +443,39 @@ class MainActivity : AppCompatActivity() {
         val (red, redValue) = addChannel("R")
         val (green, greenValue) = addChannel("G")
         val (blue, blueValue) = addChannel("B")
-        return RgbControls(preview, hexValue, red, redValue, green, greenValue, blue, blueValue)
+        val opacityControls = if (includeOpacity) addChannel("不透明度", 100) else null
+        opacityControls?.first?.progress = 100
+        if (includeOpacity) {
+            container.addView(TextView(this).apply {
+                text = "0% 全透明，100% 不透明"
+                setTextColor(getColor(R.color.text_secondary))
+                textSize = 12f
+                setPadding(0, dp(4), 0, 0)
+            })
+        }
+        return RgbControls(preview, hexValue, red, redValue, green, greenValue, blue, blueValue,
+            opacityControls?.first, opacityControls?.second)
     }
 
-    private fun configureRgbControls(controls: RgbControls, initialColor: String, onChanged: (String) -> Unit) {
+    private fun configureRgbControls(
+        controls: RgbControls,
+        initialColor: String,
+        opacityKey: String? = null,
+        onChanged: (String) -> Unit
+    ) {
+        if (opacityKey != null && controls.opacity != null) {
+            val prefs = ConfigManager.getLocalPrefs(this)
+            controls.opacity.progress = prefs.getInt(opacityKey, 100).coerceIn(0, 100)
+            controls.opacity.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    refreshRgbDisplay(controls)
+                    if (fromUser) prefs.edit().putInt(opacityKey, progress.coerceIn(0, 100)).apply()
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
+            })
+        }
         setRgbColor(controls, initialColor)
         val listener = object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -474,13 +508,14 @@ class MainActivity : AppCompatActivity() {
         controls.preview.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(8).toFloat()
-            setColor(color)
+            setColor(BackgroundOpacity.argb(color, controls.opacity?.progress ?: 100))
             setStroke(dp(1), getColor(R.color.card_stroke))
         }
         controls.hexValue.text = currentRgbHex(controls)
         controls.redValue.text = controls.red.progress.toString()
         controls.greenValue.text = controls.green.progress.toString()
         controls.blueValue.text = controls.blue.progress.toString()
+        controls.opacityValue?.text = "${controls.opacity?.progress ?: 100}%"
     }
 
     private fun currentRgbHex(controls: RgbControls): String = String.format(

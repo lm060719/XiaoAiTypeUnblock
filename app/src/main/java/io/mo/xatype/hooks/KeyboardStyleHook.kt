@@ -247,7 +247,9 @@ object KeyboardStyleHook {
             }
             if (normalKeycapMethod != null) {
                 module.hook(normalKeycapMethod).intercept { chain ->
-                    val customColor = parseOptionalColor(ConfigManager.getLetterKeycapColor())
+                    val customColor = parseOptionalColor(
+                        ConfigManager.getLetterKeycapColor(), ConfigManager.getLetterKeycapOpacity()
+                    )
                     if (ConfigManager.isStyleEnabled() && customColor != null) {
                         composeColor(customColor)
                     } else {
@@ -1656,9 +1658,9 @@ object KeyboardStyleHook {
                     null
                 }
             }
-            val customFunctionKeycap = parseOptionalColor(functionKeycapColor)
-            val customMenuCard = parseOptionalColor(menuCardColor)
-            val customLetterKeycap = parseOptionalColor(letterKeycapColor)
+            val customFunctionKeycap = parseOptionalColor(functionKeycapColor, ConfigManager.getFunctionKeycapOpacity())
+            val customMenuCard = parseOptionalColor(menuCardColor, ConfigManager.getMenuCardOpacity())
+            val customLetterKeycap = parseOptionalColor(letterKeycapColor, ConfigManager.getLetterKeycapOpacity())
             val keySurfaceDark = (customLetterKeycap ?: customFunctionKeycap)?.let {
                 (299 * Color.red(it) + 587 * Color.green(it) + 114 * Color.blue(it)) / 1000 < 150
             } ?: surfaceDark
@@ -1732,7 +1734,8 @@ object KeyboardStyleHook {
             }
             // Scale only the original surface tokens. Always start from the
             // snapshot so repeated compositions do not compound the opacity.
-            // Keycaps, labels and icons retain their native alpha and RGB.
+            // Custom keycaps and cards use their own opacity; labels and icons
+            // are not faded by any of the surface opacity settings.
             if (bgType == 0) {
                 for (name in arrayOf("b", "B0")) {
                     val original = originals[name] ?: continue
@@ -2014,7 +2017,7 @@ object KeyboardStyleHook {
 
     private fun clipboardPalette(view: View): ClipboardPalette {
         val opacityStrength = ConfigManager.getOpacity().coerceIn(0, 100) / 100f
-        val customCard = parseOptionalColor(ConfigManager.getMenuCardColor())
+        val customCard = parseOptionalColor(ConfigManager.getMenuCardColor(), ConfigManager.getMenuCardOpacity())
         val dark = when (ConfigManager.getBgType()) {
             1 -> isDarkColor(parseOptionalColor(ConfigManager.getBgColor()) ?: Color.WHITE)
             else -> (view.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -2028,7 +2031,7 @@ object KeyboardStyleHook {
         } else {
             Color.argb((145 * opacityStrength).toInt(), 255, 255, 255)
         }
-        val pressed = if (dark) {
+        val pressed = customCard?.let { resolvePressedKeycapColor(it, dark) } ?: if (dark) {
             Color.argb((135 * opacityStrength).toInt(), 255, 255, 255)
         } else {
             Color.argb((190 * opacityStrength).toInt(), 255, 255, 255)
@@ -2181,9 +2184,9 @@ object KeyboardStyleHook {
         "com.miui.inputmethod.InputMethodPhraseAdapter"
     )
 
-    private fun parseOptionalColor(value: String): Int? = value.takeIf { it.isNotBlank() }?.let {
+    private fun parseOptionalColor(value: String, opacity: Int = 100): Int? = value.takeIf { it.isNotBlank() }?.let {
         try {
-            Color.parseColor(it)
+            BackgroundOpacity.argb(Color.parseColor(it), opacity)
         } catch (_: Throwable) {
             null
         }

@@ -29,6 +29,9 @@ object ConfigManager {
     const val KEY_FUNCTION_KEYCAP_COLOR = "pref_keycap_color" // Empty: system color
     const val KEY_MENU_CARD_COLOR = "pref_menu_card_color" // Empty: system color
     const val KEY_LETTER_KEYCAP_COLOR = "pref_letter_keycap_color" // Empty: system color
+    const val KEY_FUNCTION_KEYCAP_OPACITY = "pref_function_keycap_opacity" // 0 to 100
+    const val KEY_MENU_CARD_OPACITY = "pref_menu_card_opacity" // 0 to 100
+    const val KEY_LETTER_KEYCAP_OPACITY = "pref_letter_keycap_opacity" // 0 to 100
     const val KEY_BG_IMAGE_VERSION = "pref_bg_image_version"
 
     private var remotePrefs: SharedPreferences? = null
@@ -51,6 +54,9 @@ object ConfigManager {
     @Volatile private var cachedFunctionKeycapColor = ""
     @Volatile private var cachedMenuCardColor = ""
     @Volatile private var cachedLetterKeycapColor = ""
+    @Volatile private var cachedFunctionKeycapOpacity = 100
+    @Volatile private var cachedMenuCardOpacity = 100
+    @Volatile private var cachedLetterKeycapOpacity = 100
     @Volatile private var cachedBgImageVersion = 0L
     @Volatile private var hasSyncedFromProvider = false
 
@@ -84,6 +90,9 @@ object ConfigManager {
                 cachedFunctionKeycapColor = bundle.getString(KEY_FUNCTION_KEYCAP_COLOR, "") ?: ""
                 cachedMenuCardColor = bundle.getString(KEY_MENU_CARD_COLOR, "") ?: ""
                 cachedLetterKeycapColor = bundle.getString(KEY_LETTER_KEYCAP_COLOR, "") ?: ""
+                cachedFunctionKeycapOpacity = bundle.getInt(KEY_FUNCTION_KEYCAP_OPACITY, 100).coerceIn(0, 100)
+                cachedMenuCardOpacity = bundle.getInt(KEY_MENU_CARD_OPACITY, 100).coerceIn(0, 100)
+                cachedLetterKeycapOpacity = bundle.getInt(KEY_LETTER_KEYCAP_OPACITY, 100).coerceIn(0, 100)
                 cachedBgImageVersion = bundle.getLong(KEY_BG_IMAGE_VERSION, 0L)
                 hasSyncedFromProvider = true
             }
@@ -172,6 +181,24 @@ object ConfigManager {
         if (hasSyncedFromProvider) return cachedLetterKeycapColor
         return remotePrefs?.getString(KEY_LETTER_KEYCAP_COLOR, cachedLetterKeycapColor)
             ?: cachedLetterKeycapColor
+    }
+
+    fun getFunctionKeycapOpacity(): Int {
+        if (hasSyncedFromProvider) return cachedFunctionKeycapOpacity
+        return (remotePrefs?.getInt(KEY_FUNCTION_KEYCAP_OPACITY, cachedFunctionKeycapOpacity)
+            ?: cachedFunctionKeycapOpacity).coerceIn(0, 100)
+    }
+
+    fun getMenuCardOpacity(): Int {
+        if (hasSyncedFromProvider) return cachedMenuCardOpacity
+        return (remotePrefs?.getInt(KEY_MENU_CARD_OPACITY, cachedMenuCardOpacity)
+            ?: cachedMenuCardOpacity).coerceIn(0, 100)
+    }
+
+    fun getLetterKeycapOpacity(): Int {
+        if (hasSyncedFromProvider) return cachedLetterKeycapOpacity
+        return (remotePrefs?.getInt(KEY_LETTER_KEYCAP_OPACITY, cachedLetterKeycapOpacity)
+            ?: cachedLetterKeycapOpacity).coerceIn(0, 100)
     }
 
     fun getBgImageVersion(): Long {
