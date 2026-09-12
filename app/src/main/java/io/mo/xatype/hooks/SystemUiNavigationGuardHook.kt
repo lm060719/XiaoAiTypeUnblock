@@ -62,12 +62,8 @@ object SystemUiNavigationGuardHook {
                 systemUiContext = context
                 ensureScreenStateReceiver(context)
                 ConfigManager.syncFromProvider(context)
-                if (
-                    ConfigManager.isStyleEnabled() &&
-                    ConfigManager.getBgType() == 0 &&
-                    ConfigManager.getOpacity() <= SURFACE_ANIMATION_MAX_OPACITY &&
-                    ConfigManager.getBlurRadius() > 0
-                ) {
+                val compositorGlass = usesCompositorGlass()
+                if (compositorGlass) {
                     ensureBlurWarmSentinel(module, view)
                 } else {
                     removeBlurWarmSentinel()
@@ -86,7 +82,7 @@ object SystemUiNavigationGuardHook {
                     val duration = if (!showing) {
                         HIDE_GUARD_DURATION_MS
                     } else if (
-                        ConfigManager.getOpacity() <= SURFACE_ANIMATION_MAX_OPACITY
+                        compositorGlass || ConfigManager.getOpacity() <= SURFACE_ANIMATION_MAX_OPACITY
                     ) {
                         IME_SHOW_VISUAL_DURATION_MS
                     } else {
@@ -96,7 +92,7 @@ object SystemUiNavigationGuardHook {
                         module,
                         view,
                         duration,
-                        if (showing) null else resolveAppSurfaceColor()
+                        if (!showing) Color.TRANSPARENT else null
                     )
                     XposedUtils.log(
                         module,
@@ -118,6 +114,37 @@ object SystemUiNavigationGuardHook {
         installMiuiImeDurationProviderGuard(module, classLoader)
         installImeSurfaceAnimationGuard(module, classLoader)
         installImeAnimatorFallback(module)
+        installNavigationBackgroundAnimationGuard(module, classLoader)
+    }
+
+    private fun installNavigationBackgroundAnimationGuard(module: XposedModule, classLoader: ClassLoader) {
+        val transitionsClass = XposedUtils.findClass(
+            "com.android.systemui.shared.statusbar.phone.BarTransitions", classLoader
+        ) ?: return
+        val method = XposedUtils.findMethodExact(
+            transitionsClass, "applyModeBackground",
+            Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!
+        ) ?: return
+        module.hook(method).intercept { chain ->
+            val context = systemUiContext
+            val imeTransition = imeWasShowing || SystemClock.uptimeMillis() < surfaceAnimationArmedUntil
+            if (context != null && imeTransition && usesCompositorGlass() && shouldGuard(context) &&
+                chain.thisObject?.javaClass?.name?.endsWith("NavigationBarTransitions") == true
+            ) {
+                val result = chain.proceed(arrayOf(chain.getArg(0), false))
+                // The native method returns early if the mode is unchanged;
+                // cancel any fade that was already running in that case too.
+                val drawable = XposedUtils.getObjectField(chain.thisObject!!, "mBarBackground") as? Drawable
+                drawable?.let {
+                    XposedUtils.setObjectField(it, "mAnimating", false)
+                    it.invalidateSelf()
+                }
+                result
+            } else {
+                chain.proceed()
+            }
+        }
+        XposedUtils.log(module, "SystemUiNavigationGuard: native navigation background timing hooked")
     }
 
     private fun ensureScreenStateReceiver(context: Context) {
@@ -435,6 +462,11 @@ object SystemUiNavigationGuardHook {
         return currentIme?.startsWith(XIAOMI_IME_COMPONENT_PREFIX) == true
     }
 
+    private fun usesCompositorGlass(): Boolean = GlassTransitionPolicy.usesCompositor(
+        ConfigManager.isStyleEnabled(), ConfigManager.getBgType(),
+        ConfigManager.getOpacity(), ConfigManager.getBlurRadius()
+    )
+
     private fun applyGuard(
         module: XposedModule,
         view: View,
@@ -445,6 +477,17 @@ object SystemUiNavigationGuardHook {
         val transitions = XposedUtils.getObjectField(view, "mBarTransitions")
         val original = XposedUtils.getObjectField(transitions ?: return, "mBarBackground") as? Drawable
             ?: return
+        if (usesCompositorGlass()) {
+            // The IME now supplies its real translucent surface from frame one.
+            // A temporary transparent replacement hides that tint until its
+            // timer expires, producing the white-then-immersive bottom strip.
+            // Restore the native drawable immediately and use its current mode.
+            view.background = original
+            XposedUtils.setObjectField(original, "mAnimating", false)
+            original.invalidateSelf()
+            XposedUtils.log(module, "[BottomDiag][SystemUI][$sequence] native navigation background immediate")
+            return
+        }
         if (drawableDiagnosticCount.getAndIncrement() == 0) {
             val fields = generateSequence(original.javaClass as Class<*>?) { it.superclass }
                 .takeWhile { it != Any::class.java }
@@ -526,10 +569,6 @@ object SystemUiNavigationGuardHook {
             }
             type = type.superclass
         }
-    }
-
-    private fun resolveAppSurfaceColor(): Int {
-        return Color.TRANSPARENT
     }
 
     private fun resolveGuardColor(context: Context): Int {

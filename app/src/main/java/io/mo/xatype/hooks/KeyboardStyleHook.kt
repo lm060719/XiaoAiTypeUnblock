@@ -64,14 +64,16 @@ object KeyboardStyleHook {
         val decorHeight: Int, val shown: Boolean
     )
     private const val BOTTOM_TRANSITION_GUARD_MS = 420L
-    private const val DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY = 10
     private const val NAV_BAR_BACKGROUND_APPEARANCE_MASK = 2 or 64
     // na.d is a data-style class whose hashCode includes these mutable fields,
     // so identity keys are required to keep restoration reliable after patching.
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
+    @Volatile private var activeNativePalette: Any? = null
     private val materialRefreshGenerations = WeakHashMap<View, Int>()
     private val clipboardAdapterHooks = ConcurrentHashMap.newKeySet<Class<*>>()
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
+    private data class NativeViewBackground(val drawable: Drawable?, val alpha: Int)
+    private val nativeViewBackgrounds = WeakHashMap<View, NativeViewBackground>()
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
@@ -168,6 +170,30 @@ object KeyboardStyleHook {
 
         // 4. Hook Compose keyboard container corner radius: na.m.F0(s0.p)
         try {
+            // na.p.a(theme, material, followSystem, content, composer, flags)
+            // chooses the complete palette, including keycaps and labels. Blur
+            // support must not opt the keyboard into the separate glass palette.
+            val themeClass = XposedUtils.findClass("na.p", classLoader)
+            val themeMethod = themeClass?.declaredMethods?.find {
+                it.name == "a" && it.parameterTypes.map { type -> type.name } ==
+                    listOf("na.q", "boolean", "boolean", "a1.d", "s0.p", "int")
+            }
+            if (themeMethod != null) {
+                module.hook(themeMethod).intercept { chain ->
+                    if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
+                        val args = Array<Any?>(6) { chain.getArg(it) }
+                        args[1] = false
+                        // Let Compose recompute the changed bit for this argument.
+                        args[5] = (args[5] as Int) and 0x70.inv()
+                        chain.proceed(args)
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                XposedUtils.log(module, "KeyboardStyleHook: Hooked na.p.a (Preserve native palette)")
+            } else {
+                XposedUtils.logError(module, "na.p.a not found for native keyboard palette", null)
+            }
             val naMClass = XposedUtils.findClass("na.m", classLoader)
             if (naMClass != null) {
                 val f0Method = naMClass.declaredMethods.find { it.name == "F0" }
@@ -359,6 +385,10 @@ object KeyboardStyleHook {
             if (bMethod != null) {
                 module.hook(bMethod).intercept { chain ->
                     val res = chain.proceed()
+                    if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
+                        // Rim light is another colored overlay, separate from blur.
+                        (chain.getArg(0) as? View)?.alpha = 0f
+                    }
                     if (isToolbarTransitionGuardActive()) {
                         forceHyperMaterialLayersInvisible(chain.thisObject)
                     }
@@ -422,7 +452,7 @@ object KeyboardStyleHook {
                         val service = XposedUtils.getObjectField(helper, "a") as? android.inputmethodservice.InputMethodService
                         if (service != null) {
                             ConfigManager.syncFromProvider(service)
-                            scheduleHyperMaterialRefresh(module, service, helper)
+                            scheduleHyperMaterialRefresh(module, helper)
                         }
                     }
                     res
@@ -461,7 +491,7 @@ object KeyboardStyleHook {
                             if (rootView != null) {
                                 applyStyle(module, service, rootView)
                             } else {
-                                scheduleHyperMaterialRefresh(module, service, helper)
+                                scheduleHyperMaterialRefresh(module, helper)
                             }
                         }
                     }
@@ -539,7 +569,13 @@ object KeyboardStyleHook {
                                 "bb.g1.S:enter args=${(0 until 3).joinToString { chain.getArg(it).toString() }}"
                             )
                         }
-                        val res = chain.proceed()
+                        val res = if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
+                            // S's first argument selects glass colors for the
+                            // navigation/accessory icons independently of Compose.
+                            chain.proceed(arrayOf(false, chain.getArg(1), chain.getArg(2)))
+                        } else {
+                            chain.proceed()
+                        }
                         if (ConfigManager.isStyleEnabled()) {
                             if (service != null) {
                                     val window = service.window?.window
@@ -682,7 +718,7 @@ object KeyboardStyleHook {
 
     /**
      * Device A/B captures reproduce the moving dark band with Xiaomi material
-     * alone, but not with compositor blur alone. Switch only low-opacity glass;
+     * alone, but not with compositor blur alone. Use it for all translucent glass;
      * keep native material if the replacement surface is not ready.
      */
     private fun useCompositorGlassForTransparentMaterial(
@@ -702,10 +738,7 @@ object KeyboardStyleHook {
             }
             return
         }
-        if (!ConfigManager.isStyleEnabled() || ConfigManager.getBgType() != 0 ||
-            ConfigManager.getOpacity() > DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY ||
-            ConfigManager.getBlurRadius() <= 0
-        ) {
+        if (!shouldKeepGlassNavigationTransparent()) {
             removeDynamicGlassSurfacePrimer()
             return
         }
@@ -730,11 +763,7 @@ object KeyboardStyleHook {
         module: XposedModule,
         service: android.inputmethodservice.InputMethodService
     ): Int? {
-        val ineligible =
-            !ConfigManager.isStyleEnabled() ||
-            ConfigManager.getBgType() != 0 ||
-            ConfigManager.getOpacity() > DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY ||
-            ConfigManager.getBlurRadius() <= 0
+        val ineligible = !shouldKeepGlassNavigationTransparent()
         if (ineligible) {
             if (dynamicGlassHiddenBufferPrimed) {
                 releaseDynamicGlassHeldContent(service)
@@ -1063,12 +1092,7 @@ object KeyboardStyleHook {
         module: XposedModule,
         service: android.inputmethodservice.InputMethodService
     ) {
-        if (
-            !ConfigManager.isStyleEnabled() ||
-            ConfigManager.getBgType() != 0 ||
-            ConfigManager.getOpacity() > DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY ||
-            ConfigManager.getBlurRadius() <= 0
-        ) return
+        if (!shouldKeepGlassNavigationTransparent()) return
         val inputRoot = XposedUtils.getObjectField(service, "currentImeRootView") as? View
             ?: return
         dynamicGlassContentHoldActive = true
@@ -1154,8 +1178,7 @@ object KeyboardStyleHook {
             readyMaterial.translationZ = 0f
             updateCachedGlassTokens(
                 helper,
-                ConfigManager.getBlurRadius(),
-                ConfigManager.getOpacity()
+                ConfigManager.getBlurRadius()
             )
             invokeHelperMethod(helper, "c", readyMaterial)
             (XposedUtils.getObjectField(helper, "i") as? View)?.let { rim ->
@@ -1163,10 +1186,7 @@ object KeyboardStyleHook {
                 rim.visibility = View.VISIBLE
             }
             readyMaterial.invalidate()
-            if (
-                ConfigManager.getOpacity() <= DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY &&
-                ConfigManager.getBlurRadius() > 0
-            ) {
+            if (shouldKeepGlassNavigationTransparent()) {
                 ensureDynamicGlassSurfacePrimer(module, service, readyMaterial)
             }
             XposedUtils.log(
@@ -1565,19 +1585,8 @@ object KeyboardStyleHook {
         versions[packageName] = 2
         XposedUtils.setObjectField(helper, "v", versions)
 
-        val primaryPackages = LinkedHashSet<Any?>()
-        (XposedUtils.getObjectField(helper, "w") as? Set<*>)?.forEach {
-            primaryPackages.add(it)
-        }
-        primaryPackages.add(packageName)
-        XposedUtils.setObjectField(helper, "w", primaryPackages)
-
-        val secondaryPackages = LinkedHashSet<Any?>()
-        (XposedUtils.getObjectField(helper, "x") as? Set<*>)?.forEach {
-            secondaryPackages.add(it)
-        }
-        secondaryPackages.add(packageName)
-        XposedUtils.setObjectField(helper, "x", secondaryPackages)
+        // w/x select dark/light material behavior, not material availability.
+        // Adding every editor to w forced dark styling even in light apps.
     }
 
     /** Compose stores sRGB colors as an unsigned ARGB value in the high 32 bits. */
@@ -1626,6 +1635,7 @@ object KeyboardStyleHook {
             if (!enabled) {
                 return
             }
+            if (bgType == 0) activeNativePalette = colors
 
             val systemDark = XposedUtils.getObjectField(colors, "n1") as? Boolean ?: false
             val surfaceDark = if (bgType == 1) {
@@ -1682,19 +1692,22 @@ object KeyboardStyleHook {
             val tooltipShadow = Color.argb(if (surfaceDark) 110 else 60, 0, 0, 0)
             val accent = Color.rgb(52, 130, 255)
 
-            val replacements = mutableMapOf(
-                "B0" to Color.TRANSPARENT,
-                "C0" to (customMenuCard ?: card),
-                "D0" to menuSecondary,
-                "E0" to menuPrimary,
-                "F0" to Color.argb(48, 52, 130, 255),
-                "G0" to accent,
-                "H0" to menuPrimary,
-                "I0" to tooltip,
-                "J0" to (customText ?: if (surfaceDark) Color.WHITE else Color.BLACK),
-                "K0" to tooltipBorder,
-                "L0" to tooltipShadow
-            )
+            val replacements = mutableMapOf<String, Int>()
+            if (bgType == 1 || customMenuCard != null || customText != null) {
+                replacements.putAll(mapOf(
+                    "B0" to Color.TRANSPARENT,
+                    "C0" to (customMenuCard ?: card),
+                    "D0" to menuSecondary,
+                    "E0" to menuPrimary,
+                    "F0" to Color.argb(48, 52, 130, 255),
+                    "G0" to accent,
+                    "H0" to menuPrimary,
+                    "I0" to tooltip,
+                    "J0" to (customText ?: if (surfaceDark) Color.WHITE else Color.BLACK),
+                    "K0" to tooltipBorder,
+                    "L0" to tooltipShadow
+                ))
+            }
             if (customFunctionKeycap != null) {
                 replacements["e"] = customFunctionKeycap
                 replacements["d"] = resolvePressedKeycapColor(customFunctionKeycap, keySurfaceDark)
@@ -1717,15 +1730,20 @@ object KeyboardStyleHook {
                 replacements["A"] = divider
                 replacements["B"] = divider
             }
-            // na.d.u is the Compose toolbar row background.  At very low
-            // material opacity it must stay transparent so the guarded IME
-            // surface underneath remains continuous while the leash moves.
-            // Leaving Xiaomi's stock token here creates the dark rounded band
-            // that is visible only during show/hide animation.
+            // Scale only the original surface tokens. Always start from the
+            // snapshot so repeated compositions do not compound the opacity.
+            // Keycaps, labels and icons retain their native alpha and RGB.
             if (bgType == 0) {
+                for (name in arrayOf("b", "B0")) {
+                    val original = originals[name] ?: continue
+                    writeLongField(colors, name, BackgroundOpacity.compose(original, ConfigManager.getOpacity()))
+                }
+                // a is reused by the parent, composing text and candidate rows
+                // (aa.k2/u1.d/aa.x8). Draw it once behind all of them; otherwise
+                // typing adds translucent copies and changes the row opacity.
                 replacements["a"] = Color.TRANSPARENT
-                replacements["b"] = Color.TRANSPARENT
                 replacements["u"] = Color.TRANSPARENT
+                replacements.remove("B0")
             }
             replacements.forEach { (name, value) -> writeLongField(colors, name, composeColor(value)) }
         }
@@ -1762,6 +1780,20 @@ object KeyboardStyleHook {
 
         val root = popup.contentView ?: return
         val inside = findViewByResourceName(root, "inside_view") ?: root
+        if (usesNativeClipboardColors()) {
+            // Preserve the popup's selectors, text and card colors as well.
+            // Fade the background drawable, never the View and its children.
+            val original = nativeViewBackgrounds.getOrPut(inside) {
+                val drawable = inside.background?.let {
+                    it.constantState?.newDrawable(inside.resources)?.mutate() ?: it.mutate()
+                }
+                NativeViewBackground(drawable, drawable?.alpha ?: 255)
+            }
+            original.drawable?.alpha = original.alpha * ConfigManager.getOpacity().coerceIn(0, 100) / 100
+            inside.background = original.drawable
+            applyTopCornerOutline(inside, ConfigManager.getCornerRadius() * inside.resources.displayMetrics.density)
+            return
+        }
         popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         root.background = null
         findViewByResourceName(root, "outside_view")?.background = null
@@ -1784,8 +1816,7 @@ object KeyboardStyleHook {
                         if (helper != null) {
                             updateCachedGlassTokens(
                                 helper,
-                                ConfigManager.getBlurRadius(),
-                                ConfigManager.getOpacity()
+                                ConfigManager.getBlurRadius()
                             )
                             try {
                                 invokeHelperMethod(helper, "c", inside)
@@ -1797,13 +1828,16 @@ object KeyboardStyleHook {
                                 )
                             }
                         }
-                        val isDark = isDarkSurface(service)
-                        applySoftGlassForeground(
-                            inside,
-                            isDark,
-                            ConfigManager.getOpacity(),
-                            radiusPx
-                        )
+                        inside.foreground = null
+                        inside.setBackgroundColor(resolveNativeBackgroundColor(service))
+                        // bb.u.c clears View backgrounds after 20 ms. Reapply
+                        // behind that cleanup without tinting popup children.
+                        inside.postDelayed({
+                            if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0 &&
+                                inside.isAttachedToWindow) {
+                                inside.setBackgroundColor(resolveNativeBackgroundColor(service))
+                            }
+                        }, 20L)
                     }
                     1 -> {
                         inside.foreground = null
@@ -1874,8 +1908,14 @@ object KeyboardStyleHook {
     }
 
     private fun styleClipboardViewTree(view: View) {
+        if (usesNativeClipboardColors()) return
         styleClipboardViewTree(view, clipboardPalette(view))
     }
+
+    private fun usesNativeClipboardColors(): Boolean =
+        ConfigManager.getBgType() == 0 &&
+            parseOptionalColor(ConfigManager.getTextColor()) == null &&
+            parseOptionalColor(ConfigManager.getMenuCardColor()) == null
 
     private fun styleClipboardViewTree(view: View, palette: ClipboardPalette) {
         val name = resourceEntryName(view)
@@ -2103,10 +2143,6 @@ object KeyboardStyleHook {
         }
     }
 
-    private fun isDarkSurface(context: android.content.Context): Boolean =
-        (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
-
     private fun isDarkColor(color: Int): Boolean =
         (299 * Color.red(color) + 587 * Color.green(color) + 114 * Color.blue(color)) / 1000 < 150
 
@@ -2192,11 +2228,10 @@ object KeyboardStyleHook {
      * Updating only the bb.u.e(boolean) factory cannot change a token that has
      * already been created, so update both cached tokens before reapplying it.
      */
-    private fun updateCachedGlassTokens(helper: Any, blurRadiusDp: Int, opacity: Int): Boolean {
+    private fun updateCachedGlassTokens(helper: Any, blurRadiusDp: Int): Boolean {
         var updated = false
-        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
 
-        for ((index, lazyFieldName) in arrayOf("p", "q").withIndex()) {
+        for (lazyFieldName in arrayOf("p", "q")) {
             try {
                 val lazyValue = XposedUtils.getObjectField(helper, lazyFieldName) ?: continue
                 val getValue = lazyValue.javaClass.methods.firstOrNull {
@@ -2205,77 +2240,18 @@ object KeyboardStyleHook {
                 val token = getValue.invoke(lazyValue) ?: continue
                 XposedUtils.setObjectField(token, "p", blurRadiusDp.coerceIn(0, 400))
 
-                // Keep Xiaomi's blend modes, but replace its heavy masks with
-                // translucent neutral tints. Start every tint at zero so 0%
-                // leaves only the native blur instead of a permanent gray veil.
-                val blendColors = if (index == 0) {
-                    intArrayOf(
-                        Color.argb((110 * strength).toInt(), 255, 255, 255),
-                        Color.argb((70 * strength).toInt(), 246, 249, 255),
-                        Color.argb((40 * strength).toInt(), 187, 205, 232)
-                    )
-                } else {
-                    intArrayOf(
-                        Color.argb((100 * strength).toInt(), 27, 30, 38),
-                        Color.argb((55 * strength).toInt(), 255, 255, 255),
-                        Color.argb((35 * strength).toInt(), 153, 178, 216)
-                    )
+                // Blur lives behind the native Compose background. A second
+                // material color mask would tint that background as it fades.
+                val originalBlends = XposedUtils.getObjectField(token, "e") as? IntArray
+                if (originalBlends != null) {
+                    XposedUtils.setObjectField(token, "e", IntArray(originalBlends.size))
                 }
-                XposedUtils.setObjectField(token, "e", blendColors)
                 updated = true
             } catch (_: Throwable) {
             }
         }
 
         return updated
-    }
-
-    /**
-     * Keep the native blur view's background transparent. The target APK clears
-     * that background 20 ms after applying material, so the outline belongs in
-     * the foreground where it does not replace the blur surface.
-     */
-    private fun applySoftGlassForeground(
-        view: View,
-        isDark: Boolean,
-        opacity: Int,
-        radiusPx: Float
-    ) {
-        val density = view.resources.displayMetrics.density
-        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
-        val radii = floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
-
-        val softLight = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            if (isDark) {
-                intArrayOf(
-                    Color.argb((70 * strength).toInt(), 255, 255, 255),
-                    Color.TRANSPARENT,
-                    Color.argb((35 * strength).toInt(), 111, 151, 205)
-                )
-            } else {
-                intArrayOf(
-                    Color.argb((80 * strength).toInt(), 255, 255, 255),
-                    Color.argb((32 * strength).toInt(), 255, 255, 255),
-                    Color.argb((40 * strength).toInt(), 184, 205, 232)
-                )
-            }
-        ).apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadii = radii
-        }
-
-        val highlight = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(Color.TRANSPARENT)
-            setStroke(
-                (0.8f * density).toInt().coerceAtLeast(1),
-                Color.argb((120 * strength).toInt(), 255, 255, 255)
-            )
-            cornerRadii = radii
-        }
-
-        view.foreground = LayerDrawable(arrayOf(softLight, highlight))
     }
 
     private fun getImeContentTopInset(
@@ -2419,7 +2395,6 @@ object KeyboardStyleHook {
      */
     private fun scheduleHyperMaterialRefresh(
         module: XposedModule,
-        service: android.inputmethodservice.InputMethodService,
         helper: Any?
     ) {
         if (helper == null || !ConfigManager.isStyleEnabled()) return
@@ -2470,7 +2445,7 @@ object KeyboardStyleHook {
                     return
                 }
 
-                updateHyperMaterialViews(module, service, helper)
+                updateHyperMaterialViews(module, helper)
 
                 if (dynamicGlass && settlePass < 2) {
                     val delayMs = if (settlePass++ == 0) 64L else 240L
@@ -2489,7 +2464,6 @@ object KeyboardStyleHook {
 
     private fun updateHyperMaterialViews(
         module: XposedModule,
-        service: android.inputmethodservice.InputMethodService,
         helper: Any?
     ) {
         if (helper == null) return
@@ -2505,14 +2479,11 @@ object KeyboardStyleHook {
 
         val density = f3500h.resources.displayMetrics.density
         val radiusPx = cornerRadiusDp * density
-        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-
         f3500h.post {
             try {
                 // 1. Background Customization on f3500h (the actual keyboard card at bottom)
                 when (bgType) {
                     0 -> { // HyperOS Dynamic Liquid Glass (系统通知中心同款动态毛玻璃)
-                        val glassStrength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
                         // bb.u inserts this view at index 0, behind the keyboard.
                         // Keep full material strength; Z elevation is normalized
                         // below so rounded corners cannot lift it above key content.
@@ -2522,7 +2493,7 @@ object KeyboardStyleHook {
                         // in bb.u.c(View). Tune its cached token and let that code
                         // configure pass-window blur, radius, blend colors and bloom.
                         f3500h.setBackgroundColor(Color.TRANSPARENT)
-                        val tokenUpdated = updateCachedGlassTokens(helper, blurRadiusDp, opacity)
+                        val tokenUpdated = updateCachedGlassTokens(helper, blurRadiusDp)
                         val materialApplied = try {
                             invokeHelperMethod(helper, "c", f3500h) as? Boolean ?: false
                         } catch (t: Throwable) {
@@ -2530,7 +2501,7 @@ object KeyboardStyleHook {
                             false
                         }
 
-                        applySoftGlassForeground(f3500h, isDark, opacity, radiusPx)
+                        f3500h.foreground = null
                         val guarded = hideMaterialDuringBottomTransition &&
                             SystemClock.uptimeMillis() < bottomTransitionGuardUntil &&
                             opacity < 100
@@ -2546,7 +2517,7 @@ object KeyboardStyleHook {
                         // Update f3501i (RuntimeShader Rim Light & Shadow)
                         if (f3501i != null) {
                             try {
-                                f3501i.alpha = 0.55f + 0.25f * glassStrength
+                                f3501i.alpha = 0f
                                 val bMethod = helper.javaClass.declaredMethods.find { it.name == "b" && it.parameterTypes.size == 1 }
                                 bMethod?.invoke(helper, f3501i)
                                 f3501i.visibility = if (guarded) View.INVISIBLE else View.VISIBLE
@@ -2596,39 +2567,40 @@ object KeyboardStyleHook {
     ): Int {
         if (bgType == 1) return resolveSolidBottomBarColor(bgColor, opacity)
         if (bgType != 0) return Color.TRANSPARENT
-        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
-        if (strength == 0f) return Color.TRANSPARENT
-        val alpha: Int
-        val red: Int
-        val green: Int
-        val blue: Int
-        if (isDark) {
-            alpha = (85 + 115 * strength).toInt()
-            red = 50
-            green = 61
-            blue = 79
-        } else {
-            alpha = (135 + 90 * strength).toInt()
-            red = 76
-            green = 94
-            blue = 122
-        }
-        // The IME's liquid-glass surface remains a light transmissive layer even
-        // when the system configuration reports night mode. Precompositing the
-        // separate system bottom bar against black turns it nearly pure black.
-        // Composite against the same light surface used behind the keyboard.
-        val base = 255
-        fun composite(channel: Int): Int =
-            ((channel * alpha + base * (255 - alpha)) / 255).coerceIn(0, 255)
-        // WindowManager snapshots the navigation-bar color when the IME enter
-        // animation starts. A translucent color is composited over its black
-        // animation leash, so low opacity briefly looks black even though the
-        // bottom view later draws the same color over the app. The RGB values
-        // above are already flattened onto the keyboard's light backing; keep
-        // the system-owned strip opaque to avoid applying alpha a second time.
-        return Color.rgb(composite(red), composite(green), composite(blue))
+        return resolveNativeBackgroundColor(service, opacity)
     }
+
+    private fun nativePaletteColor(
+        service: android.inputmethodservice.InputMethodService,
+        fieldName: String
+    ): Int? {
+        val active = activeNativePalette
+        if (active != null) {
+            val original = synchronized(originalAppsPanelColors) {
+                originalAppsPanelColors[active]?.get(fieldName)
+            }
+            if (original != null) return (original ushr 32).toInt()
+        }
+        // Before the first Compose pass, use the APK's own normal palette.
+        val dark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        return try {
+            val paletteClass = Class.forName("na.p", true, service.classLoader)
+            val palette = paletteClass.getDeclaredField(if (dark) "f" else "e")
+                .apply { isAccessible = true }.get(null) ?: return null
+            val original = synchronized(originalAppsPanelColors) {
+                originalAppsPanelColors[palette]?.get(fieldName)
+            } ?: readLongField(palette, fieldName) ?: return null
+            (original ushr 32).toInt()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun resolveNativeBackgroundColor(
+        service: android.inputmethodservice.InputMethodService,
+        opacity: Int = ConfigManager.getOpacity()
+    ): Int = BackgroundOpacity.argb(nativePaletteColor(service, "a") ?: Color.TRANSPARENT, opacity)
 
     private fun updateBottomBarAppearance(
         service: android.inputmethodservice.InputMethodService,
@@ -2636,8 +2608,11 @@ object KeyboardStyleHook {
     ) {
         try {
             val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-            val iconColor = if (isDark) Color.parseColor("#9E9E9E") else Color.parseColor("#757575")
-            val rippleColor = if (isDark) Color.parseColor("#33FFFFFF") else Color.parseColor("#1F000000")
+            val nativeIcon = if (ConfigManager.getBgType() == 0) nativePaletteColor(service, "z") else null
+            val iconColor = parseOptionalColor(ConfigManager.getTextColor()) ?: nativeIcon
+                ?: if (isDark) Color.parseColor("#9E9E9E") else Color.parseColor("#757575")
+            val rippleColor = if (nativeIcon != null) BackgroundOpacity.argb(iconColor, 50)
+                else if (isDark) Color.parseColor("#33FFFFFF") else Color.parseColor("#1F000000")
 
             // 1. HyperOS renders this accessory/navigation strip separately.
             val injectorClass = Class.forName("android.inputmethodservice.InputMethodServiceInjector")
@@ -2671,9 +2646,10 @@ object KeyboardStyleHook {
     /** The compositor glass already covers the navigation area. Do not place
      * the legacy opaque animation backing over it, even during the first show. */
     private fun shouldKeepGlassNavigationTransparent(): Boolean =
-        ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0 &&
-            ConfigManager.getOpacity() <= DYNAMIC_GLASS_FIRST_FRAME_MAX_OPACITY &&
-            ConfigManager.getBlurRadius() > 0
+        GlassTransitionPolicy.usesCompositor(
+            ConfigManager.isStyleEnabled(), ConfigManager.getBgType(),
+            ConfigManager.getOpacity(), ConfigManager.getBlurRadius()
+        )
 
     /** Apply every system/plugin bottom-strip color synchronously. */
     private fun applyBottomBarAppearanceImmediately(
@@ -2764,12 +2740,8 @@ object KeyboardStyleHook {
         ConfigManager.syncFromProvider(service)
         if (!ConfigManager.isStyleEnabled()) return
 
-        val cornerRadiusDp = ConfigManager.getCornerRadius()
-        val opacity = ConfigManager.getOpacity()
-        val bgType = ConfigManager.getBgType()
         applyBottomBarAppearanceImmediately(service)
 
-        val density = service.resources.displayMetrics.density
         rootView.post {
             try {
                 // 1. Transparent window & navigation bar (Do NOT add FLAG_BLUR_BEHIND to window as it blurs the entire screen!)
@@ -2777,7 +2749,6 @@ object KeyboardStyleHook {
                 // transition guard has expired; replaying a color captured
                 // before posting would reintroduce the stale pale strip.
                 val currentBottomBarColor = applyBottomBarAppearanceImmediately(service)
-                val steadyBottomBarColor = activeSteadyBottomBarColor
                 val window = service.window?.window
                 if (window != null) {
                     // applyBottomBarAppearanceImmediately() owns the Window
@@ -2801,63 +2772,23 @@ object KeyboardStyleHook {
                 } else {
                     rootView
                 }
-                val styledBackground = if (bgType == 0) {
-                    val contentTop = resolveKeyboardContentTop(service, targetView)
-                    if (contentTop != null && contentTop < targetView.height) {
-                        val isDark = (service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-                        val strength = (opacity.coerceIn(0, 100) / 100.0f).coerceIn(0f, 1f)
-                        val colors = if (isDark) {
-                            intArrayOf(
-                                Color.argb((215 * strength).toInt(), 24, 28, 36),
-                                Color.argb((210 * strength).toInt(), 35, 41, 52),
-                                Color.argb((200 * strength).toInt(), 50, 61, 79)
-                            )
-                        } else {
-                            intArrayOf(
-                                Color.argb((235 * strength).toInt(), 135, 148, 168),
-                                Color.argb((230 * strength).toInt(), 103, 118, 142),
-                                Color.argb((225 * strength).toInt(), 76, 94, 122)
-                            )
+                // One shared native surface for toolbar, composing/candidate
+                // rows and keys. The matching Compose a/u tokens are clear.
+                // Keep the inset: this View can also cover the app above the IME.
+                targetView.background = if (ConfigManager.getBgType() == 0) {
+                    val top = resolveKeyboardContentTop(service, targetView)
+                    if (top != null && top >= 0 && top < targetView.height) {
+                        val radius = ConfigManager.getCornerRadius().coerceAtLeast(0) *
+                            targetView.resources.displayMetrics.density
+                        val surface = GradientDrawable().apply {
+                            setColor(resolveNativeBackgroundColor(service))
+                            cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
                         }
-                        val tint = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
-                            shape = GradientDrawable.RECTANGLE
-                            cornerRadii = floatArrayOf(
-                                cornerRadiusDp * density, cornerRadiusDp * density,
-                                cornerRadiusDp * density, cornerRadiusDp * density,
-                                0f, 0f, 0f, 0f
-                            )
-                            setStroke(
-                                density.toInt().coerceAtLeast(1),
-                                Color.argb((116 * strength).toInt(), 255, 255, 255)
-                            )
+                        LayerDrawable(arrayOf(surface)).apply {
+                            setLayerInset(0, 0, top, 0, 0)
                         }
-                        // The system bottom strip accepts only one solid color,
-                        // while the keyboard card above is diagonal. Gradually
-                        // converge the lower third of the card to that exact solid
-                        // color so there is no visible horizontal join.
-                        val seamRed = Color.red(steadyBottomBarColor)
-                        val seamGreen = Color.green(steadyBottomBarColor)
-                        val seamBlue = Color.blue(steadyBottomBarColor)
-                        val bottomBlend = GradientDrawable(
-                            GradientDrawable.Orientation.TOP_BOTTOM,
-                            intArrayOf(
-                                Color.argb(0, seamRed, seamGreen, seamBlue),
-                                Color.argb(0, seamRed, seamGreen, seamBlue),
-                                Color.argb((56 * strength).toInt(), seamRed, seamGreen, seamBlue),
-                                steadyBottomBarColor
-                            )
-                        )
-                        LayerDrawable(arrayOf(tint, bottomBlend)).apply {
-                            setLayerInset(0, 0, contentTop, 0, 0)
-                            setLayerInset(1, 0, contentTop, 0, 0)
-                        }
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-                targetView.background = styledBackground
+                    } else null
+                } else null
                 applyImeToolbarTransitionGuard(service)
 
                 // Keep the first raw-transparent IME buffer hidden. The hold is
@@ -2870,7 +2801,7 @@ object KeyboardStyleHook {
 
                 // 4. Update HyperMaterialHelper's f3500h view which is the true keyboard bottom card
                 val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
-                scheduleHyperMaterialRefresh(module, service, helper)
+                scheduleHyperMaterialRefresh(module, helper)
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "Error applying custom style to keyboard view", t)
             }
