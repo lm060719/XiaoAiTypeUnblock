@@ -1732,21 +1732,16 @@ object KeyboardStyleHook {
                 replacements["A"] = divider
                 replacements["B"] = divider
             }
-            // Scale only the original surface tokens. Always start from the
-            // snapshot so repeated compositions do not compound the opacity.
-            // Custom keycaps and cards use their own opacity; labels and icons
-            // are not faded by any of the surface opacity settings.
+            // applyStyle draws the native surface once behind the entire IME.
+            // Clear every Compose panel surface, including b (keyboard chooser)
+            // and B0 (APPS menu). Scaling those tokens still paints a second
+            // translucent layer over the shared surface, producing a lighter
+            // content rectangle between the toolbar and bottom strip.
+            // Keycap/card tokens and their independent opacity stay intact.
             if (bgType == 0) {
-                for (name in arrayOf("b", "B0")) {
-                    val original = originals[name] ?: continue
-                    writeLongField(colors, name, BackgroundOpacity.compose(original, ConfigManager.getOpacity()))
+                for (name in arrayOf("a", "b", "u", "B0")) {
+                    replacements[name] = Color.TRANSPARENT
                 }
-                // a is reused by the parent, composing text and candidate rows
-                // (aa.k2/u1.d/aa.x8). Draw it once behind all of them; otherwise
-                // typing adds translucent copies and changes the row opacity.
-                replacements["a"] = Color.TRANSPARENT
-                replacements["u"] = Color.TRANSPARENT
-                replacements.remove("B0")
             }
             replacements.forEach { (name, value) -> writeLongField(colors, name, composeColor(value)) }
         }
@@ -2776,7 +2771,8 @@ object KeyboardStyleHook {
                     rootView
                 }
                 // One shared native surface for toolbar, composing/candidate
-                // rows and keys. The matching Compose a/u tokens are clear.
+                // rows, keys, APPS menu and keyboard chooser. The matching
+                // Compose a/b/u/B0 surface tokens are clear.
                 // Keep the inset: this View can also cover the app above the IME.
                 targetView.background = if (ConfigManager.getBgType() == 0) {
                     val top = resolveKeyboardContentTop(service, targetView)
