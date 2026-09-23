@@ -528,8 +528,14 @@ object KeyboardStyleV209Hook
     ): Int
     {
         val palette = activePalette ?: staticNativePalette(service)
-        val color = palette
-            ?.let { readLongField(it, "a") }
+        val originalColor = palette?.let { current ->
+            synchronized(originalPaletteColors)
+            {
+                originalPaletteColors[current]?.get("a")
+                    ?: readLongField(current, "a")
+            }
+        }
+        val color = originalColor
             ?.let { (it ushr 32).toInt() }
             ?: Color.TRANSPARENT
 
