@@ -2,6 +2,7 @@ package io.mo.xatype
 
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
+import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.hooks.AiSafetyHook
 import io.mo.xatype.hooks.ClipboardPermanentHook
@@ -37,6 +38,13 @@ class XiaoAiTypeModule : XposedModule() {
         XposedUtils.log(this, "XiaoAiTypeUnblock initialized on libxposed API 102")
         XposedUtils.log(this, "Target: ${param.packageName} (FirstPackage=${param.isFirstPackage})")
         XposedUtils.log(this, "Framework: $frameworkName $frameworkVersion (API ${apiVersion})")
+        if (param.packageName == TARGET_PACKAGE) {
+            XposedUtils.log(
+                this,
+                "Target compatibility profile: " +
+                    TargetCompatibility.detect(classLoader).name
+            )
+        }
         XposedUtils.log(this, "================================================")
 
         if (param.packageName == SYSTEM_UI_PACKAGE) {
