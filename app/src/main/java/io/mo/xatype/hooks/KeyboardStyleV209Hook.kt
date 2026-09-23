@@ -32,8 +32,8 @@ object KeyboardStyleV209Hook
     private val originalPaletteColors = IdentityHashMap<Any, Map<String, Long>>()
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
     private val clipboardAdapterHooks = ConcurrentHashMap.newKeySet<Class<*>>()
+    private val clipboardSwipeHooks = ConcurrentHashMap.newKeySet<Class<*>>()
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
-    private val clipboardTouchTintDisabled = WeakHashMap<View, Boolean>()
     private val preserveDynamicGlassCleanup = ThreadLocal<Boolean>()
 
     @Volatile
@@ -716,6 +716,11 @@ object KeyboardStyleV209Hook
         classLoader: ClassLoader
     )
     {
+        installClipboardSwipeBackgroundHooks(
+            module,
+            classLoader
+        )
+
         CLIPBOARD_ADAPTER_CLASSES.forEach { className ->
             val adapterClass =
                 XposedUtils.findClass(className, classLoader)
@@ -775,6 +780,63 @@ object KeyboardStyleV209Hook
         }
     }
 
+    private fun installClipboardSwipeBackgroundHooks(
+        module: XposedModule,
+        classLoader: ClassLoader
+    )
+    {
+        CLIPBOARD_SWIPE_LISTENER_CLASSES.forEach { className ->
+            val listenerClass =
+                XposedUtils.findClass(
+                    className,
+                    classLoader
+                ) ?: return@forEach
+
+            if (!clipboardSwipeHooks.add(listenerClass))
+            {
+                return@forEach
+            }
+
+            listenerClass.declaredMethods
+                .filter {
+                    it.name == "onOpened" ||
+                        it.name == "onSlide" ||
+                        it.name == "viewSlideRelease"
+                }
+                .forEach { method ->
+                    method.isAccessible = true
+
+                    module.hook(method).intercept { chain ->
+                        val result = chain.proceed()
+
+                        if (
+                            ConfigManager.isStyleEnabled() &&
+                            !usesNativeClipboardColors()
+                        )
+                        {
+                            val holder =
+                                XposedUtils.getObjectField(
+                                    chain.thisObject,
+                                    "this\$0"
+                                )
+                            val itemLayout = holder?.let {
+                                XposedUtils.getObjectField(
+                                    it,
+                                    "itemLayout"
+                                ) as? View
+                            }
+
+                            itemLayout?.let(
+                                ::styleClipboardViewTree
+                            )
+                        }
+
+                        result
+                    }
+                }
+        }
+    }
+
     private fun styleClipboardViewTree(view: View)
     {
         if (usesNativeClipboardColors()) return
@@ -813,7 +875,6 @@ object KeyboardStyleV209Hook
             "clipboard_item_layout",
             "phrase_item_layout" ->
             {
-                disableNativeClipboardTouchTint(view)
                 applyClipboardBackground(
                     view,
                     clipboardBackgroundSignature(
@@ -1191,11 +1252,12 @@ object KeyboardStyleV209Hook
     {
         val cached = clipboardAppliedBackgrounds[view]
 
-        if (
-            cached?.signature == signature &&
-            view.background === cached.drawable
-        )
+        if (cached?.signature == signature)
         {
+            if (view.background !== cached.drawable)
+            {
+                view.background = cached.drawable
+            }
             return
         }
 
@@ -1216,56 +1278,6 @@ object KeyboardStyleV209Hook
         if (view.background != null)
         {
             view.background = null
-        }
-    }
-
-    private fun disableNativeClipboardTouchTint(view: View)
-    {
-        synchronized(clipboardTouchTintDisabled)
-        {
-            if (clipboardTouchTintDisabled[view] == true)
-            {
-                return
-            }
-        }
-
-        try
-        {
-            val classLoader = view.context.classLoader
-            val folmeClass = Class.forName(
-                "miuix.animation.Folme",
-                false,
-                classLoader
-            )
-            val useAt = folmeClass.methods.firstOrNull { method ->
-                method.name == "useAt" &&
-                    method.parameterTypes.size == 1 &&
-                    method.parameterTypes[0].isArray &&
-                    method.parameterTypes[0].componentType == View::class.java
-            } ?: return
-
-            val folme = useAt.invoke(
-                null,
-                arrayOf(view)
-            ) ?: return
-
-            val touch = folme.javaClass.methods.firstOrNull { method ->
-                method.name == "touch" &&
-                    method.parameterTypes.isEmpty()
-            }?.invoke(folme) ?: return
-
-            touch.javaClass.methods.firstOrNull { method ->
-                method.name == "clearTintColor" &&
-                    method.parameterTypes.isEmpty()
-            }?.invoke(touch)
-
-            synchronized(clipboardTouchTintDisabled)
-            {
-                clipboardTouchTintDisabled[view] = true
-            }
-        }
-        catch (_: Throwable)
-        {
         }
     }
 
@@ -1370,6 +1382,11 @@ object KeyboardStyleV209Hook
         "com.miui.inputmethod.InputMethodClipboardAdapter",
         "com.miui.inputmethod.InputMethodClipboardHeaderAdapter",
         "com.miui.inputmethod.InputMethodPhraseAdapter"
+    )
+
+    private val CLIPBOARD_SWIPE_LISTENER_CLASSES = arrayOf(
+        "com.miui.inputmethod.InputMethodClipboardAdapter\$ViewHolder\$1",
+        "com.miui.inputmethod.InputMethodPhraseAdapter\$ViewHolder\$1"
     )
 
     private const val STYLE_ITEM_CARD = 1
