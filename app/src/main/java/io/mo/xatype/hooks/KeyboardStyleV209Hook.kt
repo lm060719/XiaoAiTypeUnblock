@@ -35,6 +35,7 @@ object KeyboardStyleV209Hook
     private val clipboardSwipeHooks = ConcurrentHashMap.newKeySet<Class<*>>()
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
     private val preserveDynamicGlassCleanup = ThreadLocal<Boolean>()
+    private val compositorGlass = CompositorGlassSurface("i")
 
     @Volatile
     private var activePalette: Any? = null
@@ -56,6 +57,7 @@ object KeyboardStyleV209Hook
         }
 
         installLifecycleHooks(module, serviceClass)
+        installWindowTransitionHooks(module)
         installHyperMaterialHooks(module, classLoader)
         installPaletteHook(module, classLoader)
         installClipboardPopupHook(module)
@@ -171,6 +173,43 @@ object KeyboardStyleV209Hook
                     }
                     else
                     {
+                        if (methodName == "e") compositorGlass.remove()
+                        chain.proceed()
+                    }
+                }
+            }
+        }
+
+        // b(View) is also used for clipboard popups. Only the helper's actual
+        // keyboard material may take ownership of the IME compositor surface.
+        XposedUtils.findMethodExact(helperClass, "b", View::class.java)?.let { method ->
+            module.hook(method).intercept { chain ->
+                val result = chain.proceed()
+                val helper = chain.thisObject
+                val material = chain.getArg(0) as? View
+                if (material != null && XposedUtils.getObjectField(helper, "i") === material) {
+                    val service = XposedUtils.getObjectField(helper, "a") as?
+                        android.inputmethodservice.InputMethodService
+                    if (service != null) useCompositorGlass(module, service, helper, material)
+                }
+                result
+            }
+        }
+
+        // k() and the shadow view's layout listener can recreate the shader
+        // after b(View) returns. Suppress that overlay while compositor blur owns it.
+        XposedUtils.findClass("bb.t1", classLoader)?.let { rendererClass ->
+            XposedUtils.findMethodExact(rendererClass, "b")?.let { method ->
+                module.hook(method).intercept { chain ->
+                    val renderer = chain.thisObject
+                    val service = XposedUtils.getObjectField(renderer, "a")
+                    val helper = service?.let { XposedUtils.getObjectField(it, "hyperMaterialHelper") }
+                    if (usesCompositorGlass() && helper != null &&
+                        compositorGlass.owns(XposedUtils.getObjectField(helper, "i"))) {
+                        (XposedUtils.getObjectField(renderer, "c") as? View)?.setRenderEffect(null)
+                        XposedUtils.setObjectField(renderer, "d", null)
+                        null
+                    } else {
                         chain.proceed()
                     }
                 }
@@ -263,6 +302,7 @@ object KeyboardStyleV209Hook
 
                         if (service != null && material != null)
                         {
+                            applyMaterialStyle(module, service, helper, material)
                             material.post {
                                 applyMaterialStyle(module, service, helper, material)
                             }
@@ -1423,9 +1463,69 @@ object KeyboardStyleV209Hook
 
         val material = XposedUtils.getObjectField(helper, "i") as? View ?: return
 
+        applyMaterialStyle(module, service, helper, material)
         material.post {
             applyMaterialStyle(module, service, helper, material)
         }
+    }
+
+    private fun usesCompositorGlass(): Boolean = GlassTransitionPolicy.usesCompositor(
+        ConfigManager.isStyleEnabled(), ConfigManager.getBgType(),
+        ConfigManager.getOpacity(), ConfigManager.getBlurRadius()
+    )
+
+    private fun useCompositorGlass(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        helper: Any,
+        material: View
+    ) {
+        if (!usesCompositorGlass()) {
+            compositorGlass.remove()
+            return
+        }
+        if (material.width <= 0 || material.height <= 0 || !material.isAttachedToWindow) return
+        if (compositorGlass.ensure(module, service, material)) {
+            // Clear both pass-window blur and the inner-shadow shader only
+            // after the replacement is ready; retain native rendering on failure.
+            invokeHelper(helper, "m")
+        }
+    }
+
+    private fun installWindowTransitionHooks(module: XposedModule) {
+        val serviceClass = android.inputmethodservice.InputMethodService::class.java
+        listOfNotNull(
+            XposedUtils.findMethodExact(serviceClass, "showWindow", java.lang.Boolean.TYPE),
+            XposedUtils.findMethodExact(serviceClass, "hideWindow")
+        ).forEach { method ->
+            module.hook(method).intercept { chain ->
+                val service = chain.thisObject as? android.inputmethodservice.InputMethodService
+                fun prepare() {
+                    if (service == null) return
+                    ConfigManager.syncFromProvider(service)
+                    if (!ConfigManager.isStyleEnabled()) {
+                        compositorGlass.remove()
+                        return
+                    }
+                    applyWindowStyle(service)
+                    val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper") ?: return
+                    val material = XposedUtils.getObjectField(helper, "i") as? View ?: return
+                    useCompositorGlass(module, service, helper, material)
+                }
+                // Insets animation is submitted before onWindowShown/Hidden.
+                prepare()
+                val result = chain.proceed()
+                prepare()
+                result
+            }
+        }
+        XposedUtils.findMethodExact(serviceClass, "onDestroy")?.let { method ->
+            module.hook(method).intercept { chain ->
+                compositorGlass.remove()
+                chain.proceed()
+            }
+        }
+        XposedUtils.log(module, "KeyboardStyleV209Hook: compositor show/hide protection installed")
     }
 
     private fun applyWindowStyle(service: android.inputmethodservice.InputMethodService)
@@ -1445,8 +1545,16 @@ object KeyboardStyleV209Hook
             window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
             window.setDimAmount(0f)
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.decorView.setBackgroundColor(Color.TRANSPARENT)
             window.setNavigationBarColor(color)
             window.setNavigationBarContrastEnforced(false)
+            window.navigationBarDividerColor = Color.TRANSPARENT
+            if (usesCompositorGlass()) {
+                // OPAQUE_NAVIGATION_BAR | SEMI_TRANSPARENT_NAVIGATION_BAR.
+                // Leave light/dark navigation icon appearance untouched.
+                window.insetsController?.setSystemBarsAppearance(0, 2 or 64)
+            }
         }
         catch (_: Throwable)
         {
@@ -1476,6 +1584,7 @@ object KeyboardStyleV209Hook
 
                 1 ->
                 {
+                    compositorGlass.remove()
                     invokeHelper(helper, "m")
                     material.background = ColorDrawable(
                         resolveSolidColor(
@@ -1488,6 +1597,7 @@ object KeyboardStyleV209Hook
 
                 2 ->
                 {
+                    compositorGlass.remove()
                     invokeHelper(helper, "m")
                     val bitmap = getOrLoadBitmap(service)
 
