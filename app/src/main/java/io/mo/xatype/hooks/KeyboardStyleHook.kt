@@ -74,6 +74,7 @@ object KeyboardStyleHook {
     private val materialRefreshGenerations = WeakHashMap<View, Int>()
     private val clipboardAdapterHooks = ConcurrentHashMap.newKeySet<Class<*>>()
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
+    private val clipboardTouchTintDisabled = WeakHashMap<View, Boolean>()
     private data class NativeViewBackground(val drawable: Drawable?, val alpha: Int)
     private val nativeViewBackgrounds = WeakHashMap<View, NativeViewBackground>()
 
@@ -1920,7 +1921,7 @@ object KeyboardStyleHook {
     private fun usesNativeClipboardColors(): Boolean =
         ConfigManager.getBgType() == 0 &&
             parseOptionalColor(ConfigManager.getTextColor()) == null &&
-            parseOptionalColor(ConfigManager.getMenuCardColor()) == null
+            parseOptionalColor(ConfigManager.getClipboardCardColor()) == null
 
     private fun styleClipboardViewTree(view: View, palette: ClipboardPalette) {
         val name = resourceEntryName(view)
@@ -1933,6 +1934,7 @@ object KeyboardStyleHook {
                 clearClipboardBackground(view)
             }
             "clipboard_item_layout", "phrase_item_layout" -> {
+                disableNativeClipboardTouchTint(view)
                 applyClipboardBackground(
                     view,
                     clipboardBackgroundSignature(
@@ -2019,7 +2021,10 @@ object KeyboardStyleHook {
 
     private fun clipboardPalette(view: View): ClipboardPalette {
         val opacityStrength = ConfigManager.getOpacity().coerceIn(0, 100) / 100f
-        val customCard = parseOptionalColor(ConfigManager.getMenuCardColor(), ConfigManager.getMenuCardOpacity())
+        val customCard = parseOptionalColor(
+            ConfigManager.getClipboardCardColor(),
+            ConfigManager.getClipboardCardOpacity()
+        )
         val dark = when (ConfigManager.getBgType()) {
             1 -> isDarkColor(parseOptionalColor(ConfigManager.getBgColor()) ?: Color.WHITE)
             else -> (view.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -2113,6 +2118,38 @@ object KeyboardStyleHook {
     private fun clearClipboardBackground(view: View) {
         clipboardAppliedBackgrounds.remove(view)
         if (view.background != null) view.background = null
+    }
+
+    private fun disableNativeClipboardTouchTint(view: View) {
+        synchronized(clipboardTouchTintDisabled) {
+            if (clipboardTouchTintDisabled[view] == true) return
+        }
+
+        try {
+            val classLoader = view.context.classLoader
+            val folmeClass = Class.forName("miuix.animation.Folme", false, classLoader)
+            val useAt = folmeClass.methods.firstOrNull { method ->
+                method.name == "useAt" &&
+                    method.parameterTypes.size == 1 &&
+                    method.parameterTypes[0].isArray &&
+                    method.parameterTypes[0].componentType == View::class.java
+            } ?: return
+
+            val folme = useAt.invoke(null, arrayOf(view)) ?: return
+            val touch = folme.javaClass.methods.firstOrNull { method ->
+                method.name == "touch" && method.parameterTypes.isEmpty()
+            }?.invoke(folme) ?: return
+
+            touch.javaClass.methods.firstOrNull { method ->
+                method.name == "clearTintColor" &&
+                    method.parameterTypes.isEmpty()
+            }?.invoke(touch)
+
+            synchronized(clipboardTouchTintDisabled) {
+                clipboardTouchTintDisabled[view] = true
+            }
+        } catch (_: Throwable) {
+        }
     }
 
     private fun clipboardBackgroundSignature(kind: Int, vararg values: Any): Int {
