@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.compat.TargetCompatibility
+import io.mo.xatype.compat.TargetGeneration
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.lang.reflect.Modifier
@@ -13,10 +15,30 @@ object HyperOsVersionHook {
     private var hasLoggedSysProp = false
 
     fun install(module: XposedInterface, classLoader: ClassLoader) {
+        val generation = TargetCompatibility.detect(classLoader)
+
         hookSystemProperties(module)
-        patchS0Field(module, classLoader)
+
+        if (generation != TargetGeneration.V209) {
+            patchS0Field(module, classLoader)
+        } else {
+            XposedUtils.log(
+                module,
+                "[HyperOS Unblock] v209 detected; skip legacy z7.s0 boolean patch"
+            )
+        }
+
         hookAiVersion(module, classLoader)
-        hookMetadataHelper(module, classLoader)
+
+        if (generation != TargetGeneration.V209) {
+            hookMetadataHelper(module, classLoader)
+        } else {
+            XposedUtils.log(
+                module,
+                "[HyperOS Unblock] v209 detected; use AIVersion directly instead of legacy nc.a metadata hook"
+            )
+        }
+
         hookDialogHostActivity(module, classLoader)
     }
 
@@ -224,6 +246,36 @@ object HyperOsVersionHook {
                     XposedUtils.log(module, "[HyperOS Unblock] Hooked AIVersion.SERVICE_SDK_INT(Context)")
                 } catch (t: Throwable) {
                     XposedUtils.logError(module, "Failed to hook AIVersion.SERVICE_SDK_INT", t)
+                }
+            }
+
+            // SERVICE_SDK_NAME(Context) -> keep native value when available, otherwise provide a compatible fallback.
+            val methodSdkName = XposedUtils.findMethodExact(
+                aiVersionClass,
+                "SERVICE_SDK_NAME",
+                Context::class.java
+            )
+            if (methodSdkName != null) {
+                try {
+                    module.hook(methodSdkName).intercept { chain ->
+                        if (!ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
+                        val original = chain.proceed() as? String
+                        if (original.isNullOrBlank()) {
+                            "2.0.0-b2a69a6-260410-SNAPSHOT01"
+                        } else {
+                            original
+                        }
+                    }
+                    XposedUtils.log(
+                        module,
+                        "[HyperOS Unblock] Hooked AIVersion.SERVICE_SDK_NAME(Context)"
+                    )
+                } catch (t: Throwable) {
+                    XposedUtils.logError(
+                        module,
+                        "Failed to hook AIVersion.SERVICE_SDK_NAME",
+                        t
+                    )
                 }
             }
         }
