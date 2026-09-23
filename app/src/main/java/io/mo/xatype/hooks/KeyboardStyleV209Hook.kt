@@ -341,8 +341,12 @@ object KeyboardStyleV209Hook
 
     private fun patchPalette(palette: Any)
     {
+        val backgroundType = ConfigManager.getBgType()
         val transparent = composeColor(Color.TRANSPARENT)
 
+        // The v209 palette exposes separate keyboard, top and toolbar surfaces.
+        // Custom backgrounds are drawn by the retained HyperMaterial view, so
+        // these Compose surfaces must stay transparent instead of painting over it.
         listOf("a", "b", "u").forEach { fieldName ->
             writeLongField(palette, fieldName, transparent)
         }
@@ -352,6 +356,21 @@ object KeyboardStyleV209Hook
         {
             writeLongField(appsPanel, "a", transparent)
         }
+
+        val solidBackground =
+            if (backgroundType == 1)
+            {
+                parseOptionalColor(ConfigManager.getBgColor())
+            }
+            else
+            {
+                null
+            }
+
+        val surfaceDark =
+            solidBackground?.let(::isDarkColor)
+                ?: readBooleanField(palette, "Y")
+                ?: false
 
         val letterColor = parseOptionalColor(
             ConfigManager.getLetterKeycapColor(),
@@ -364,7 +383,12 @@ object KeyboardStyleV209Hook
             writeLongField(
                 palette,
                 "d",
-                composeColor(resolvePressedColor(letterColor, isDarkColor(letterColor)))
+                composeColor(
+                    resolvePressedColor(
+                        letterColor,
+                        isDarkColor(letterColor)
+                    )
+                )
             )
         }
 
@@ -381,29 +405,74 @@ object KeyboardStyleV209Hook
             }
         }
 
-        val textColor = parseOptionalColor(ConfigManager.getTextColor())
+        val customText = parseOptionalColor(ConfigManager.getTextColor())
+        val keySurfaceDark =
+            (letterColor ?: functionColor)
+                ?.let(::isDarkColor)
+                ?: surfaceDark
 
-        if (textColor != null)
+        val shouldAdaptKeyText =
+            backgroundType == 1 ||
+                customText != null ||
+                letterColor != null ||
+                functionColor != null
+
+        if (shouldAdaptKeyText)
         {
-            val primary = composeColor(textColor)
-            val secondary = composeColor(
-                withAlpha(textColor, (Color.alpha(textColor) * 0.82f).toInt())
-            )
+            val primary =
+                customText
+                    ?: if (keySurfaceDark)
+                    {
+                        Color.argb(242, 255, 255, 255)
+                    }
+                    else
+                    {
+                        Color.argb(230, 0, 0, 0)
+                    }
 
-            listOf("h", "j", "l", "m", "w", "x", "A", "I", "L", "M")
-                .forEach { fieldName ->
-                    writeLongField(palette, fieldName, primary)
+            val secondary =
+                customText?.let {
+                    withAlpha(
+                        it,
+                        (Color.alpha(it) * 0.82f).toInt()
+                    )
+                } ?: if (keySurfaceDark)
+                {
+                    Color.argb(217, 255, 255, 255)
+                }
+                else
+                {
+                    Color.argb(178, 0, 0, 0)
                 }
 
-            listOf("i", "k", "y").forEach { fieldName ->
-                writeLongField(palette, fieldName, secondary)
+            val primaryCompose = composeColor(primary)
+            val secondaryCompose = composeColor(secondary)
+
+            listOf(
+                "h",
+                "j",
+                "l",
+                "m",
+                "w",
+                "x",
+                "A",
+                "I",
+                "L",
+                "M"
+            ).forEach { fieldName ->
+                writeLongField(
+                    palette,
+                    fieldName,
+                    primaryCompose
+                )
             }
 
-            if (appsPanel != null)
-            {
-                listOf("c", "d", "f", "g", "i").forEach { fieldName ->
-                    writeLongField(appsPanel, fieldName, primary)
-                }
+            listOf("i", "k", "y").forEach { fieldName ->
+                writeLongField(
+                    palette,
+                    fieldName,
+                    secondaryCompose
+                )
             }
         }
 
@@ -412,14 +481,89 @@ object KeyboardStyleV209Hook
             ConfigManager.getMenuCardOpacity()
         )
 
-        if (menuCardColor != null && appsPanel != null)
+        if (appsPanel != null)
         {
-            val value = composeColor(menuCardColor)
-            writeLongField(appsPanel, "b", value)
-            writeLongField(appsPanel, "h", value)
+            val menuSurfaceDark =
+                menuCardColor
+                    ?.let(::isDarkColor)
+                    ?: surfaceDark
+
+            val menuPrimary =
+                customText
+                    ?: if (menuSurfaceDark)
+                    {
+                        Color.argb(242, 255, 255, 255)
+                    }
+                    else
+                    {
+                        Color.argb(230, 0, 0, 0)
+                    }
+
+            val menuSecondary =
+                customText?.let {
+                    withAlpha(
+                        it,
+                        (Color.alpha(it) * 0.82f).toInt()
+                    )
+                } ?: if (menuSurfaceDark)
+                {
+                    Color.argb(217, 255, 255, 255)
+                }
+                else
+                {
+                    Color.argb(178, 0, 0, 0)
+                }
+
+            if (
+                backgroundType == 1 ||
+                customText != null ||
+                menuCardColor != null
+            )
+            {
+                val primaryCompose = composeColor(menuPrimary)
+                val secondaryCompose = composeColor(menuSecondary)
+
+                listOf("c", "d", "g", "i").forEach { fieldName ->
+                    writeLongField(
+                        appsPanel,
+                        fieldName,
+                        primaryCompose
+                    )
+                }
+
+                writeLongField(
+                    appsPanel,
+                    "f",
+                    secondaryCompose
+                )
+            }
+
+            val resolvedCard =
+                menuCardColor
+                    ?: if (backgroundType == 1)
+                    {
+                        if (surfaceDark)
+                        {
+                            Color.argb(46, 255, 255, 255)
+                        }
+                        else
+                        {
+                            Color.argb(105, 255, 255, 255)
+                        }
+                    }
+                    else
+                    {
+                        null
+                    }
+
+            if (resolvedCard != null)
+            {
+                val value = composeColor(resolvedCard)
+                writeLongField(appsPanel, "b", value)
+                writeLongField(appsPanel, "h", value)
+            }
         }
     }
-
 
     private fun installClipboardPopupHook(module: XposedModule)
     {
@@ -1487,6 +1631,20 @@ object KeyboardStyleV209Hook
             }
 
         return result
+    }
+
+    private fun readBooleanField(instance: Any, fieldName: String): Boolean?
+    {
+        return try
+        {
+            instance.javaClass.getDeclaredField(fieldName).apply {
+                isAccessible = true
+            }.getBoolean(instance)
+        }
+        catch (_: Throwable)
+        {
+            null
+        }
     }
 
     private fun readLongField(instance: Any, fieldName: String): Long?
