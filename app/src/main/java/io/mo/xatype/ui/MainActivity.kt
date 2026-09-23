@@ -83,6 +83,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchCustomMenuCardColor: SwitchCompat
     private lateinit var layoutMenuCardColorConfig: LinearLayout
     private lateinit var menuCardRgb: ColorControls
+    private lateinit var switchCustomClipboardCardColor: SwitchCompat
+    private lateinit var layoutClipboardCardColorConfig: LinearLayout
+    private lateinit var clipboardCardRgb: ColorControls
     private lateinit var switchCustomLetterKeycapColor: SwitchCompat
     private lateinit var layoutLetterKeycapColorConfig: LinearLayout
     private lateinit var letterKeycapRgb: ColorControls
@@ -150,6 +153,14 @@ class MainActivity : AppCompatActivity() {
             "菜单功能卡片颜色",
             includeOpacity = true,
             opacityKey = ConfigManager.KEY_MENU_CARD_OPACITY
+        )
+        switchCustomClipboardCardColor = findViewById(R.id.switchCustomClipboardCardColor)
+        layoutClipboardCardColorConfig = findViewById(R.id.layoutClipboardCardColorConfig)
+        clipboardCardRgb = createColorControls(
+            layoutClipboardCardColorConfig,
+            "剪贴板卡片颜色",
+            includeOpacity = true,
+            opacityKey = ConfigManager.KEY_CLIPBOARD_CARD_OPACITY
         )
         switchCustomLetterKeycapColor = findViewById(R.id.switchCustomLetterKeycapColor)
         layoutLetterKeycapColorConfig = findViewById(R.id.layoutLetterKeycapColorConfig)
@@ -385,7 +396,58 @@ class MainActivity : AppCompatActivity() {
             showRestartHint()
         }
 
-        // 7. Letter/number main keycap color. na.d.d() returns this normal-key token.
+        // 7. Clipboard card color. Migrate the former shared menu color once, then keep it independent.
+        if (!prefs.contains(ConfigManager.KEY_CLIPBOARD_CARD_COLOR)) {
+            val legacyClipboardColor = savedMenuCardColor
+            if (legacyClipboardColor.isNotBlank()) {
+                prefs.edit()
+                    .putString(ConfigManager.KEY_CLIPBOARD_CARD_COLOR, legacyClipboardColor)
+                    .putInt(
+                        ConfigManager.KEY_CLIPBOARD_CARD_OPACITY,
+                        prefs.getInt(ConfigManager.KEY_MENU_CARD_OPACITY, 100)
+                    )
+                    .apply()
+            }
+        }
+
+        val savedClipboardCardColor =
+            prefs.getString(ConfigManager.KEY_CLIPBOARD_CARD_COLOR, "") ?: ""
+        val customClipboardCardColorEnabled = savedClipboardCardColor.isNotBlank()
+
+        configureColorControls(
+            clipboardCardRgb,
+            savedClipboardCardColor.ifBlank { "#FFFFFF" },
+            ConfigManager.KEY_CLIPBOARD_CARD_OPACITY
+        ) { hex ->
+            prefs.edit()
+                .putString(ConfigManager.KEY_CLIPBOARD_CARD_COLOR, hex)
+                .apply()
+        }
+
+        switchCustomClipboardCardColor.isChecked = customClipboardCardColorEnabled
+        layoutClipboardCardColorConfig.visibility =
+            if (customClipboardCardColorEnabled) View.VISIBLE else View.GONE
+
+        switchCustomClipboardCardColor.setOnCheckedChangeListener { _, isChecked ->
+            layoutClipboardCardColorConfig.visibility =
+                if (isChecked) View.VISIBLE else View.GONE
+
+            if (isChecked) {
+                prefs.edit()
+                    .putString(
+                        ConfigManager.KEY_CLIPBOARD_CARD_COLOR,
+                        clipboardCardRgb.currentColorHex
+                    )
+                    .apply()
+            } else {
+                prefs.edit()
+                    .putString(ConfigManager.KEY_CLIPBOARD_CARD_COLOR, "")
+                    .apply()
+            }
+            showRestartHint()
+        }
+
+        // 8. Letter/number main keycap color. na.d.d() returns this normal-key token.
         val savedLetterKeycapColor = prefs.getString(ConfigManager.KEY_LETTER_KEYCAP_COLOR, "") ?: ""
         val customLetterKeycapColorEnabled = savedLetterKeycapColor.isNotBlank()
         configureColorControls(letterKeycapRgb, savedLetterKeycapColor.ifBlank { "#FFFFFF" }, ConfigManager.KEY_LETTER_KEYCAP_OPACITY) { hex ->

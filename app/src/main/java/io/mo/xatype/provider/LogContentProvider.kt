@@ -40,10 +40,24 @@ class LogContentProvider : ContentProvider() {
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E")
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_TEXT_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_TEXT_COLOR, "") ?: "")
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, "") ?: "")
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_COLOR, "") ?: "")
+                    val menuCardColor = sp.getString(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_COLOR, "") ?: ""
+                    val menuCardOpacity = sp.getInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, 100)
+                    val clipboardCardColor = if (sp.contains(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_COLOR)) {
+                        sp.getString(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_COLOR, "") ?: ""
+                    } else {
+                        menuCardColor
+                    }
+                    val clipboardCardOpacity = if (sp.contains(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY)) {
+                        sp.getInt(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, 100)
+                    } else {
+                        menuCardOpacity
+                    }
+                    result.putString(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_COLOR, menuCardColor)
+                    result.putString(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_COLOR, clipboardCardColor)
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, "") ?: "")
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY, 100))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, 100))
+                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, menuCardOpacity)
+                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, clipboardCardOpacity)
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_OPACITY, 100))
                     result.putLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, sp.getLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, 0L))
                 }
