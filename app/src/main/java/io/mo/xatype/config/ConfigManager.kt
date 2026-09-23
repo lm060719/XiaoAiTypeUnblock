@@ -28,9 +28,11 @@ object ConfigManager {
     // selected before this setting was correctly identified as function-key-only.
     const val KEY_FUNCTION_KEYCAP_COLOR = "pref_keycap_color" // Empty: system color
     const val KEY_MENU_CARD_COLOR = "pref_menu_card_color" // Empty: system color
+    const val KEY_CLIPBOARD_CARD_COLOR = "pref_clipboard_card_color" // Empty: system color
     const val KEY_LETTER_KEYCAP_COLOR = "pref_letter_keycap_color" // Empty: system color
     const val KEY_FUNCTION_KEYCAP_OPACITY = "pref_function_keycap_opacity" // 0 to 100
     const val KEY_MENU_CARD_OPACITY = "pref_menu_card_opacity" // 0 to 100
+    const val KEY_CLIPBOARD_CARD_OPACITY = "pref_clipboard_card_opacity" // 0 to 100
     const val KEY_LETTER_KEYCAP_OPACITY = "pref_letter_keycap_opacity" // 0 to 100
     const val KEY_BG_IMAGE_VERSION = "pref_bg_image_version"
 
@@ -53,9 +55,11 @@ object ConfigManager {
     @Volatile private var cachedTextColor = ""
     @Volatile private var cachedFunctionKeycapColor = ""
     @Volatile private var cachedMenuCardColor = ""
+    @Volatile private var cachedClipboardCardColor = ""
     @Volatile private var cachedLetterKeycapColor = ""
     @Volatile private var cachedFunctionKeycapOpacity = 100
     @Volatile private var cachedMenuCardOpacity = 100
+    @Volatile private var cachedClipboardCardOpacity = 100
     @Volatile private var cachedLetterKeycapOpacity = 100
     @Volatile private var cachedBgImageVersion = 0L
     @Volatile private var hasSyncedFromProvider = false
@@ -89,9 +93,17 @@ object ConfigManager {
                 cachedTextColor = bundle.getString(KEY_TEXT_COLOR, "") ?: ""
                 cachedFunctionKeycapColor = bundle.getString(KEY_FUNCTION_KEYCAP_COLOR, "") ?: ""
                 cachedMenuCardColor = bundle.getString(KEY_MENU_CARD_COLOR, "") ?: ""
+                cachedClipboardCardColor = bundle.getString(
+                    KEY_CLIPBOARD_CARD_COLOR,
+                    cachedMenuCardColor
+                ) ?: cachedMenuCardColor
                 cachedLetterKeycapColor = bundle.getString(KEY_LETTER_KEYCAP_COLOR, "") ?: ""
                 cachedFunctionKeycapOpacity = bundle.getInt(KEY_FUNCTION_KEYCAP_OPACITY, 100).coerceIn(0, 100)
                 cachedMenuCardOpacity = bundle.getInt(KEY_MENU_CARD_OPACITY, 100).coerceIn(0, 100)
+                cachedClipboardCardOpacity = bundle.getInt(
+                    KEY_CLIPBOARD_CARD_OPACITY,
+                    cachedMenuCardOpacity
+                ).coerceIn(0, 100)
                 cachedLetterKeycapOpacity = bundle.getInt(KEY_LETTER_KEYCAP_OPACITY, 100).coerceIn(0, 100)
                 cachedBgImageVersion = bundle.getLong(KEY_BG_IMAGE_VERSION, 0L)
                 hasSyncedFromProvider = true
@@ -177,6 +189,19 @@ object ConfigManager {
             ?: cachedMenuCardColor
     }
 
+    fun getClipboardCardColor(): String {
+        if (hasSyncedFromProvider) return cachedClipboardCardColor
+
+        val prefs = remotePrefs
+        return if (prefs != null && prefs.contains(KEY_CLIPBOARD_CARD_COLOR)) {
+            prefs.getString(KEY_CLIPBOARD_CARD_COLOR, cachedClipboardCardColor)
+                ?: cachedClipboardCardColor
+        } else {
+            prefs?.getString(KEY_MENU_CARD_COLOR, cachedMenuCardColor)
+                ?: cachedClipboardCardColor
+        }
+    }
+
     fun getLetterKeycapColor(): String {
         if (hasSyncedFromProvider) return cachedLetterKeycapColor
         return remotePrefs?.getString(KEY_LETTER_KEYCAP_COLOR, cachedLetterKeycapColor)
@@ -193,6 +218,19 @@ object ConfigManager {
         if (hasSyncedFromProvider) return cachedMenuCardOpacity
         return (remotePrefs?.getInt(KEY_MENU_CARD_OPACITY, cachedMenuCardOpacity)
             ?: cachedMenuCardOpacity).coerceIn(0, 100)
+    }
+
+    fun getClipboardCardOpacity(): Int {
+        if (hasSyncedFromProvider) return cachedClipboardCardOpacity
+
+        val prefs = remotePrefs
+        val value = if (prefs != null && prefs.contains(KEY_CLIPBOARD_CARD_OPACITY)) {
+            prefs.getInt(KEY_CLIPBOARD_CARD_OPACITY, cachedClipboardCardOpacity)
+        } else {
+            prefs?.getInt(KEY_MENU_CARD_OPACITY, cachedMenuCardOpacity)
+                ?: cachedClipboardCardOpacity
+        }
+        return value.coerceIn(0, 100)
     }
 
     fun getLetterKeycapOpacity(): Int {
