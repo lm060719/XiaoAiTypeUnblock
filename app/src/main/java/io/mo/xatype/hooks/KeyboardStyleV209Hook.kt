@@ -1,5 +1,6 @@
 package io.mo.xatype.hooks
 
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -7,21 +8,31 @@ import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.widget.ImageView
+import android.widget.PopupWindow
+import android.widget.TextView
 import io.github.libxposed.api.XposedModule
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
+import java.util.WeakHashMap
+import java.util.concurrent.ConcurrentHashMap
 
 object KeyboardStyleV209Hook
 {
     private val originalPaletteColors = IdentityHashMap<Any, Map<String, Long>>()
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
+    private val clipboardAdapterHooks = ConcurrentHashMap.newKeySet<Class<*>>()
+    private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
 
     @Volatile
     private var activePalette: Any? = null
@@ -45,6 +56,7 @@ object KeyboardStyleV209Hook
         installLifecycleHooks(module, serviceClass)
         installHyperMaterialHooks(module, classLoader)
         installPaletteHook(module, classLoader)
+        installClipboardPopupHook(module)
 
         XposedUtils.log(module, "KeyboardStyleV209Hook: v209 compatibility hooks installed")
     }
@@ -330,6 +342,768 @@ object KeyboardStyleV209Hook
             writeLongField(appsPanel, "h", value)
         }
     }
+
+
+    private fun installClipboardPopupHook(module: XposedModule)
+    {
+        PopupWindow::class.java.declaredMethods
+            .filter {
+                it.name == "showAtLocation" &&
+                    it.parameterTypes.size == 4
+            }
+            .forEach { method ->
+                method.isAccessible = true
+
+                module.hook(method).intercept { chain ->
+                    val result = chain.proceed()
+                    val popup = chain.thisObject as? PopupWindow
+
+                    if (popup?.javaClass?.name == CLIPBOARD_POPUP_CLASS)
+                    {
+                        applyClipboardPopupStyle(module, popup)
+                    }
+
+                    result
+                }
+            }
+
+        XposedUtils.log(
+            module,
+            "KeyboardStyleV209Hook: Hooked clipboard popup styling"
+        )
+    }
+
+    private fun applyClipboardPopupStyle(
+        module: XposedModule,
+        popup: PopupWindow
+    )
+    {
+        val service = XposedUtils.getObjectField(
+            popup,
+            "mInputMethodService"
+        ) as? android.inputmethodservice.InputMethodService ?: return
+
+        ConfigManager.syncFromProvider(service)
+        if (!ConfigManager.isStyleEnabled()) return
+
+        val root = popup.contentView ?: return
+        val inside = findViewByResourceName(root, "inside_view") ?: root
+
+        popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        root.background = null
+        findViewByResourceName(root, "outside_view")?.background = null
+
+        popup.javaClass.classLoader?.let { loader ->
+            installClipboardAdapterHooks(module, loader)
+        }
+
+        inside.post {
+            try
+            {
+                when (ConfigManager.getBgType())
+                {
+                    0 ->
+                    {
+                        val helper = XposedUtils.getObjectField(
+                            service,
+                            "hyperMaterialHelper"
+                        )
+
+                        if (helper != null)
+                        {
+                            updateCachedGlassTokens(
+                                helper,
+                                ConfigManager.getBlurRadius()
+                            )
+
+                            inside.background = ColorDrawable(
+                                nativeBackgroundColor(
+                                    service,
+                                    ConfigManager.getOpacity()
+                                )
+                            )
+
+                            invokeHelper(
+                                helper,
+                                "b",
+                                inside
+                            )
+                        }
+                    }
+
+                    1 ->
+                    {
+                        inside.background = ColorDrawable(
+                            resolveSolidColor(
+                                ConfigManager.getBgColor(),
+                                ConfigManager.getOpacity()
+                            )
+                        )
+                    }
+
+                    2 ->
+                    {
+                        val bitmap = getOrLoadBitmap(service)
+
+                        if (bitmap != null && !bitmap.isRecycled)
+                        {
+                            inside.background = BitmapDrawable(
+                                service.resources,
+                                bitmap
+                            ).apply {
+                                alpha =
+                                    ConfigManager.getOpacity()
+                                        .coerceIn(0, 100) *
+                                        255 /
+                                        100
+                            }
+                        }
+                    }
+                }
+
+                inside.foreground = null
+                applyTopCornerOutline(
+                    inside,
+                    ConfigManager.getCornerRadius().coerceAtLeast(0) *
+                        inside.resources.displayMetrics.density
+                )
+
+                styleClipboardViewTree(root)
+
+                if (ConfigManager.isVerboseLogEnabled())
+                {
+                    XposedUtils.log(
+                        module,
+                        "KeyboardStyleV209Hook: clipboard panel synchronized"
+                    )
+                }
+            }
+            catch (t: Throwable)
+            {
+                XposedUtils.logError(
+                    module,
+                    "KeyboardStyleV209Hook: clipboard styling failed",
+                    t
+                )
+            }
+        }
+    }
+
+    private fun installClipboardAdapterHooks(
+        module: XposedModule,
+        classLoader: ClassLoader
+    )
+    {
+        CLIPBOARD_ADAPTER_CLASSES.forEach { className ->
+            val adapterClass =
+                XposedUtils.findClass(className, classLoader)
+                    ?: return@forEach
+
+            if (!clipboardAdapterHooks.add(adapterClass))
+            {
+                return@forEach
+            }
+
+            adapterClass.declaredMethods
+                .filter {
+                    !it.isBridge &&
+                        !it.isSynthetic &&
+                        (
+                            (
+                                it.name == "onBindViewHolder" &&
+                                    it.parameterTypes.size >= 2
+                                ) ||
+                                (
+                                    it.name == "onCreateViewHolder" &&
+                                        it.parameterTypes.size >= 2
+                                    )
+                            )
+                }
+                .forEach { method ->
+                    method.isAccessible = true
+
+                    module.hook(method).intercept { chain ->
+                        val result = chain.proceed()
+
+                        if (ConfigManager.isStyleEnabled())
+                        {
+                            val holder =
+                                if (method.name == "onCreateViewHolder")
+                                {
+                                    result
+                                }
+                                else
+                                {
+                                    chain.getArg(0)
+                                }
+
+                            val itemView = holder?.let {
+                                XposedUtils.getObjectField(
+                                    it,
+                                    "itemView"
+                                ) as? View
+                            }
+
+                            itemView?.let(::styleClipboardViewTree)
+                        }
+
+                        result
+                    }
+                }
+        }
+    }
+
+    private fun styleClipboardViewTree(view: View)
+    {
+        if (usesNativeClipboardColors()) return
+
+        val palette = clipboardPalette(view)
+        styleClipboardViewTree(view, palette)
+    }
+
+    private fun usesNativeClipboardColors(): Boolean
+    {
+        return ConfigManager.getBgType() == 0 &&
+            parseOptionalColor(ConfigManager.getTextColor()) == null &&
+            parseOptionalColor(ConfigManager.getMenuCardColor()) == null
+    }
+
+    private fun styleClipboardViewTree(
+        view: View,
+        palette: ClipboardPalette
+    )
+    {
+        val name = resourceEntryName(view)
+        val density = view.resources.displayMetrics.density
+        val itemRadius = 18f * density
+        val smallRadius = 12f * density
+
+        when (name)
+        {
+            "outside_view",
+            "clipboard_title_bar",
+            "list_view_layout",
+            "recycler_view" ->
+            {
+                clearClipboardBackground(view)
+            }
+
+            "clipboard_item_layout",
+            "phrase_item_layout" ->
+            {
+                applyClipboardBackground(
+                    view,
+                    clipboardBackgroundSignature(
+                        STYLE_ITEM_CARD,
+                        palette.card,
+                        palette.cardPressed,
+                        itemRadius
+                    )
+                ) {
+                    statefulRoundedBackground(
+                        palette.card,
+                        palette.cardPressed,
+                        itemRadius
+                    )
+                }
+
+                view.elevation = 0f
+            }
+
+            "clipboard_loading" ->
+            {
+                applyClipboardBackground(
+                    view,
+                    clipboardBackgroundSignature(
+                        STYLE_LOADING_CARD,
+                        palette.card,
+                        itemRadius
+                    )
+                ) {
+                    roundedBackground(
+                        palette.card,
+                        itemRadius
+                    )
+                }
+            }
+
+            "clipboard_text",
+            "phrase_text" ->
+            {
+                applyClipboardBackground(
+                    view,
+                    clipboardBackgroundSignature(
+                        STYLE_TAB,
+                        palette.tabSelected,
+                        Color.TRANSPARENT,
+                        smallRadius
+                    )
+                ) {
+                    selectedRoundedBackground(
+                        palette.tabSelected,
+                        Color.TRANSPARENT,
+                        smallRadius
+                    )
+                }
+
+                if (view is TextView)
+                {
+                    view.setTextColor(
+                        ColorStateList(
+                            arrayOf(
+                                intArrayOf(android.R.attr.state_selected),
+                                intArrayOf()
+                            ),
+                            intArrayOf(
+                                palette.primaryText,
+                                palette.secondaryText
+                            )
+                        )
+                    )
+                }
+            }
+
+            "clipboard_text_item_top",
+            "clipboard_text_item_bottom",
+            "image_end_show",
+            "phrase_text_item",
+            "text_view" ->
+            {
+                (view as? TextView)?.setTextColor(
+                    palette.primaryText
+                )
+            }
+
+            "clipboard_no_items",
+            "loading_text",
+            "clipboard_across_devices_tip_text" ->
+            {
+                (view as? TextView)?.setTextColor(
+                    palette.secondaryText
+                )
+            }
+
+            "pack_up_view",
+            "delete_and_add_action_button" ->
+            {
+                (view as? ImageView)?.setColorFilter(
+                    palette.primaryText
+                )
+            }
+        }
+
+        if (view is ViewGroup)
+        {
+            if (
+                containsNamedChildren(
+                    view,
+                    "clipboard_text",
+                    "phrase_text"
+                )
+            )
+            {
+                applyClipboardBackground(
+                    view,
+                    clipboardBackgroundSignature(
+                        STYLE_TAB_TRACK,
+                        palette.tabTrack,
+                        smallRadius
+                    )
+                ) {
+                    roundedBackground(
+                        palette.tabTrack,
+                        smallRadius
+                    )
+                }
+            }
+
+            if (
+                name == "clipboard_tip_view" &&
+                view.childCount > 0
+            )
+            {
+                val tipCard = view.getChildAt(0)
+
+                applyClipboardBackground(
+                    tipCard,
+                    clipboardBackgroundSignature(
+                        STYLE_TIP_CARD,
+                        palette.card,
+                        itemRadius
+                    )
+                ) {
+                    roundedBackground(
+                        palette.card,
+                        itemRadius
+                    )
+                }
+            }
+
+            for (index in 0 until view.childCount)
+            {
+                styleClipboardViewTree(
+                    view.getChildAt(index),
+                    palette
+                )
+            }
+        }
+    }
+
+    private fun clipboardPalette(view: View): ClipboardPalette
+    {
+        val strength =
+            ConfigManager.getOpacity()
+                .coerceIn(0, 100) /
+                100f
+
+        val customCard = parseOptionalColor(
+            ConfigManager.getMenuCardColor(),
+            ConfigManager.getMenuCardOpacity()
+        )
+
+        val dark = when (ConfigManager.getBgType())
+        {
+            1 ->
+            {
+                isDarkColor(
+                    parseOptionalColor(
+                        ConfigManager.getBgColor()
+                    ) ?: Color.WHITE
+                )
+            }
+
+            else ->
+            {
+                (
+                    view.resources.configuration.uiMode and
+                        Configuration.UI_MODE_NIGHT_MASK
+                    ) == Configuration.UI_MODE_NIGHT_YES
+            }
+        }
+
+        val customText =
+            parseOptionalColor(
+                ConfigManager.getTextColor()
+            )
+
+        val primary =
+            customText
+                ?: if (dark)
+                {
+                    Color.rgb(245, 247, 252)
+                }
+                else
+                {
+                    Color.rgb(20, 22, 27)
+                }
+
+        val secondary =
+            withAlpha(
+                primary,
+                if (dark) 178 else 150
+            )
+
+        val card =
+            customCard
+                ?: if (dark)
+                {
+                    Color.argb(
+                        (92 * strength).toInt(),
+                        255,
+                        255,
+                        255
+                    )
+                }
+                else
+                {
+                    Color.argb(
+                        (145 * strength).toInt(),
+                        255,
+                        255,
+                        255
+                    )
+                }
+
+        val pressed =
+            customCard?.let {
+                resolvePressedColor(
+                    it,
+                    dark
+                )
+            } ?: if (dark)
+            {
+                Color.argb(
+                    (135 * strength).toInt(),
+                    255,
+                    255,
+                    255
+                )
+            }
+            else
+            {
+                Color.argb(
+                    (190 * strength).toInt(),
+                    255,
+                    255,
+                    255
+                )
+            }
+
+        val tabTrack =
+            if (dark)
+            {
+                Color.argb(
+                    (62 * strength).toInt(),
+                    255,
+                    255,
+                    255
+                )
+            }
+            else
+            {
+                Color.argb(
+                    (105 * strength).toInt(),
+                    255,
+                    255,
+                    255
+                )
+            }
+
+        val tabSelected =
+            customCard
+                ?: if (dark)
+                {
+                    Color.argb(
+                        (118 * strength).toInt(),
+                        255,
+                        255,
+                        255
+                    )
+                }
+                else
+                {
+                    Color.argb(
+                        (205 * strength).toInt(),
+                        255,
+                        255,
+                        255
+                    )
+                }
+
+        return ClipboardPalette(
+            card,
+            pressed,
+            tabTrack,
+            tabSelected,
+            primary,
+            secondary
+        )
+    }
+
+    private fun roundedBackground(
+        color: Int,
+        radius: Float
+    ): Drawable
+    {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadius = radius
+        }
+    }
+
+    private fun statefulRoundedBackground(
+        normal: Int,
+        pressed: Int,
+        radius: Float
+    ): Drawable
+    {
+        return StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                roundedBackground(
+                    pressed,
+                    radius
+                )
+            )
+            addState(
+                intArrayOf(),
+                roundedBackground(
+                    normal,
+                    radius
+                )
+            )
+        }
+    }
+
+    private fun selectedRoundedBackground(
+        selected: Int,
+        normal: Int,
+        radius: Float
+    ): Drawable
+    {
+        return StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_selected),
+                roundedBackground(
+                    selected,
+                    radius
+                )
+            )
+            addState(
+                intArrayOf(),
+                roundedBackground(
+                    normal,
+                    radius
+                )
+            )
+        }
+    }
+
+    private fun applyClipboardBackground(
+        view: View,
+        signature: Int,
+        create: () -> Drawable
+    )
+    {
+        val cached = clipboardAppliedBackgrounds[view]
+
+        if (
+            cached?.signature == signature &&
+            view.background === cached.drawable
+        )
+        {
+            return
+        }
+
+        val drawable = create()
+        view.background = drawable
+
+        clipboardAppliedBackgrounds[view] =
+            AppliedClipboardBackground(
+                signature,
+                drawable
+            )
+    }
+
+    private fun clearClipboardBackground(view: View)
+    {
+        clipboardAppliedBackgrounds.remove(view)
+
+        if (view.background != null)
+        {
+            view.background = null
+        }
+    }
+
+    private fun clipboardBackgroundSignature(
+        kind: Int,
+        vararg values: Any
+    ): Int
+    {
+        var result = kind
+
+        values.forEach { value ->
+            result =
+                31 *
+                    result +
+                    value.hashCode()
+        }
+
+        return result
+    }
+
+    private fun containsNamedChildren(
+        group: ViewGroup,
+        vararg names: String
+    ): Boolean
+    {
+        val found = mutableSetOf<String>()
+
+        for (index in 0 until group.childCount)
+        {
+            resourceEntryName(
+                group.getChildAt(index)
+            )?.let(found::add)
+        }
+
+        return names.all(found::contains)
+    }
+
+    private fun findViewByResourceName(
+        view: View,
+        name: String
+    ): View?
+    {
+        if (resourceEntryName(view) == name)
+        {
+            return view
+        }
+
+        if (view is ViewGroup)
+        {
+            for (index in 0 until view.childCount)
+            {
+                val found = findViewByResourceName(
+                    view.getChildAt(index),
+                    name
+                )
+
+                if (found != null)
+                {
+                    return found
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun resourceEntryName(view: View): String?
+    {
+        if (view.id == View.NO_ID)
+        {
+            return null
+        }
+
+        return try
+        {
+            view.resources.getResourceEntryName(view.id)
+        }
+        catch (_: Throwable)
+        {
+            null
+        }
+    }
+
+    private data class ClipboardPalette(
+        val card: Int,
+        val cardPressed: Int,
+        val tabTrack: Int,
+        val tabSelected: Int,
+        val primaryText: Int,
+        val secondaryText: Int
+    )
+
+    private data class AppliedClipboardBackground(
+        val signature: Int,
+        val drawable: Drawable
+    )
+
+    private const val CLIPBOARD_POPUP_CLASS =
+        "com.miui.inputmethod.InputMethodClipboardPhrasePopupView"
+
+    private val CLIPBOARD_ADAPTER_CLASSES = arrayOf(
+        "com.miui.inputmethod.InputMethodClipboardAdapter",
+        "com.miui.inputmethod.InputMethodClipboardHeaderAdapter",
+        "com.miui.inputmethod.InputMethodPhraseAdapter"
+    )
+
+    private const val STYLE_ITEM_CARD = 1
+    private const val STYLE_LOADING_CARD = 2
+    private const val STYLE_TAB = 3
+    private const val STYLE_TAB_TRACK = 4
+    private const val STYLE_TIP_CARD = 5
 
     private fun applyStyle(
         module: XposedModule,
