@@ -27,6 +27,8 @@ import android.widget.ImageView
 import android.widget.PopupWindow
 import android.widget.TextView
 import io.github.libxposed.api.XposedModule
+import io.mo.xatype.compat.TargetCompatibility
+import io.mo.xatype.compat.TargetGeneration
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
@@ -76,6 +78,11 @@ object KeyboardStyleHook {
     private val nativeViewBackgrounds = WeakHashMap<View, NativeViewBackground>()
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
+        if (TargetCompatibility.detect(classLoader) == TargetGeneration.V209) {
+            KeyboardStyleV209Hook.install(module, classLoader)
+            return
+        }
+
         val imeServiceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
         if (imeServiceClass == null) {
             XposedUtils.logError(module, "MiInputMethodService class not found for KeyboardStyleHook", null)
