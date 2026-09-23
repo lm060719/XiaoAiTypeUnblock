@@ -33,6 +33,7 @@ object KeyboardStyleV209Hook
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
     private val clipboardAdapterHooks = ConcurrentHashMap.newKeySet<Class<*>>()
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
+    private val preserveDynamicGlassCleanup = ThreadLocal<Boolean>()
 
     @Volatile
     private var activePalette: Any? = null
@@ -121,11 +122,87 @@ object KeyboardStyleV209Hook
                 result
             }
         }
+
+        XposedUtils.findMethodExact(serviceClass, "onWindowHidden")?.let { method ->
+            module.hook(method).intercept { chain ->
+                val service = chain.thisObject as? android.inputmethodservice.InputMethodService
+                service?.let(ConfigManager::syncFromProvider)
+
+                val preserve =
+                    ConfigManager.isStyleEnabled() &&
+                        ConfigManager.getBgType() == 0
+
+                if (preserve)
+                {
+                    preserveDynamicGlassCleanup.set(true)
+                }
+
+                try
+                {
+                    chain.proceed()
+                }
+                finally
+                {
+                    if (preserve)
+                    {
+                        preserveDynamicGlassCleanup.remove()
+                    }
+                }
+            }
+        }
     }
 
     private fun installHyperMaterialHooks(module: XposedModule, classLoader: ClassLoader)
     {
         val helperClass = XposedUtils.findClass("bb.b0", classLoader) ?: return
+
+        listOf("e", "m").forEach { methodName ->
+            helperClass.declaredMethods.firstOrNull {
+                it.name == methodName &&
+                    it.parameterTypes.isEmpty()
+            }?.let { method ->
+                method.isAccessible = true
+
+                module.hook(method).intercept { chain ->
+                    if (preserveDynamicGlassCleanup.get() == true)
+                    {
+                        null
+                    }
+                    else
+                    {
+                        chain.proceed()
+                    }
+                }
+            }
+        }
+
+        helperClass.declaredMethods.firstOrNull {
+            it.name == "n" &&
+                it.parameterTypes.contentEquals(
+                    arrayOf(
+                        Boolean::class.javaPrimitiveType
+                            ?: java.lang.Boolean.TYPE
+                    )
+                )
+        }?.let { method ->
+            method.isAccessible = true
+
+            module.hook(method).intercept { chain ->
+                val hideRequested = chain.getArg(0) == false
+
+                if (
+                    preserveDynamicGlassCleanup.get() == true &&
+                    hideRequested
+                )
+                {
+                    null
+                }
+                else
+                {
+                    chain.proceed()
+                }
+            }
+        }
 
         helperClass.declaredMethods.firstOrNull {
             it.name == "g" &&
