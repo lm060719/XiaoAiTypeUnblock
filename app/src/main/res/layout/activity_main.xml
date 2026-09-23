@@ -917,7 +917,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="2dp"
-                                    android:text="菜单键展开后的语音键盘、表情、剪贴板等卡片"
+                                    android:text="菜单键展开后的语音键盘、表情等功能卡片，不包含剪贴板内容卡片"
                                     android:textColor="@color/text_secondary"
                                     android:textSize="11sp" />
 
