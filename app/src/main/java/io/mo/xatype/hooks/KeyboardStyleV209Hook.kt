@@ -57,6 +57,9 @@ object KeyboardStyleV209Hook
         }
 
         installLifecycleHooks(module, serviceClass)
+        AppearanceConfigurationHook.install(module, serviceClass) { service, root ->
+            applyStyle(module, service, root)
+        }
         installWindowTransitionHooks(module)
         installHyperMaterialHooks(module, classLoader)
         installPaletteHook(module, classLoader)

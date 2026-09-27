@@ -6,6 +6,8 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.content.res.Configuration
+import io.mo.xatype.config.AppearanceProfiles
 class LogContentProvider : ContentProvider() {
 
     companion object {
@@ -24,7 +26,11 @@ class LogContentProvider : ContentProvider() {
             METHOD_GET_CONFIG -> {
                 val ctx = context
                 if (ctx != null) {
-                    val sp = ctx.getSharedPreferences(io.mo.xatype.config.ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
+                    val local = ctx.getSharedPreferences(io.mo.xatype.config.ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
+                    AppearanceProfiles.initialize(local)
+                    val systemDark = extras?.getBoolean(AppearanceProfiles.EXTRA_DARK)
+                        ?: ((ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES)
+                    val sp = AppearanceProfiles.selected(local, systemDark)
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_SAFETY, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_SAFETY, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, false))

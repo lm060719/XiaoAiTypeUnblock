@@ -81,6 +81,9 @@ object KeyboardStyleHook {
 
         installClipboardPopupHook(module)
         installImeWindowTransitionHooks(module)
+        AppearanceConfigurationHook.install(module, imeServiceClass) { service, root ->
+            applyStyle(module, service, root)
+        }
 
         // 1. Hook onCreateInputView()
         val onCreateInputViewMethod = XposedUtils.findMethodExact(imeServiceClass, "onCreateInputView")

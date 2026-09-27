@@ -25,6 +25,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.appcompat.widget.SwitchCompat
 import io.mo.xatype.R
+import io.mo.xatype.config.AppearanceProfiles
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.hooks.BackgroundOpacity
 import java.io.DataOutputStream
@@ -56,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchVerboseLog: SwitchCompat
 
     // Style Customization Views
+    private var editingDark = false
     private lateinit var switchStyleEnabled: SwitchCompat
     private lateinit var layoutStyleControls: LinearLayout
     private lateinit var tvCornerRadiusValue: TextView
@@ -99,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         initViews()
         initStatus()
         initSwitches()
+        initAppearanceProfiles(savedInstanceState)
         initStyleControls()
         initButtons()
     }
@@ -240,8 +243,54 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initStyleControls() {
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("editing_dark", editingDark)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun stylePrefs() = AppearanceProfiles.forProfile(ConfigManager.getLocalPrefs(this), editingDark)
+
+    private fun initAppearanceProfiles(savedInstanceState: Bundle?) {
         val prefs = ConfigManager.getLocalPrefs(this)
+        AppearanceProfiles.initialize(prefs)
+        val follow = findViewById<SwitchCompat>(R.id.switchFollowSystem)
+        val profiles = findViewById<RadioGroup>(R.id.rgAppearanceProfile)
+        val hint = findViewById<TextView>(R.id.tvAppearanceProfileHint)
+        follow.isChecked = prefs.getBoolean(AppearanceProfiles.FOLLOW_SYSTEM, false)
+        val systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        editingDark = savedInstanceState?.getBoolean("editing_dark") ?: AppearanceProfiles.usesDark(
+            follow.isChecked, prefs.getBoolean(AppearanceProfiles.MANUAL_DARK, false), systemDark)
+        profiles.check(if (editingDark) R.id.rbDarkProfile else R.id.rbLightProfile)
+        fun updateHint() {
+            hint.text = if (follow.isChecked) "下方仅编辑所选配置，键盘会跟随系统自动切换" else
+                "键盘固定使用所选配置，下方修改会单独保存"
+        }
+        updateHint()
+        follow.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(AppearanceProfiles.FOLLOW_SYSTEM, checked)
+                .putBoolean(AppearanceProfiles.MANUAL_DARK, editingDark).apply()
+            updateHint()
+            showRestartHint()
+        }
+        profiles.setOnCheckedChangeListener { _, checkedId ->
+            editingDark = checkedId == R.id.rbDarkProfile
+            if (!follow.isChecked) {
+                prefs.edit().putBoolean(AppearanceProfiles.MANUAL_DARK, editingDark).apply()
+                showRestartHint()
+            }
+            initStyleControls()
+        }
+    }
+
+    private fun initStyleControls() {
+        // Detach old profile listeners before binding values to avoid writing
+        // the newly selected colors into the previously selected profile.
+        listOf(switchStyleEnabled, switchCustomTextColor, switchCustomFunctionKeycapColor,
+            switchCustomMenuCardColor, switchCustomClipboardCardColor,
+            switchCustomLetterKeycapColor).forEach { it.setOnCheckedChangeListener(null) }
+        rgBgType.setOnCheckedChangeListener(null)
+        val prefs = stylePrefs()
 
         val isStyleEnabled = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)
         switchStyleEnabled.isChecked = isStyleEnabled
@@ -594,7 +643,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         controls.onColorChanged = onChanged
         if (opacityKey != null && controls.opacity != null) {
-            val prefs = ConfigManager.getLocalPrefs(this)
+            val prefs = stylePrefs()
             controls.opacity.progress = prefs.getInt(opacityKey, 100).coerceIn(0, 100)
             controls.opacity.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -822,7 +871,7 @@ class MainActivity : AppCompatActivity() {
                 refreshColorDisplay(controls)
                 updateDialogPreview()
                 if (fromUser && controls.opacityKey != null) {
-                    ConfigManager.getLocalPrefs(this@MainActivity)
+                    stylePrefs()
                         .edit()
                         .putInt(controls.opacityKey, progress.coerceIn(0, 100))
                         .apply()

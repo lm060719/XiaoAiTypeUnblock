@@ -3,6 +3,8 @@ package io.mo.xatype.config
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Bundle
+import android.content.res.Configuration
 import io.github.libxposed.api.XposedInterface
 
 object ConfigManager {
@@ -37,6 +39,7 @@ object ConfigManager {
     const val KEY_BG_IMAGE_VERSION = "pref_bg_image_version"
 
     private var remotePrefs: SharedPreferences? = null
+    @Volatile private var remoteStylePrefs: SharedPreferences? = null
 
     // In-memory cached synced values (Live synced from Provider)
     @Volatile private var cachedAiSafety = false
@@ -67,15 +70,23 @@ object ConfigManager {
     fun initRemote(module: XposedInterface) {
         try {
             remotePrefs = module.getRemotePreferences(PREFS_NAME)
+            remoteStylePrefs = remotePrefs?.let { AppearanceProfiles.selected(it, false) }
         } catch (_: Throwable) {
             remotePrefs = null
+            remoteStylePrefs = null
         }
     }
 
     fun syncFromProvider(context: Context) {
         try {
+            val systemDark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+            remoteStylePrefs = remotePrefs?.let { AppearanceProfiles.selected(it, systemDark) }
             val uri = Uri.parse("content://io.mo.xatype.logprovider")
-            val bundle = context.contentResolver.call(uri, "get_config", null, null)
+            val extras = Bundle().apply {
+                putBoolean(AppearanceProfiles.EXTRA_DARK, systemDark)
+            }
+            val bundle = context.contentResolver.call(uri, "get_config", null, extras)
             if (bundle != null) {
                 cachedAiSafety = bundle.getBoolean(KEY_AI_SAFETY, false)
                 cachedVoiceModeration = bundle.getBoolean(KEY_VOICE_MODERATION, false)
@@ -144,55 +155,55 @@ object ConfigManager {
 
     fun isStyleEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedStyleEnabled
-        return remotePrefs?.getBoolean(KEY_STYLE_ENABLED, cachedStyleEnabled) ?: cachedStyleEnabled
+        return remoteStylePrefs?.getBoolean(KEY_STYLE_ENABLED, cachedStyleEnabled) ?: cachedStyleEnabled
     }
 
     fun getCornerRadius(): Int {
         if (hasSyncedFromProvider) return cachedCornerRadius
-        return remotePrefs?.getInt(KEY_CORNER_RADIUS, cachedCornerRadius) ?: cachedCornerRadius
+        return remoteStylePrefs?.getInt(KEY_CORNER_RADIUS, cachedCornerRadius) ?: cachedCornerRadius
     }
 
     fun getOpacity(): Int {
         if (hasSyncedFromProvider) return cachedOpacity
-        return remotePrefs?.getInt(KEY_OPACITY, cachedOpacity) ?: cachedOpacity
+        return remoteStylePrefs?.getInt(KEY_OPACITY, cachedOpacity) ?: cachedOpacity
     }
 
     fun getBlurRadius(): Int {
         if (hasSyncedFromProvider) return cachedBlurRadius
-        return remotePrefs?.getInt(KEY_BLUR_RADIUS, cachedBlurRadius) ?: cachedBlurRadius
+        return remoteStylePrefs?.getInt(KEY_BLUR_RADIUS, cachedBlurRadius) ?: cachedBlurRadius
     }
 
     fun getBgType(): Int {
         if (hasSyncedFromProvider) return cachedBgType
-        return remotePrefs?.getInt(KEY_BG_TYPE, cachedBgType) ?: cachedBgType
+        return remoteStylePrefs?.getInt(KEY_BG_TYPE, cachedBgType) ?: cachedBgType
     }
 
     fun getBgColor(): String {
         if (hasSyncedFromProvider) return cachedBgColor
-        return remotePrefs?.getString(KEY_BG_COLOR, cachedBgColor) ?: cachedBgColor
+        return remoteStylePrefs?.getString(KEY_BG_COLOR, cachedBgColor) ?: cachedBgColor
     }
 
     fun getTextColor(): String {
         if (hasSyncedFromProvider) return cachedTextColor
-        return remotePrefs?.getString(KEY_TEXT_COLOR, cachedTextColor) ?: cachedTextColor
+        return remoteStylePrefs?.getString(KEY_TEXT_COLOR, cachedTextColor) ?: cachedTextColor
     }
 
     fun getFunctionKeycapColor(): String {
         if (hasSyncedFromProvider) return cachedFunctionKeycapColor
-        return remotePrefs?.getString(KEY_FUNCTION_KEYCAP_COLOR, cachedFunctionKeycapColor)
+        return remoteStylePrefs?.getString(KEY_FUNCTION_KEYCAP_COLOR, cachedFunctionKeycapColor)
             ?: cachedFunctionKeycapColor
     }
 
     fun getMenuCardColor(): String {
         if (hasSyncedFromProvider) return cachedMenuCardColor
-        return remotePrefs?.getString(KEY_MENU_CARD_COLOR, cachedMenuCardColor)
+        return remoteStylePrefs?.getString(KEY_MENU_CARD_COLOR, cachedMenuCardColor)
             ?: cachedMenuCardColor
     }
 
     fun getClipboardCardColor(): String {
         if (hasSyncedFromProvider) return cachedClipboardCardColor
 
-        val prefs = remotePrefs
+        val prefs = remoteStylePrefs
         return if (prefs != null && prefs.contains(KEY_CLIPBOARD_CARD_COLOR)) {
             prefs.getString(KEY_CLIPBOARD_CARD_COLOR, cachedClipboardCardColor)
                 ?: cachedClipboardCardColor
@@ -204,26 +215,26 @@ object ConfigManager {
 
     fun getLetterKeycapColor(): String {
         if (hasSyncedFromProvider) return cachedLetterKeycapColor
-        return remotePrefs?.getString(KEY_LETTER_KEYCAP_COLOR, cachedLetterKeycapColor)
+        return remoteStylePrefs?.getString(KEY_LETTER_KEYCAP_COLOR, cachedLetterKeycapColor)
             ?: cachedLetterKeycapColor
     }
 
     fun getFunctionKeycapOpacity(): Int {
         if (hasSyncedFromProvider) return cachedFunctionKeycapOpacity
-        return (remotePrefs?.getInt(KEY_FUNCTION_KEYCAP_OPACITY, cachedFunctionKeycapOpacity)
+        return (remoteStylePrefs?.getInt(KEY_FUNCTION_KEYCAP_OPACITY, cachedFunctionKeycapOpacity)
             ?: cachedFunctionKeycapOpacity).coerceIn(0, 100)
     }
 
     fun getMenuCardOpacity(): Int {
         if (hasSyncedFromProvider) return cachedMenuCardOpacity
-        return (remotePrefs?.getInt(KEY_MENU_CARD_OPACITY, cachedMenuCardOpacity)
+        return (remoteStylePrefs?.getInt(KEY_MENU_CARD_OPACITY, cachedMenuCardOpacity)
             ?: cachedMenuCardOpacity).coerceIn(0, 100)
     }
 
     fun getClipboardCardOpacity(): Int {
         if (hasSyncedFromProvider) return cachedClipboardCardOpacity
 
-        val prefs = remotePrefs
+        val prefs = remoteStylePrefs
         val value = if (prefs != null && prefs.contains(KEY_CLIPBOARD_CARD_OPACITY)) {
             prefs.getInt(KEY_CLIPBOARD_CARD_OPACITY, cachedClipboardCardOpacity)
         } else {
@@ -235,13 +246,13 @@ object ConfigManager {
 
     fun getLetterKeycapOpacity(): Int {
         if (hasSyncedFromProvider) return cachedLetterKeycapOpacity
-        return (remotePrefs?.getInt(KEY_LETTER_KEYCAP_OPACITY, cachedLetterKeycapOpacity)
+        return (remoteStylePrefs?.getInt(KEY_LETTER_KEYCAP_OPACITY, cachedLetterKeycapOpacity)
             ?: cachedLetterKeycapOpacity).coerceIn(0, 100)
     }
 
     fun getBgImageVersion(): Long {
         if (hasSyncedFromProvider) return cachedBgImageVersion
-        return remotePrefs?.getLong(KEY_BG_IMAGE_VERSION, cachedBgImageVersion) ?: cachedBgImageVersion
+        return remoteStylePrefs?.getLong(KEY_BG_IMAGE_VERSION, cachedBgImageVersion) ?: cachedBgImageVersion
     }
 
     fun isVerboseLogEnabled(): Boolean {
