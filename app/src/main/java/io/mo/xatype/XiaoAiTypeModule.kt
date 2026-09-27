@@ -9,6 +9,7 @@ import io.mo.xatype.hooks.ClipboardPermanentHook
 import io.mo.xatype.hooks.ClipboardSensitiveHook
 import io.mo.xatype.hooks.CloudBlacklistHook
 import io.mo.xatype.hooks.HyperOsVersionHook
+import io.mo.xatype.hooks.InputDiagnosticsHook
 import io.mo.xatype.hooks.KeyboardStyleHook
 import io.mo.xatype.hooks.SystemUiNavigationGuardHook
 import io.mo.xatype.hooks.VoiceModerationHook
@@ -65,6 +66,14 @@ class XiaoAiTypeModule : XposedModule() {
         // com.miui.phrase owns persistence. The remaining hooks target only the
         // Xiaomi input method process.
         if (param.packageName == PHRASE_PACKAGE) return
+
+        if (BuildConfig.INPUT_DIAGNOSTICS) {
+            try {
+                InputDiagnosticsHook.install(this, classLoader)
+            } catch (t: Throwable) {
+                XposedUtils.logError(this, "Error installing InputDiagnosticsHook", t)
+            }
+        }
 
         try {
             HyperOsVersionHook.install(this, classLoader)

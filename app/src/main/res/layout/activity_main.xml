@@ -76,6 +76,15 @@
 
 
 
+            <Button
+                android:id="@+id/btnInputDiagnostics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:minHeight="52dp"
+                android:text="平板中文输入诊断 · 采集 / 导出日志"
+                android:visibility="gone" />
+
             <!-- Section Title: Switches -->
             <TextView
                 android:layout_width="wrap_content"

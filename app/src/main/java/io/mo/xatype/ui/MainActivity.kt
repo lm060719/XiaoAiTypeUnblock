@@ -104,6 +104,12 @@ class MainActivity : AppCompatActivity() {
         initAppearanceProfiles(savedInstanceState)
         initStyleControls()
         initButtons()
+        findViewById<Button>(R.id.btnInputDiagnostics).apply {
+            visibility = if (io.mo.xatype.BuildConfig.INPUT_DIAGNOSTICS) View.VISIBLE else View.GONE
+            setOnClickListener {
+                startActivity(android.content.Intent(this@MainActivity, io.mo.xatype.diagnostics.DiagnosticsActivity::class.java))
+            }
+        }
     }
 
     private fun initViews() {

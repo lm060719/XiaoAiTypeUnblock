@@ -16,6 +16,9 @@ android {
     }
 
     buildTypes {
+        configureEach {
+            buildConfigField("boolean", "INPUT_DIAGNOSTICS", "false")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -23,7 +26,14 @@ android {
         debug {
             isMinifyEnabled = false
         }
+        create("diagnostic") {
+            initWith(getByName("release"))
+            versionNameSuffix = "-pad-diag1"
+            buildConfigField("boolean", "INPUT_DIAGNOSTICS", "true")
+            matchingFallbacks += "release"
+        }
     }
+    buildFeatures { buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
