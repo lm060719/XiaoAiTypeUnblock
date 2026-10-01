@@ -19,13 +19,13 @@ object VoiceModerationHook {
         module: XposedInterface,
         classLoader: ClassLoader
     ) {
-        val miclawErrorHelperClass =
-            XposedUtils.findClass("a8.n", classLoader)
+        val className = TargetCompatibility.voiceModerationClassName(classLoader)
+        val miclawErrorHelperClass = XposedUtils.findClass(className, classLoader)
 
         if (miclawErrorHelperClass == null) {
             XposedUtils.logWarn(
                 module,
-                "[Voice Moderation] Class a8.n not found"
+                "[Voice Moderation] Class $className not found"
             )
             return
         }
@@ -52,7 +52,7 @@ object VoiceModerationHook {
         if (method == null) {
             XposedUtils.logWarn(
                 module,
-                "[Voice Moderation] Compatible a8.n moderation entry not found"
+                "[Voice Moderation] Compatible $className moderation entry not found"
             )
             return
         }
@@ -83,13 +83,13 @@ object VoiceModerationHook {
 
             XposedUtils.log(
                 module,
-                "[Voice Moderation] Hooked a8.n.$methodName" +
+                "[Voice Moderation] Hooked $className.$methodName" +
                     "(Context, String, String)"
             )
         } catch (t: Throwable) {
             XposedUtils.logError(
                 module,
-                "Failed to hook a8.n.$methodName",
+                "Failed to hook $className.$methodName",
                 t
             )
         }
@@ -99,7 +99,8 @@ object VoiceModerationHook {
         module: XposedInterface,
         classLoader: ClassLoader
     ) {
-        val s8FClass = XposedUtils.findClass("s8.f", classLoader) ?: return
+        val className = TargetCompatibility.asrManagerClassName(classLoader)
+        val s8FClass = XposedUtils.findClass(className, classLoader) ?: return
         val methodM = XposedUtils.findMethodExact(
             s8FClass,
             "m",
@@ -121,7 +122,7 @@ object VoiceModerationHook {
                         XposedUtils.log(
                             module,
                             "[Voice Moderation] Intercepted error 30002 " +
-                                "in s8.f.m()"
+                                "in $className.m()"
                         )
                     }
                     chain.proceed(
@@ -137,12 +138,12 @@ object VoiceModerationHook {
 
             XposedUtils.log(
                 module,
-                "[Voice Moderation] Hooked s8.f.m(int, String)"
+                "[Voice Moderation] Hooked $className.m(int, String)"
             )
         } catch (t: Throwable) {
             XposedUtils.logError(
                 module,
-                "Failed to hook s8.f.m",
+                "Failed to hook $className.m",
                 t
             )
         }
@@ -152,7 +153,8 @@ object VoiceModerationHook {
         module: XposedInterface,
         classLoader: ClassLoader
     ) {
-        val s8DClass = XposedUtils.findClass("s8.d", classLoader) ?: return
+        val className = TargetCompatibility.asrCallbackClassName(classLoader)
+        val s8DClass = XposedUtils.findClass(className, classLoader) ?: return
         val methodE = XposedUtils.findMethodExact(
             s8DClass,
             "e",
@@ -171,7 +173,7 @@ object VoiceModerationHook {
                         XposedUtils.log(
                             module,
                             "[Voice Moderation] Suppressed ASR error " +
-                                "30002 callback in s8.d.e()"
+                                "30002 callback in $className.e()"
                         )
                     }
                     return@intercept null
@@ -182,12 +184,12 @@ object VoiceModerationHook {
 
             XposedUtils.log(
                 module,
-                "[Voice Moderation] Hooked s8.d.e(Bundle)"
+                "[Voice Moderation] Hooked $className.e(Bundle)"
             )
         } catch (t: Throwable) {
             XposedUtils.logError(
                 module,
-                "Failed to hook s8.d.e",
+                "Failed to hook $className.e",
                 t
             )
         }

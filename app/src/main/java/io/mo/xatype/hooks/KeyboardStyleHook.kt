@@ -68,8 +68,12 @@ object KeyboardStyleHook {
     private val nativeViewBackgrounds = WeakHashMap<View, NativeViewBackground>()
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
-        if (TargetCompatibility.detect(classLoader) == TargetGeneration.V209) {
+        if (TargetCompatibility.modernKeyboardProfile(classLoader) != null) {
             KeyboardStyleV209Hook.install(module, classLoader)
+            return
+        }
+        if (TargetCompatibility.detect(classLoader) == TargetGeneration.UNKNOWN) {
+            XposedUtils.logWarn(module, "KeyboardStyleHook: unknown target structure; skipping appearance hooks")
             return
         }
 

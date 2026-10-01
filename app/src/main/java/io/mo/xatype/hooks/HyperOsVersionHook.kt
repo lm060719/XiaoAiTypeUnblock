@@ -19,23 +19,23 @@ object HyperOsVersionHook {
 
         hookSystemProperties(module)
 
-        if (generation != TargetGeneration.V209) {
+        if (generation == TargetGeneration.LEGACY) {
             patchS0Field(module, classLoader)
         } else {
             XposedUtils.log(
                 module,
-                "[HyperOS Unblock] v209 detected; skip legacy z7.s0 boolean patch"
+                "[HyperOS Unblock] $generation detected; skip legacy z7.s0 boolean patch"
             )
         }
 
         hookAiVersion(module, classLoader)
 
-        if (generation != TargetGeneration.V209) {
+        if (generation == TargetGeneration.LEGACY) {
             hookMetadataHelper(module, classLoader)
         } else {
             XposedUtils.log(
                 module,
-                "[HyperOS Unblock] v209 detected; use AIVersion directly instead of legacy nc.a metadata hook"
+                "[HyperOS Unblock] $generation detected; use AIVersion directly instead of legacy nc.a metadata hook"
             )
         }
 

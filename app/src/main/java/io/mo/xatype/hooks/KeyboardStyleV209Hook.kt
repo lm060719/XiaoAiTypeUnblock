@@ -21,6 +21,8 @@ import android.widget.ImageView
 import android.widget.PopupWindow
 import android.widget.TextView
 import io.github.libxposed.api.XposedModule
+import io.mo.xatype.compat.ModernKeyboardProfile
+import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
@@ -29,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 object KeyboardStyleV209Hook
 {
+    private lateinit var profile: ModernKeyboardProfile
     private val originalPaletteColors = IdentityHashMap<Any, Map<String, Long>>()
     private val originalAppsPanelColors = IdentityHashMap<Any, Map<String, Long>>()
     private val clipboardAdapterHooks = ConcurrentHashMap.newKeySet<Class<*>>()
@@ -48,6 +51,7 @@ object KeyboardStyleV209Hook
 
     fun install(module: XposedModule, classLoader: ClassLoader)
     {
+        profile = TargetCompatibility.modernKeyboardProfile(classLoader) ?: return
         val serviceClass = XposedUtils.findClass("com.mi.ime.MiInputMethodService", classLoader)
 
         if (serviceClass == null)
@@ -63,9 +67,10 @@ object KeyboardStyleV209Hook
         installWindowTransitionHooks(module)
         installHyperMaterialHooks(module, classLoader)
         installPaletteHook(module, classLoader)
+        PanelExpansionAnimationHook.install(module, classLoader)
         installClipboardPopupHook(module)
 
-        XposedUtils.log(module, "KeyboardStyleV209Hook: v209 compatibility hooks installed")
+        XposedUtils.log(module, "KeyboardStyleV209Hook: ${TargetCompatibility.detect(classLoader)} compatibility hooks installed")
     }
 
     private fun installLifecycleHooks(module: XposedModule, serviceClass: Class<*>)
@@ -160,9 +165,9 @@ object KeyboardStyleV209Hook
 
     private fun installHyperMaterialHooks(module: XposedModule, classLoader: ClassLoader)
     {
-        val helperClass = XposedUtils.findClass("bb.b0", classLoader) ?: return
+        val helperClass = XposedUtils.findClass(profile.helperClassName, classLoader) ?: return
 
-        listOf("e", "m").forEach { methodName ->
+        listOf("e", profile.materialCleanupMethod).forEach { methodName ->
             helperClass.declaredMethods.firstOrNull {
                 it.name == methodName &&
                     it.parameterTypes.isEmpty()
@@ -201,8 +206,8 @@ object KeyboardStyleV209Hook
 
         // k() and the shadow view's layout listener can recreate the shader
         // after b(View) returns. Suppress that overlay while compositor blur owns it.
-        XposedUtils.findClass("bb.t1", classLoader)?.let { rendererClass ->
-            XposedUtils.findMethodExact(rendererClass, "b")?.let { method ->
+        XposedUtils.findClass(profile.rendererClassName, classLoader)?.let { rendererClass ->
+            XposedUtils.findMethodExact(rendererClass, profile.rendererUpdateMethod)?.let { method ->
                 module.hook(method).intercept { chain ->
                     val renderer = chain.thisObject
                     val service = XposedUtils.getObjectField(renderer, "a")
@@ -220,7 +225,7 @@ object KeyboardStyleV209Hook
         }
 
         helperClass.declaredMethods.firstOrNull {
-            it.name == "n" &&
+            it.name == profile.materialVisibilityMethod &&
                 it.parameterTypes.contentEquals(
                     arrayOf(
                         Boolean::class.javaPrimitiveType
@@ -248,7 +253,7 @@ object KeyboardStyleV209Hook
         }
 
         helperClass.declaredMethods.firstOrNull {
-            it.name == "g" &&
+            it.name == profile.materialSupportMethod &&
                 it.parameterTypes.isEmpty() &&
                 it.returnType == Boolean::class.javaPrimitiveType
         }?.let { method ->
@@ -265,11 +270,11 @@ object KeyboardStyleV209Hook
                 }
             }
 
-            XposedUtils.log(module, "KeyboardStyleV209Hook: Hooked bb.b0.g material support")
+            XposedUtils.log(module, "KeyboardStyleV209Hook: Hooked ${profile.helperClassName}.${profile.materialSupportMethod} material support")
         }
 
         helperClass.declaredMethods.firstOrNull {
-            it.name == "j" && it.parameterTypes.isEmpty()
+            it.name == profile.materialUpdateMethod && it.parameterTypes.isEmpty()
         }?.let { method ->
             method.isAccessible = true
 
@@ -288,7 +293,7 @@ object KeyboardStyleV209Hook
         helperClass.declaredMethods
             .filter {
                 (it.name == "f" && it.parameterTypes.size == 3) ||
-                    (it.name == "k" && it.parameterTypes.isEmpty())
+                    (it.name == profile.materialRefreshMethod && it.parameterTypes.isEmpty())
             }
             .forEach { method ->
                 method.isAccessible = true
@@ -319,11 +324,11 @@ object KeyboardStyleV209Hook
 
     private fun installPaletteHook(module: XposedModule, classLoader: ClassLoader)
     {
-        val paletteFactory = XposedUtils.findClass("na.u", classLoader) ?: return
+        val paletteFactory = XposedUtils.findClass(profile.paletteFactoryClassName, classLoader) ?: return
         val method = paletteFactory.declaredMethods.firstOrNull {
             it.name == "z" &&
                 it.parameterTypes.size == 1 &&
-                it.returnType.name == "na.j"
+                it.returnType.name == profile.paletteClassName
         } ?: return
 
         method.isAccessible = true
@@ -350,7 +355,7 @@ object KeyboardStyleV209Hook
             palette
         }
 
-        XposedUtils.log(module, "KeyboardStyleV209Hook: Hooked na.u.z Compose palette")
+        XposedUtils.log(module, "KeyboardStyleV209Hook: Hooked ${profile.paletteFactoryClassName}.z Compose palette")
     }
 
     private fun rememberPalette(palette: Any)
@@ -1491,7 +1496,7 @@ object KeyboardStyleV209Hook
         if (compositorGlass.ensure(module, service, material)) {
             // Clear both pass-window blur and the inner-shadow shader only
             // after the replacement is ready; retain native rendering on failure.
-            invokeHelper(helper, "m")
+            invokeHelper(helper, profile.materialCleanupMethod)
         }
     }
 
@@ -1588,7 +1593,7 @@ object KeyboardStyleV209Hook
                 1 ->
                 {
                     compositorGlass.remove()
-                    invokeHelper(helper, "m")
+                    invokeHelper(helper, profile.materialCleanupMethod)
                     material.background = ColorDrawable(
                         resolveSolidColor(
                             ConfigManager.getBgColor(),
@@ -1601,7 +1606,7 @@ object KeyboardStyleV209Hook
                 2 ->
                 {
                     compositorGlass.remove()
-                    invokeHelper(helper, "m")
+                    invokeHelper(helper, profile.materialCleanupMethod)
                     val bitmap = getOrLoadBitmap(service)
 
                     if (bitmap != null && !bitmap.isRecycled)
@@ -1723,7 +1728,7 @@ object KeyboardStyleV209Hook
     {
         return try
         {
-            val holder = Class.forName("na.x", false, service.classLoader)
+            val holder = Class.forName(profile.paletteHolderClassName, false, service.classLoader)
             val dark = (
                 service.resources.configuration.uiMode and
                     Configuration.UI_MODE_NIGHT_MASK
