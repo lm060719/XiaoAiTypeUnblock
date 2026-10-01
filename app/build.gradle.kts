@@ -3,6 +3,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+val requireReleaseSigning = providers.environmentVariable("REQUIRE_RELEASE_SIGNING").orNull == "true"
+check(!requireReleaseSigning || !releaseKeystorePath.isNullOrBlank()) {
+    "Release signing requires ANDROID_KEYSTORE_PATH."
+}
+
 android {
     namespace = "io.mo.xatype"
     compileSdk = 34
@@ -15,11 +21,30 @@ android {
         versionName = "2.1.4"
     }
 
+    signingConfigs {
+        if (!releaseKeystorePath.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                check(storeFile!!.isFile) { "Release keystore file does not exist." }
+                fun signingSecret(name: String): String =
+                    providers.environmentVariable(name).orNull
+                        ?.takeIf { it.isNotBlank() }
+                        ?: error("Release signing requires $name.")
+                storePassword = signingSecret("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = signingSecret("ANDROID_KEY_ALIAS")
+                keyPassword = signingSecret("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         configureEach {
             buildConfigField("boolean", "INPUT_DIAGNOSTICS", "false")
         }
         release {
+            if (!releaseKeystorePath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

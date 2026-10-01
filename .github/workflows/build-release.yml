@@ -1,0 +1,136 @@
+name: 构建正式安装包
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Gradle 缓存
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 准备正式签名
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::请先在仓库 Settings > Secrets and variables > Actions 中配置 $name。"
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+
+      - name: 配置 Android SDK
+        run: sdkmanager "platforms;android-34" "build-tools;35.0.0"
+
+      - name: 运行单元测试并构建签名 Release APK
+        env:
+          REQUIRE_RELEASE_SIGNING: "true"
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: 校验签名并整理安装包
+        id: package
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import shutil
+          from pathlib import Path
+
+          source = Path("app/build/outputs/apk/release")
+          metadata = json.loads((source / "output-metadata.json").read_text())
+          element, = metadata["elements"]
+          version = element["versionName"]
+          safe_version = re.sub(r"[^A-Za-z0-9._-]", "_", version)
+          build = os.environ["BUILD_NUMBER"]
+          sha = os.environ["GITHUB_SHA"]
+          tag = f"build-{build}-{sha[:8]}"
+          filename = f"XiaoAiTypeUnblock-{safe_version}-{tag}.apk"
+          dist = Path("dist")
+          dist.mkdir(exist_ok=True)
+          shutil.copyfile(source / element["outputFile"], dist / filename)
+          notes = (
+              f"由 GitHub Actions 自动构建的签名 Release 安装包。\n\n"
+              f"- 应用版本：{version}\n"
+              f"- versionCode：{element['versionCode']}\n"
+              f"- 源码提交：{sha}\n"
+              f"- 构建记录：{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+              f"/actions/runs/{os.environ['GITHUB_RUN_ID']}\n\n"
+              "下载 APK 即可安装；附带 SHA-256 校验文件。\n"
+          )
+          (dist / "release-notes.md").write_text(notes, encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"filename={filename}\ntag={tag}\nversion={safe_version}\n")
+          PY
+          cd dist
+          sha256sum *.apk > SHA256SUMS.txt
+
+      - name: 上传正式安装包
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: XiaoAiTypeUnblock-${{ steps.package.outputs.tag }}-release
+          path: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: 发布到 GitHub Releases
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.package.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/*.apk dist/SHA256SUMS.txt --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/*.apk dist/SHA256SUMS.txt \
+              --target "$GITHUB_SHA" \
+              --title "XiaoAiTypeUnblock $RELEASE_VERSION · 构建 $GITHUB_RUN_NUMBER" \
+              --notes-file dist/release-notes.md
+          fi
+          {
+            echo "### 正式安装包已发布"
+            echo "[$RELEASE_TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 清理临时签名文件
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"

@@ -217,6 +217,32 @@ XiaoAiTypeUnblock/
 
 编译生成的 APK 文件位于 `app/build/outputs/apk/` 目录下。
 
+### GitHub 自动构建正式安装包
+
+每次向任意分支推送代码（提交后同步到 GitHub），都会触发 [构建正式安装包](https://github.com/lm060719/XiaoAiTypeUnblock/actions/workflows/build-release.yml)：运行 Release 单元测试、编译并签名 Release APK、验证签名、生成 SHA-256 校验文件。
+
+- `main` 分支构建成功后，自动在 [Releases](https://github.com/lm060719/XiaoAiTypeUnblock/releases) 发布安装包，无需手动打标签。
+- 其他分支的正式安装包可在对应 Actions 运行页面的 **Artifacts** 下载，保留 90 天。
+- 也可以在 Actions 中点击 **Run workflow** 手动构建。
+- 一次推送包含多个提交时，构建该次推送的最后一个提交。仅在本地提交、尚未推送时不会触发。
+
+安装包名称包含应用版本、构建序号和提交短哈希，方便对应源码。应用的 `versionName`、`versionCode` 仍由 `app/build.gradle.kts` 管理；发布新应用版本时请同步递增版本号。
+
+#### 首次配置签名
+
+在仓库 **Settings → Secrets and variables → Actions → New repository secret** 配置以下四项：
+
+| Secret | 内容 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | 正式签名 keystore 文件的完整 Base64 编码 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
+| `ANDROID_KEY_ALIAS` | 签名密钥别名 |
+| `ANDROID_KEY_PASSWORD` | 签名密钥密码 |
+
+必须使用已发布正式 APK 的同一份签名密钥，才能覆盖安装旧版本。工作流缺少签名配置时会明确报错，不会发布未签名 APK。密钥只保存到 GitHub Secrets 和构建机临时目录，构建结束后清理临时文件。
+
+本地需要编译签名正式包时，设置 `ANDROID_KEYSTORE_PATH`（keystore 路径）及上述三个密码/别名环境变量后执行 `./gradlew :app:assembleRelease`。不设置签名环境变量时，本地 Release 仍按原有方式输出未签名 APK，Debug 构建不受影响。
+
 ---
 
 ## ⚖️ 开源协议与免责声明
