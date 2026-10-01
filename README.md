@@ -221,8 +221,8 @@ XiaoAiTypeUnblock/
 
 每次向任意分支推送代码（提交后同步到 GitHub），都会触发 [构建正式安装包](https://github.com/lm060719/XiaoAiTypeUnblock/actions/workflows/build-release.yml)：运行 Release 单元测试、编译并签名 Release APK、验证签名、生成 SHA-256 校验文件。
 
-- `main` 分支构建成功后，自动在 [Releases](https://github.com/lm060719/XiaoAiTypeUnblock/releases) 发布安装包，无需手动打标签。
-- 其他分支的正式安装包可在对应 Actions 运行页面的 **Artifacts** 下载，保留 90 天。
+- 所有分支的正式安装包均可在对应 Actions 运行页面的 **Artifacts** 下载，保留 90 天，运行摘要中也会显示下载链接。
+- 自动构建只上传安装包到 Actions，不创建 Git 标签或发布 GitHub Release。
 - 也可以在 Actions 中点击 **Run workflow** 手动构建。
 - 一次推送包含多个提交时，构建该次推送的最后一个提交。仅在本地提交、尚未推送时不会触发。
 

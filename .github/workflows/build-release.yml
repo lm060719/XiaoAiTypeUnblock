@@ -13,9 +13,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
-
     steps:
       - name: 检出源码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,56 +79,35 @@ jobs:
           safe_version = re.sub(r"[^A-Za-z0-9._-]", "_", version)
           build = os.environ["BUILD_NUMBER"]
           sha = os.environ["GITHUB_SHA"]
-          tag = f"build-{build}-{sha[:8]}"
-          filename = f"XiaoAiTypeUnblock-{safe_version}-{tag}.apk"
+          build_id = f"build-{build}-{sha[:8]}"
+          filename = f"XiaoAiTypeUnblock-{safe_version}-{build_id}.apk"
           dist = Path("dist")
           dist.mkdir(exist_ok=True)
           shutil.copyfile(source / element["outputFile"], dist / filename)
-          notes = (
-              f"由 GitHub Actions 自动构建的签名 Release 安装包。\n\n"
-              f"- 应用版本：{version}\n"
-              f"- versionCode：{element['versionCode']}\n"
-              f"- 源码提交：{sha}\n"
-              f"- 构建记录：{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
-              f"/actions/runs/{os.environ['GITHUB_RUN_ID']}\n\n"
-              "下载 APK 即可安装；附带 SHA-256 校验文件。\n"
-          )
-          (dist / "release-notes.md").write_text(notes, encoding="utf-8")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"filename={filename}\ntag={tag}\nversion={safe_version}\n")
+              output.write(f"build_id={build_id}\n")
           PY
           cd dist
           sha256sum *.apk > SHA256SUMS.txt
 
       - name: 上传正式安装包
+        id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: XiaoAiTypeUnblock-${{ steps.package.outputs.tag }}-release
+          name: XiaoAiTypeUnblock-${{ steps.package.outputs.build_id }}-release
           path: |
             dist/*.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
 
-      - name: 发布到 GitHub Releases
-        if: github.ref == 'refs/heads/main'
+      - name: 显示安装包下载链接
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.package.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.package.outputs.version }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/*.apk dist/SHA256SUMS.txt --clobber
-          else
-            gh release create "$RELEASE_TAG" dist/*.apk dist/SHA256SUMS.txt \
-              --target "$GITHUB_SHA" \
-              --title "XiaoAiTypeUnblock $RELEASE_VERSION · 构建 $GITHUB_RUN_NUMBER" \
-              --notes-file dist/release-notes.md
-          fi
           {
-            echo "### 正式安装包已发布"
-            echo "[$RELEASE_TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG)"
+            echo "### 正式安装包已构建"
+            echo "[下载 APK 和 SHA-256 校验文件]($ARTIFACT_URL)（保留 90 天）"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 清理临时签名文件
