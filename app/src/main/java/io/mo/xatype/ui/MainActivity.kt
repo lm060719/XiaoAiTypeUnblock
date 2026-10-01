@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchClipboardSensitive: SwitchCompat
     private lateinit var switchClipboardPermanent: SwitchCompat
     private lateinit var switchOsVersionUnblock: SwitchCompat
+    private lateinit var switchKeyboardHeightUnblock: SwitchCompat
     private lateinit var switchVerboseLog: SwitchCompat
 
     // Style Customization Views
@@ -123,6 +124,7 @@ class MainActivity : AppCompatActivity() {
         switchClipboardSensitive = findViewById(R.id.switchClipboardSensitive)
         switchClipboardPermanent = findViewById(R.id.switchClipboardPermanent)
         switchOsVersionUnblock = findViewById(R.id.switchOsVersionUnblock)
+        switchKeyboardHeightUnblock = findViewById(R.id.switchKeyboardHeightUnblock)
         switchVerboseLog = findViewById(R.id.switchVerboseLog)
 
         // Style controls
@@ -206,6 +208,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun initSwitches() {
         val prefs = ConfigManager.getLocalPrefs(this)
+
+        switchKeyboardHeightUnblock.isChecked = prefs.getBoolean(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
+        switchKeyboardHeightUnblock.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, isChecked).apply()
+            showRestartHint()
+        }
 
         switchAiSafety.isChecked = prefs.getBoolean(ConfigManager.KEY_AI_SAFETY, false)
         switchAiSafety.setOnCheckedChangeListener { _, isChecked ->

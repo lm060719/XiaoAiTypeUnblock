@@ -88,6 +88,21 @@ public final class TargetCompatibilityProbe {
         String parser = (String) compat.getMethod("aiSafetyParserClassName", ClassLoader.class)
                 .invoke(singleton, target);
         if (generation.toString().equals("V21053")) {
+            Class<?> rect = load(target, "z9.c");
+            Object savedTallRect = rect.getDeclaredConstructor(int.class, int.class, int.class, int.class)
+                    .newInstance(0, -250, 50, 50);
+            for (String field : new String[]{"a", "b", "c", "d", "f"}) {
+                check(rect.getDeclaredField(field).getType() == int.class, "adjust rect " + field);
+            }
+            check(rect.getDeclaredField("f").getInt(savedTallRect) == 300,
+                    "saved rectangle retains height above native cap");
+            method(load(target, "ab.z1"), "l", rect);
+            method(load(target, "gb.m0"), "a", void.class, int.class,
+                    load(target, "com.mi.ime.MiInputMethodService"), load(target, "s0.p"));
+            Class<?> topDrag = load(target, "z9.e6");
+            method(topDrag, "m", Object.class, Object.class, Object.class);
+            check(topDrag.getDeclaredField("a").getType() == int.class, "drag branch discriminator");
+            method(load(target, "ed.a"), "k", int.class, int.class, int.class, int.class);
             Class<?> expansion = load(target, "gb.p");
             Class<?> animatable = load(target, "w.b");
             Class<?> continuation = load(target, "rc.c");

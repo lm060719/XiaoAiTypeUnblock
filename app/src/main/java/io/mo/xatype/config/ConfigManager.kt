@@ -16,6 +16,7 @@ object ConfigManager {
     const val KEY_CLIPBOARD_SENSITIVE = "pref_clipboard_sensitive"
     const val KEY_CLIPBOARD_PERMANENT = "pref_clipboard_permanent"
     const val KEY_OS_VERSION_UNBLOCK = "pref_os_version_unblock"
+    const val KEY_KEYBOARD_HEIGHT_UNBLOCK = "pref_keyboard_height_unblock"
     const val KEY_VERBOSE_LOG = "pref_verbose_log"
 
     // Style & Appearance Configs
@@ -48,6 +49,7 @@ object ConfigManager {
     @Volatile private var cachedClipboardSensitive = false
     @Volatile private var cachedClipboardPermanent = false
     @Volatile private var cachedOsVersionUnblock = false
+    @Volatile private var cachedKeyboardHeightUnblock = false
     @Volatile private var cachedVerboseLog = false
     @Volatile private var cachedStyleEnabled = false
     @Volatile private var cachedCornerRadius = 16
@@ -94,6 +96,7 @@ object ConfigManager {
                 cachedClipboardSensitive = bundle.getBoolean(KEY_CLIPBOARD_SENSITIVE, false)
                 cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, false)
                 cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, false)
+                cachedKeyboardHeightUnblock = bundle.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
                 cachedVerboseLog = bundle.getBoolean(KEY_VERBOSE_LOG, false)
                 cachedStyleEnabled = bundle.getBoolean(KEY_STYLE_ENABLED, false)
                 cachedCornerRadius = bundle.getInt(KEY_CORNER_RADIUS, 16)
@@ -156,6 +159,11 @@ object ConfigManager {
     fun isStyleEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedStyleEnabled
         return remoteStylePrefs?.getBoolean(KEY_STYLE_ENABLED, cachedStyleEnabled) ?: cachedStyleEnabled
+    }
+
+    fun isKeyboardHeightUnblockEnabled(): Boolean {
+        if (hasSyncedFromProvider) return cachedKeyboardHeightUnblock
+        return remotePrefs?.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false) ?: cachedKeyboardHeightUnblock
     }
 
     fun getCornerRadius(): Int {
