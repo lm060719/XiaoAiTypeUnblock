@@ -1,9 +1,11 @@
 package io.mo.xatype.hooks
 
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import java.lang.reflect.Method
 import java.util.regex.Pattern
 
 object AiSafetyHook {
@@ -26,87 +28,52 @@ object AiSafetyHook {
     }
 
     fun install(module: XposedInterface, classLoader: ClassLoader) {
-        val parserClassName = TargetCompatibility.aiSafetyParserClassName(classLoader)
-        val parserClass = XposedUtils.findClass(parserClassName, classLoader)
+        val parsers = HostSymbols.methods(HostSymbols.AI_SAFETY_PARSERS).ifEmpty {
+            legacyParsers(classLoader)
+        }
+        var installedCount = 0
 
-        if (parserClass != null) {
-            var installedCount = 0
-
-            listOf("h", "e", "f").forEach { methodName ->
-                val method = XposedUtils.findMethodExact(
-                    parserClass,
-                    methodName,
-                    String::class.java
-                ) ?: return@forEach
-
-                try {
-                    module.hook(method).intercept { chain ->
-                        if (!ConfigManager.isAiSafetyEnabled()) {
-                            return@intercept chain.proceed()
-                        }
-
-                        val originalJson = chain.getArg(0) as? String
-                        val sanitized = sanitizeJson(originalJson)
-
-                        if (sanitized != originalJson) {
-                            if (ConfigManager.isVerboseLogEnabled()) {
-                                XposedUtils.log(
-                                    module,
-                                    "[AI Safety] Sanitized safety_blocked in " +
-                                        "$parserClassName.$methodName()"
-                                )
-                            }
-                            chain.proceed(arrayOf(sanitized))
-                        } else {
-                            chain.proceed()
-                        }
+        parsers.forEach { method ->
+            val label = "${method.declaringClass.name}.${method.name}"
+            try {
+                module.hook(method).intercept { chain ->
+                    if (!ConfigManager.isAiSafetyEnabled()) {
+                        return@intercept chain.proceed()
                     }
 
-                    installedCount++
-                    XposedUtils.log(
-                        module,
-                        "[AI Safety] Hooked $parserClassName.$methodName(String)"
-                    )
-                } catch (t: Throwable) {
-                    XposedUtils.logError(
-                        module,
-                        "Failed to hook $parserClassName.$methodName",
-                        t
-                    )
-                }
-            }
+                    val originalJson = chain.getArg(0) as? String
+                    val sanitized = sanitizeJson(originalJson)
 
-            if (installedCount == 0) {
-                XposedUtils.logWarn(
-                    module,
-                    "[AI Safety] No compatible String parser methods found in $parserClassName"
-                )
+                    if (sanitized != originalJson) {
+                        if (ConfigManager.isVerboseLogEnabled()) {
+                            XposedUtils.log(
+                                module,
+                                "[AI Safety] Sanitized safety_blocked in $label()"
+                            )
+                        }
+                        chain.proceed(arrayOf(sanitized))
+                    } else {
+                        chain.proceed()
+                    }
+                }
+
+                installedCount++
+                XposedUtils.log(module, "[AI Safety] Hooked $label(String)")
+            } catch (t: Throwable) {
+                XposedUtils.logError(module, "Failed to hook $label", t)
             }
-        } else {
-            XposedUtils.logWarn(
-                module,
-                "[AI Safety] Parser class $parserClassName not found"
-            )
         }
 
-        val b6Class = XposedUtils.findClass("aa.b6", classLoader)
-        if (b6Class != null) {
-            val continuationClass =
-                XposedUtils.findClass("sc.c", classLoader) ?: Any::class.java
+        if (installedCount == 0) {
+            XposedUtils.logWarn(module, "[AI Safety] No compatible String parser methods found")
+        }
+    }
 
-            val methodM = XposedUtils.findFirstMethodByParamTypes(
-                b6Class,
-                null,
-                Any::class.java,
-                continuationClass
-            )
-
-            if (methodM != null) {
-                XposedUtils.log(
-                    module,
-                    "[AI Safety] Translation flow handler registered"
-                )
-            }
+    private fun legacyParsers(classLoader: ClassLoader): List<Method> {
+        val parserClassName = TargetCompatibility.aiSafetyParserClassName(classLoader)
+        val parserClass = XposedUtils.findClass(parserClassName, classLoader) ?: return emptyList()
+        return listOf("h", "e", "f").mapNotNull { methodName ->
+            XposedUtils.findMethodExact(parserClass, methodName, String::class.java)
         }
     }
 }

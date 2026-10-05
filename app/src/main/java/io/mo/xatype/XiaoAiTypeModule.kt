@@ -2,6 +2,7 @@ package io.mo.xatype
 
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
+import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.hooks.AiSafetyHook
@@ -15,6 +16,7 @@ import io.mo.xatype.hooks.KeyboardHeightUnblockHook
 import io.mo.xatype.hooks.SystemUiNavigationGuardHook
 import io.mo.xatype.hooks.VoiceModerationHook
 import io.mo.xatype.util.XposedUtils
+import java.io.File
 
 class XiaoAiTypeModule : XposedModule() {
 
@@ -46,6 +48,7 @@ class XiaoAiTypeModule : XposedModule() {
                 "Target compatibility profile: " +
                     TargetCompatibility.detect(classLoader).name
             )
+            initHostSymbols(param)
         }
         XposedUtils.log(this, "================================================")
 
@@ -119,5 +122,23 @@ class XiaoAiTypeModule : XposedModule() {
         }
 
         XposedUtils.log(this, "XiaoAiTypeUnblock hooks installation complete.")
+    }
+
+    private fun initHostSymbols(param: XposedModuleInterface.PackageLoadedParam) {
+        try {
+            val appInfo = param.applicationInfo
+            // Device-protected storage stays readable before the first unlock,
+            // when the input method already runs.
+            val cache = File(appInfo.deviceProtectedDataDir, "cache/xatype-symbols.json")
+            val summary = HostSymbols.init(
+                param.defaultClassLoader,
+                appInfo.sourceDir,
+                cache,
+                BuildConfig.VERSION_CODE.toLong()
+            )
+            XposedUtils.log(this, "Host symbols: $summary")
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error resolving host symbols", t)
+        }
     }
 }

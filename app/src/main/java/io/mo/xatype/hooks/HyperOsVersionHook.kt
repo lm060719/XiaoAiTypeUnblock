@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.compat.TargetGeneration
 import io.mo.xatype.config.ConfigManager
@@ -19,12 +20,16 @@ object HyperOsVersionHook {
 
         hookSystemProperties(module)
 
-        if (generation == TargetGeneration.LEGACY) {
-            patchS0Field(module, classLoader)
+        val versionGate = HostSymbols.clazz(HostSymbols.OS_VERSION_GATE)
+        if (versionGate != null) {
+            patchVersionGate(module, versionGate)
+        } else if (generation == TargetGeneration.LEGACY) {
+            XposedUtils.findClass("z7.s0", classLoader)?.let { patchVersionGate(module, it) }
+                ?: XposedUtils.logWarn(module, "[HyperOS Unblock] Class z7.s0 not found")
         } else {
             XposedUtils.log(
                 module,
-                "[HyperOS Unblock] $generation detected; skip legacy z7.s0 boolean patch"
+                "[HyperOS Unblock] OS version gate not located; relying on SystemProperties mock"
             )
         }
 
@@ -170,27 +175,25 @@ object HyperOsVersionHook {
     }
 
     /**
-     * 2. Reflectively patch z7.s0 static boolean flag (isNotOS4) to false in memory.
+     * 2. Reset the cached "below OS 4" flag in case its class initialized
+     *    before the SystemProperties mock took effect.
      */
-    private fun patchS0Field(module: XposedInterface, classLoader: ClassLoader) {
+    private fun patchVersionGate(module: XposedInterface, gateClass: Class<*>) {
+        // The flag is cached for the process lifetime, so respect the switch here.
+        if (!ConfigManager.isOsVersionUnblockEnabled()) return
         try {
-            val s0Class = XposedUtils.findClass("z7.s0", classLoader)
-            if (s0Class != null) {
-                for (field in s0Class.declaredFields) {
-                    if (Modifier.isStatic(field.modifiers) && (field.type == Boolean::class.javaPrimitiveType || field.type == java.lang.Boolean.TYPE)) {
-                        field.isAccessible = true
-                        val oldVal = field.getBoolean(null)
-                        field.setBoolean(null, false)
-                        if (ConfigManager.isVerboseLogEnabled()) {
-                            XposedUtils.log(module, "[HyperOS Unblock] Patched z7.s0.${field.name} from $oldVal to false")
-                        }
+            for (field in gateClass.declaredFields) {
+                if (Modifier.isStatic(field.modifiers) && field.type == java.lang.Boolean.TYPE) {
+                    field.isAccessible = true
+                    val oldVal = field.getBoolean(null)
+                    field.setBoolean(null, false)
+                    if (ConfigManager.isVerboseLogEnabled()) {
+                        XposedUtils.log(module, "[HyperOS Unblock] Patched ${gateClass.name}.${field.name} from $oldVal to false")
                     }
                 }
-            } else {
-                XposedUtils.logWarn(module, "[HyperOS Unblock] Class z7.s0 not found")
             }
         } catch (t: Throwable) {
-            XposedUtils.logError(module, "Failed to patch z7.s0", t)
+            XposedUtils.logError(module, "Failed to patch ${gateClass.name}", t)
         }
     }
 

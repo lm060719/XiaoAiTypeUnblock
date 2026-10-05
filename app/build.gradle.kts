@@ -19,6 +19,8 @@ android {
         targetSdk = 34
         versionCode = 10
         versionName = "2.1.5"
+        // DexKit ships a native library; the module only runs in ARM host processes.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     signingConfigs {
@@ -72,6 +74,7 @@ android {
 
 dependencies {
     compileOnly(files("libs/libxposed-api-102.0.0.jar"))
+    implementation("org.luckypray:dexkit:2.3.0")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.recyclerview:recyclerview:1.3.2")

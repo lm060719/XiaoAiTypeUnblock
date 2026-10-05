@@ -3,9 +3,11 @@ package io.mo.xatype.hooks
 import android.content.Context
 import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import java.lang.reflect.Method
 
 object VoiceModerationHook {
 
@@ -19,46 +21,16 @@ object VoiceModerationHook {
         module: XposedInterface,
         classLoader: ClassLoader
     ) {
-        val className = TargetCompatibility.voiceModerationClassName(classLoader)
-        val miclawErrorHelperClass = XposedUtils.findClass(className, classLoader)
-
-        if (miclawErrorHelperClass == null) {
+        val executable = HostSymbols.method(HostSymbols.VOICE_MODERATION)
+            ?: legacyMiclawMethod(classLoader)
+        if (executable == null) {
             XposedUtils.logWarn(
                 module,
-                "[Voice Moderation] Class $className not found"
+                "[Voice Moderation] Compatible Miclaw moderation entry not found"
             )
             return
         }
-
-        val preferredMethodName =
-            TargetCompatibility.voiceModerationMethodName(classLoader)
-
-        val candidateNames = linkedSetOf(
-            preferredMethodName,
-            "f",
-            "g"
-        )
-
-        val method = candidateNames.firstNotNullOfOrNull { methodName ->
-            XposedUtils.findMethodExact(
-                miclawErrorHelperClass,
-                methodName,
-                Context::class.java,
-                String::class.java,
-                String::class.java
-            )?.let { methodName to it }
-        }
-
-        if (method == null) {
-            XposedUtils.logWarn(
-                module,
-                "[Voice Moderation] Compatible $className moderation entry not found"
-            )
-            return
-        }
-
-        val methodName = method.first
-        val executable = method.second
+        val label = "${executable.declaringClass.name}.${executable.name}"
 
         try {
             module.hook(executable).intercept { chain ->
@@ -83,14 +55,24 @@ object VoiceModerationHook {
 
             XposedUtils.log(
                 module,
-                "[Voice Moderation] Hooked $className.$methodName" +
-                    "(Context, String, String)"
+                "[Voice Moderation] Hooked $label(Context, String, String)"
             )
         } catch (t: Throwable) {
-            XposedUtils.logError(
-                module,
-                "Failed to hook $className.$methodName",
-                t
+            XposedUtils.logError(module, "Failed to hook $label", t)
+        }
+    }
+
+    private fun legacyMiclawMethod(classLoader: ClassLoader): Method? {
+        val className = TargetCompatibility.voiceModerationClassName(classLoader)
+        val clazz = XposedUtils.findClass(className, classLoader) ?: return null
+        val preferred = TargetCompatibility.voiceModerationMethodName(classLoader)
+        return linkedSetOf(preferred, "f", "g").firstNotNullOfOrNull { methodName ->
+            XposedUtils.findMethodExact(
+                clazz,
+                methodName,
+                Context::class.java,
+                String::class.java,
+                String::class.java
             )
         }
     }
@@ -99,14 +81,15 @@ object VoiceModerationHook {
         module: XposedInterface,
         classLoader: ClassLoader
     ) {
-        val className = TargetCompatibility.asrManagerClassName(classLoader)
-        val s8FClass = XposedUtils.findClass(className, classLoader) ?: return
-        val methodM = XposedUtils.findMethodExact(
-            s8FClass,
-            "m",
-            Int::class.javaPrimitiveType ?: Integer.TYPE,
-            String::class.java
-        ) ?: return
+        val methodM = HostSymbols.method(HostSymbols.ASR_ERROR_MAPPER)
+            ?: XposedUtils.findClass(
+                TargetCompatibility.asrManagerClassName(classLoader),
+                classLoader
+            )?.let {
+                XposedUtils.findMethodExact(it, "m", Integer.TYPE, String::class.java)
+            }
+            ?: return
+        val label = "${methodM.declaringClass.name}.${methodM.name}"
 
         try {
             module.hook(methodM).intercept { chain ->
@@ -122,7 +105,7 @@ object VoiceModerationHook {
                         XposedUtils.log(
                             module,
                             "[Voice Moderation] Intercepted error 30002 " +
-                                "in $className.m()"
+                                "in $label()"
                         )
                     }
                     chain.proceed(
@@ -138,12 +121,12 @@ object VoiceModerationHook {
 
             XposedUtils.log(
                 module,
-                "[Voice Moderation] Hooked $className.m(int, String)"
+                "[Voice Moderation] Hooked $label(int, String)"
             )
         } catch (t: Throwable) {
             XposedUtils.logError(
                 module,
-                "Failed to hook $className.m",
+                "Failed to hook $label",
                 t
             )
         }
@@ -153,13 +136,13 @@ object VoiceModerationHook {
         module: XposedInterface,
         classLoader: ClassLoader
     ) {
-        val className = TargetCompatibility.asrCallbackClassName(classLoader)
-        val s8DClass = XposedUtils.findClass(className, classLoader) ?: return
-        val methodE = XposedUtils.findMethodExact(
-            s8DClass,
-            "e",
-            Bundle::class.java
-        ) ?: return
+        val methodE = HostSymbols.method(HostSymbols.ASR_ERROR_CALLBACK)
+            ?: XposedUtils.findClass(
+                TargetCompatibility.asrCallbackClassName(classLoader),
+                classLoader
+            )?.let { XposedUtils.findMethodExact(it, "e", Bundle::class.java) }
+            ?: return
+        val label = "${methodE.declaringClass.name}.${methodE.name}"
 
         try {
             module.hook(methodE).intercept { chain ->
@@ -173,7 +156,7 @@ object VoiceModerationHook {
                         XposedUtils.log(
                             module,
                             "[Voice Moderation] Suppressed ASR error " +
-                                "30002 callback in $className.e()"
+                                "30002 callback in $label()"
                         )
                     }
                     return@intercept null
@@ -184,12 +167,12 @@ object VoiceModerationHook {
 
             XposedUtils.log(
                 module,
-                "[Voice Moderation] Hooked $className.e(Bundle)"
+                "[Voice Moderation] Hooked $label(Bundle)"
             )
         } catch (t: Throwable) {
             XposedUtils.logError(
                 module,
-                "Failed to hook $className.e",
+                "Failed to hook $label",
                 t
             )
         }
