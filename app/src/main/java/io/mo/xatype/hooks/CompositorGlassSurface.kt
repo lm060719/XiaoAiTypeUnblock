@@ -107,18 +107,20 @@ internal class CompositorGlassSurface(
     ): Boolean {
         try {
             val mainDecor = service.window?.window?.decorView
-            val decor = if (popupWindow) material.rootView else mainDecor ?: return false
+            val decor = if (popupWindow) material.rootView else mainDecor ?: return skip(module, "no decor")
             // Coordinates and SurfaceControl must belong to the same window.
             if (popupWindow && decor === mainDecor) return false
-            if (!material.isAttachedToWindow || material.rootView !== decor) return false
+            if (!material.isAttachedToWindow || material.rootView !== decor) {
+                return skip(module, "attached=${material.isAttachedToWindow} sameRoot=${material.rootView === decor}")
+            }
             val getViewRootImpl = View::class.java.getDeclaredMethod("getViewRootImpl").apply {
                 isAccessible = true
             }
-            val viewRoot = getViewRootImpl.invoke(decor) ?: return false
-            val parent = XposedUtils.getObjectField(viewRoot, "mSurfaceControl") ?: return false
+            val viewRoot = getViewRootImpl.invoke(decor) ?: return skip(module, "no ViewRootImpl")
+            val parent = XposedUtils.getObjectField(viewRoot, "mSurfaceControl") ?: return skip(module, "no surface")
             val surfaceClass = Class.forName("android.view.SurfaceControl")
             val validMethod = surfaceClass.getDeclaredMethod("isValid").apply { isAccessible = true }
-            if (validMethod.invoke(parent) != true) return false
+            if (validMethod.invoke(parent) != true) return skip(module, "surface invalid")
             var primer = dynamicGlassSurfacePrimer
             if (
                 primer == null ||
@@ -231,6 +233,13 @@ internal class CompositorGlassSurface(
             remove()
             return false
         }
+    }
+
+    private fun skip(module: XposedModule, reason: String): Boolean {
+        if (ConfigManager.isVerboseLogEnabled()) {
+            XposedUtils.log(module, "[BottomDiag] glass Surface skipped: $reason")
+        }
+        return false
     }
 
     // Paired cleanup of the non-SDK surface above; reflection failures are caught.

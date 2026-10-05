@@ -15,6 +15,7 @@ import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.ImageView
@@ -45,6 +46,7 @@ object KeyboardStyleV209Hook
     private data class ClipboardPopupState(val nightMode: Int, val nativeColors: Boolean)
     private val activeClipboardPopups = WeakHashMap<PopupWindow, ClipboardPopupState>()
     private val popupMaterialListeners = WeakHashMap<View, View.OnAttachStateChangeListener>()
+    private val pendingMaterialSize = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
 
     @Volatile
     private var activePalette: Any? = null
@@ -1586,22 +1588,53 @@ object KeyboardStyleV209Hook
         module: XposedModule,
         service: android.inputmethodservice.InputMethodService,
         helper: Any,
-        material: View
+        material: View,
+        syncWithDraw: Boolean = false
     ) {
         if (!usesCompositorGlass()) {
             removeKeyboardGlass()
             return
         }
-        if (material.width <= 0 || material.height <= 0 || !material.isAttachedToWindow) return
+        if (material.width <= 0 || material.height <= 0 || !material.isAttachedToWindow) {
+            awaitMaterialSize(module, service, helper, material)
+            return
+        }
         val popup = isPopupMaterial(service, material)
         val surface = if (popup) floatingGlass else compositorGlass
-        if (surface.ensure(module, service, material)) {
+        if (surface.ensure(module, service, material, syncWithDraw)) {
             if (popup) compositorGlass.remove() else floatingGlass.remove()
             // Clear both pass-window blur and the inner-shadow shader only
             // after the replacement is ready; retain native rendering on failure.
             invokeHelper(helper, profile.materialCleanupMethod)
         }
         if (popup) AppearanceDiagnostics.record(module, service, "floating-keyboard", material, surface.owns(material))
+    }
+
+    // After a cold start the Compose material is still 0px tall at showWindow
+    // and b(View). Without a retry the whole first show uses Xiaomi's pass-window
+    // blur, whose dark edge sweeps up with the IME. Attach on the first sized draw.
+    private fun awaitMaterialSize(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        helper: Any,
+        material: View
+    ) {
+        if (pendingMaterialSize.containsKey(material)) return
+        val observer = material.viewTreeObserver
+        val listener = object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                val current = XposedUtils.getObjectField(helper, "i") === material
+                if (current && (material.width <= 0 || material.height <= 0 || !material.isAttachedToWindow)) {
+                    return true
+                }
+                pendingMaterialSize.remove(material)
+                material.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(this)
+                if (current) useCompositorGlass(module, service, helper, material, syncWithDraw = true)
+                return true
+            }
+        }
+        pendingMaterialSize[material] = listener
+        observer.addOnPreDrawListener(listener)
     }
 
     private fun installWindowTransitionHooks(module: XposedModule) {
