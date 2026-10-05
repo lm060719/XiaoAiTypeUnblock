@@ -13,6 +13,7 @@ import android.os.Looper
 import io.mo.xatype.BuildConfig
 import io.mo.xatype.R
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.config.AppearanceProfiles
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -117,6 +118,18 @@ class DiagnosticsService : Service() {
                 ConfigManager.KEY_CLIPBOARD_SENSITIVE, ConfigManager.KEY_CLIPBOARD_PERMANENT,
                 ConfigManager.KEY_VERBOSE_LOG, ConfigManager.KEY_STYLE_ENABLED)
             keys.forEach { append("Config $it=${prefs.getBoolean(it, false)}") }
+            val systemDark = (resources.configuration.uiMode and 48) == 32
+            val style = AppearanceProfiles.selected(prefs, systemDark)
+            append("Appearance followSystem=${prefs.getBoolean(AppearanceProfiles.FOLLOW_SYSTEM, false)} " +
+                "manualDark=${prefs.getBoolean(AppearanceProfiles.MANUAL_DARK, false)} systemDark=$systemDark")
+            listOf(ConfigManager.KEY_CORNER_RADIUS, ConfigManager.KEY_OPACITY,
+                ConfigManager.KEY_BLUR_RADIUS, ConfigManager.KEY_BG_TYPE).forEach {
+                append("Appearance $it=${style.getInt(it, -1)}")
+            }
+            listOf(ConfigManager.KEY_BG_COLOR, ConfigManager.KEY_TEXT_COLOR,
+                ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, ConfigManager.KEY_LETTER_KEYCAP_COLOR).forEach {
+                append("Appearance $it=${style.getString(it, "")}")
+            }
             val identity = rootCommand("id -u", 90).trim()
             check(identity == "0") { "未获得 Root 权限：$identity" }
             append("Root granted")
@@ -126,6 +139,12 @@ class DiagnosticsService : Service() {
                 "settings --user $user get secure default_input_method", 15).let {
                 "[real OS code / OS name / incremental / page size / provisioned / setup / default IME]\n$it"
             })
+            append(rootCommand("getprop persist.sys.background_blur_supported; " +
+                "getprop persist.sys.background_blur_version; getprop persist.sys.advanced_visual_release; " +
+                "getprop persist.sys.bionic_material_supported; " +
+                "settings --user $user get secure background_blur_enable", 15).let {
+                "[blur supported / blur version / advanced visual / bionic material / blur enabled]\n$it"
+            })
             // Capture from before restart; Android log buffers retain startup messages while su starts.
             val since = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
             append("[collector] Restarting com.xiaomi.type at $since")
@@ -134,7 +153,7 @@ class DiagnosticsService : Service() {
             // Also bound the privileged child if Android kills our app without onDestroy().
             val child = launch("exec timeout 600 logcat -b main -b system -b crash -v threadtime " +
                 "--uid=$imeUid,$moduleUid -T '$since' '*:V'")
-            DiagnosticLog.update(token, "正在采集，请切到聊天或记事本输入 nihao；完成后返回停止并导出")
+            DiagnosticLog.update(token, "正在采集，请呼出键盘复现外观或输入问题；完成后返回停止并导出")
             child.inputStream.bufferedReader().use { reader ->
                 while (!cancelled.get()) {
                     val line = reader.readLine() ?: break

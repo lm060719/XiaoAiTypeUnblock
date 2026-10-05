@@ -85,5 +85,10 @@ object InputDiagnosticsHook {
             "engineType=${(engineType as? Enum<*>)?.name ?: "unknown"} " +
             "hardwareKeyboard=${context.resources.configuration.keyboard} " +
             "inputType=${editor?.inputType} imeOptions=${editor?.imeOptions}")
+        (instance as? android.inputmethodservice.InputMethodService)?.let { service ->
+            val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+            val material = helper?.let { XposedUtils.getObjectField(it, "i") as? android.view.View }
+            AppearanceDiagnostics.record(module, service, stage, material)
+        }
     }
 }

@@ -24,7 +24,8 @@ data class ModernKeyboardProfile(
     val materialRefreshMethod: String,
     val materialCleanupMethod: String,
     val materialVisibilityMethod: String,
-    val rendererUpdateMethod: String
+    val rendererUpdateMethod: String,
+    val materialApiClassName: String
 )
 
 object TargetCompatibility {
@@ -32,11 +33,11 @@ object TargetCompatibility {
     private val detectedGenerations = WeakHashMap<ClassLoader, TargetGeneration>()
     private val v209Keyboard = ModernKeyboardProfile(
         "bb.b0", "bb.t1", "na.j", "na.u", "na.x",
-        "g", "j", "k", "m", "n", "b"
+        "g", "j", "k", "m", "n", "b", "xe.b"
     )
     private val v21053Keyboard = ModernKeyboardProfile(
         "ab.i0", "ab.e2", "ma.k", "ma.v", "ma.x",
-        "h", "k", "l", "n", "o", "c"
+        "h", "k", "l", "n", "o", "c", "we.b"
     )
 
     fun modernKeyboardProfile(classLoader: ClassLoader): ModernKeyboardProfile? =

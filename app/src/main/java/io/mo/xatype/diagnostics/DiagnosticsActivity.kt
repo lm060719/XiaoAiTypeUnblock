@@ -28,7 +28,7 @@ class DiagnosticsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "中文输入诊断 ${BuildConfig.VERSION_NAME}"
+        title = "输入法与外观诊断 ${BuildConfig.VERSION_NAME}"
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val padding = (20 * resources.displayMetrics.density).toInt()
@@ -38,7 +38,8 @@ class DiagnosticsActivity : AppCompatActivity() {
         layout.addView(TextView(this).apply {
             textSize = 16f
             text = "1. 点击开始，授权 Root，等待显示正在采集。\n" +
-                "2. 切到聊天或记事本，在中文模式输入 nihao，尝试中英文切换。\n" +
+                "2. 切到记事本，先呼出普通键盘，再切悬浮键盘、拖动位置、打开剪贴板；尝试横竖屏切换。\n" +
+                "   如需排查中文输入，在中文模式输入 nihao，尝试中英文切换。\n" +
                 "3. 返回这里，停止采集，再导出分享或保存文件。\n\n" +
                 "会自动重启小爱输入法。最长采集 10 分钟，最多 8 MB；再次开始会覆盖上次日志。\n\n" +
                 "仅收集输入法和模块进程日志、设备与版本信息。输入法原生日志可能包含输入文字，" +

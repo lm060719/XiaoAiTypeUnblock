@@ -53,7 +53,8 @@ android {
         }
         create("diagnostic") {
             initWith(getByName("release"))
-            versionNameSuffix = "-pad-diag1"
+            signingConfig = getByName("release").signingConfig ?: signingConfigs.getByName("debug")
+            versionNameSuffix = "-tablet-compat-diag4"
             buildConfigField("boolean", "INPUT_DIAGNOSTICS", "true")
             matchingFallbacks += "release"
         }

@@ -12,6 +12,7 @@ object AppearanceConfigurationHook {
     fun install(
         module: XposedModule,
         serviceClass: Class<*>,
+        onConfigurationApplied: (InputMethodService) -> Unit = {},
         applyStyle: (InputMethodService, View) -> Unit
     ) {
         val method = generateSequence(serviceClass) { it.superclass }
@@ -28,6 +29,9 @@ object AppearanceConfigurationHook {
                     val root = XposedUtils.getObjectField(service, "currentImeRootView") as? View
                     if (root != null) applyStyle(service, root)
                 }
+                // Popups can remain attached even when the IME root is a
+                // placeholder (floating or external-keyboard mode).
+                onConfigurationApplied(service)
             }
             result
         }

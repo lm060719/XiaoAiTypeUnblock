@@ -8,7 +8,11 @@ import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 
 /** A retained child surface follows the IME animation without Xiaomi's dark blur fallback. */
-internal class CompositorGlassSurface(private val materialField: String) {
+internal class CompositorGlassSurface(
+    private val materialField: String?,
+    private val popupWindow: Boolean = false,
+    private var roundBottom: Boolean = popupWindow
+) {
     @Volatile private var dynamicGlassSurfacePrimer: Any? = null
     @Volatile private var dynamicGlassSurfacePrimerParent: Any? = null
     private var dynamicGlassTrackedMaterial: View? = null
@@ -24,6 +28,13 @@ internal class CompositorGlassSurface(private val materialField: String) {
     fun owns(material: Any?): Boolean = dynamicGlassSurfacePrimer != null &&
         material != null && dynamicGlassTrackedMaterial === material
 
+    fun setRoundBottomCorners(value: Boolean) {
+        if (roundBottom != value) {
+            roundBottom = value
+            dynamicGlassGeometry = null
+        }
+    }
+
     private fun isEnabled(): Boolean = GlassTransitionPolicy.usesCompositor(
         ConfigManager.isStyleEnabled(), ConfigManager.getBgType(),
         ConfigManager.getOpacity(), ConfigManager.getBlurRadius()
@@ -38,11 +49,15 @@ internal class CompositorGlassSurface(private val materialField: String) {
         stopTrackingDynamicGlassGeometry()
         dynamicGlassTrackedMaterial = material
         val observer = material.viewTreeObserver
+        // Each instance retains its own window. A popup must never reparent
+        // the keyboard's layer, even when both use the same material helper.
+        val trackedRoot = material.rootView
         val listener = ViewTreeObserver.OnPreDrawListener {
-            val decor = service.window?.window?.decorView
+            val decor = if (popupWindow) trackedRoot else service.window?.window?.decorView
             val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
             if (!isEnabled() || !material.isAttachedToWindow ||
-                material.rootView !== decor || helper == null || XposedUtils.getObjectField(helper, materialField) !== material
+                material.rootView !== decor || (materialField != null &&
+                    (helper == null || XposedUtils.getObjectField(helper, materialField) !== material))
             ) {
                 remove()
             } else if (decor != null) {
@@ -91,9 +106,10 @@ internal class CompositorGlassSurface(private val materialField: String) {
         syncWithDraw: Boolean = false
     ): Boolean {
         try {
-            val decor = service.window?.window?.decorView ?: return false
-            // Coordinates below are local to this exact window, not screen
-            // coordinates. Reject popup roots even if they share the service.
+            val mainDecor = service.window?.window?.decorView
+            val decor = if (popupWindow) material.rootView else mainDecor ?: return false
+            // Coordinates and SurfaceControl must belong to the same window.
+            if (popupWindow && decor === mainDecor) return false
             if (!material.isAttachedToWindow || material.rootView !== decor) return false
             val getViewRootImpl = View::class.java.getDeclaredMethod("getViewRootImpl").apply {
                 isAccessible = true
@@ -133,7 +149,7 @@ internal class CompositorGlassSurface(private val materialField: String) {
             val cornerRadiusPx = ConfigManager.getCornerRadius() * material.resources.displayMetrics.density
             // Docked keyboards only round their top corners. Move the lower
             // corners below the window edge; floating materials keep all four.
-            val cropHeight = material.height + if (location[1] + material.height >= decor.height) {
+            val cropHeight = material.height + if (!roundBottom && location[1] + material.height >= decor.height) {
                 kotlin.math.ceil(cornerRadiusPx.toDouble()).toInt()
             } else 0
             val transactionClass = Class.forName("android.view.SurfaceControl\$Transaction")

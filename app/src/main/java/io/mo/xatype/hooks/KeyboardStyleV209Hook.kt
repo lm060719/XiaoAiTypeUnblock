@@ -23,6 +23,7 @@ import android.widget.TextView
 import io.github.libxposed.api.XposedModule
 import io.mo.xatype.compat.ModernKeyboardProfile
 import io.mo.xatype.compat.TargetCompatibility
+import io.mo.xatype.compat.TargetGeneration
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
@@ -39,6 +40,11 @@ object KeyboardStyleV209Hook
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
     private val preserveDynamicGlassCleanup = ThreadLocal<Boolean>()
     private val compositorGlass = CompositorGlassSurface("i")
+    private val floatingGlass = CompositorGlassSurface("i", popupWindow = true)
+    private val clipboardGlass = WeakHashMap<View, CompositorGlassSurface>()
+    private data class ClipboardPopupState(val nightMode: Int, val nativeColors: Boolean)
+    private val activeClipboardPopups = WeakHashMap<PopupWindow, ClipboardPopupState>()
+    private val popupMaterialListeners = WeakHashMap<View, View.OnAttachStateChangeListener>()
 
     @Volatile
     private var activePalette: Any? = null
@@ -61,7 +67,9 @@ object KeyboardStyleV209Hook
         }
 
         installLifecycleHooks(module, serviceClass)
-        AppearanceConfigurationHook.install(module, serviceClass) { service, root ->
+        AppearanceConfigurationHook.install(module, serviceClass,
+            onConfigurationApplied = { service -> refreshClipboardPopups(module, service) }
+        ) { service, root ->
             applyStyle(module, service, root)
         }
         installWindowTransitionHooks(module)
@@ -181,17 +189,26 @@ object KeyboardStyleV209Hook
                     }
                     else
                     {
-                        if (methodName == "e") compositorGlass.remove()
+                        if (methodName == "e") removeKeyboardGlass()
                         chain.proceed()
                     }
                 }
             }
         }
 
-        // b(View) is also used for clipboard popups. Only the helper's actual
-        // keyboard material may take ownership of the IME compositor surface.
+        // Clipboard and floating materials use separate surfaces; they must
+        // never take ownership of the main IME window's retained blur layer.
         XposedUtils.findMethodExact(helperClass, "b", View::class.java)?.let { method ->
             module.hook(method).intercept { chain ->
+                val popupMaterial = chain.getArg(0) as? View
+                val popupSurface = clipboardGlass[popupMaterial]
+                val popupService = XposedUtils.getObjectField(chain.thisObject, "a") as?
+                    android.inputmethodservice.InputMethodService
+                if (popupMaterial != null && popupSurface != null && popupService != null &&
+                    usesCompositorGlass() && popupSurface.ensure(module, popupService, popupMaterial)) {
+                    clearPopupNativeMaterial(module, popupService, popupMaterial)
+                    return@intercept true
+                }
                 val result = chain.proceed()
                 val helper = chain.thisObject
                 val material = chain.getArg(0) as? View
@@ -213,7 +230,7 @@ object KeyboardStyleV209Hook
                     val service = XposedUtils.getObjectField(renderer, "a")
                     val helper = service?.let { XposedUtils.getObjectField(it, "hyperMaterialHelper") }
                     if (usesCompositorGlass() && helper != null &&
-                        compositorGlass.owns(XposedUtils.getObjectField(helper, "i"))) {
+                        ownsKeyboardGlass(XposedUtils.getObjectField(helper, "i"))) {
                         (XposedUtils.getObjectField(renderer, "c") as? View)?.setRenderEffect(null)
                         XposedUtils.setObjectField(renderer, "d", null)
                         null
@@ -658,6 +675,28 @@ object KeyboardStyleV209Hook
 
         val root = popup.contentView ?: return
         val inside = findViewByResourceName(root, "inside_view") ?: root
+        activeClipboardPopups[popup] = ClipboardPopupState(
+            service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK,
+            usesNativeClipboardColors()
+        )
+        // Native docked mode uses MATCH_PARENT; floating modes specify a
+        // finite width. Window size is reliable even in a narrow split screen.
+        val roundBottom = popup.width > 0
+        val surface = clipboardGlass.getOrPut(inside) {
+            CompositorGlassSurface(null, popupWindow = true,
+                roundBottom = roundBottom).also { retained ->
+                inside.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(view: View) = Unit
+                    override fun onViewDetachedFromWindow(view: View) {
+                        retained.remove()
+                        clipboardGlass.remove(view)
+                        activeClipboardPopups.remove(popup)
+                        view.removeOnAttachStateChangeListener(this)
+                    }
+                })
+            }
+        }
+        surface.setRoundBottomCorners(roundBottom)
 
         popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         root.background = null
@@ -668,6 +707,10 @@ object KeyboardStyleV209Hook
         }
 
         inside.post {
+            if (!ConfigManager.isStyleEnabled() || !popup.isShowing || !inside.isAttachedToWindow) {
+                surface.remove()
+                return@post
+            }
             try
             {
                 when (ConfigManager.getBgType())
@@ -693,16 +736,18 @@ object KeyboardStyleV209Hook
                                 )
                             )
 
-                            invokeHelper(
-                                helper,
-                                "b",
-                                inside
-                            )
+                            if (usesCompositorGlass() && surface.ensure(module, service, inside)) {
+                                clearPopupNativeMaterial(module, service, inside)
+                            } else {
+                                surface.remove()
+                                invokeHelper(helper, "b", inside)
+                            }
                         }
                     }
 
                     1 ->
                     {
+                        surface.remove()
                         inside.background = ColorDrawable(
                             resolveSolidColor(
                                 ConfigManager.getBgColor(),
@@ -713,6 +758,7 @@ object KeyboardStyleV209Hook
 
                     2 ->
                     {
+                        surface.remove()
                         val bitmap = getOrLoadBitmap(service)
 
                         if (bitmap != null && !bitmap.isRecycled)
@@ -735,10 +781,12 @@ object KeyboardStyleV209Hook
                 applyTopCornerOutline(
                     inside,
                     ConfigManager.getCornerRadius().coerceAtLeast(0) *
-                        inside.resources.displayMetrics.density
+                        inside.resources.displayMetrics.density,
+                    roundBottom = roundBottom
                 )
 
                 styleClipboardViewTree(root)
+                AppearanceDiagnostics.record(module, service, "clipboard-popup", inside, surface.owns(inside))
 
                 if (ConfigManager.isVerboseLogEnabled())
                 {
@@ -755,6 +803,26 @@ object KeyboardStyleV209Hook
                     "KeyboardStyleV209Hook: clipboard styling failed",
                     t
                 )
+            }
+        }
+    }
+
+    private fun refreshClipboardPopups(module: XposedModule,
+        service: android.inputmethodservice.InputMethodService) {
+        activeClipboardPopups.keys.toList().forEach { popup ->
+            if (popup.isShowing && XposedUtils.getObjectField(popup, "mInputMethodService") === service) {
+                val previous = activeClipboardPopups[popup]
+                val nativeColors = usesNativeClipboardColors()
+                val nightMode = service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                if (!ConfigManager.isStyleEnabled() || previous?.nativeColors != nativeColors ||
+                    (nativeColors && previous.nightMode != nightMode)) {
+                    // Native cards, text and icons are styled during inflation.
+                    // Reopen with a fresh native tree instead of retaining old
+                    // custom colors or stale light/dark resource drawables.
+                    popup.dismiss()
+                } else {
+                    applyClipboardPopupStyle(module, popup)
+                }
             }
         }
     }
@@ -1482,6 +1550,38 @@ object KeyboardStyleV209Hook
         ConfigManager.getOpacity(), ConfigManager.getBlurRadius()
     )
 
+    private fun ownsKeyboardGlass(material: Any?): Boolean =
+        compositorGlass.owns(material) || floatingGlass.owns(material)
+
+    private fun removeKeyboardGlass() {
+        compositorGlass.remove()
+        floatingGlass.remove()
+    }
+
+    private fun isPopupMaterial(service: android.inputmethodservice.InputMethodService, material: View): Boolean =
+        material.rootView !== service.window?.window?.decorView
+
+    // Cleanup on helper.i would clear the keyboard, not the clipboard panel.
+    // Invoke the verified material API on this popup view only.
+    private fun clearPopupNativeMaterial(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        material: View
+    ) {
+        try {
+            val api = Class.forName(profile.materialApiClassName, false, service.classLoader)
+            val clear = api.declaredMethods.first {
+                it.name == "a" && it.parameterTypes.size == 2 && it.parameterTypes[0] == View::class.java
+            }
+            clear.isAccessible = true
+            clear.invoke(null, material, null)
+            View::class.java.getMethod("setPassWindowBlurEnabled", java.lang.Boolean.TYPE)
+                .invoke(material, false)
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "KeyboardStyleV209Hook: popup native cleanup failed", t)
+        }
+    }
+
     private fun useCompositorGlass(
         module: XposedModule,
         service: android.inputmethodservice.InputMethodService,
@@ -1489,15 +1589,19 @@ object KeyboardStyleV209Hook
         material: View
     ) {
         if (!usesCompositorGlass()) {
-            compositorGlass.remove()
+            removeKeyboardGlass()
             return
         }
         if (material.width <= 0 || material.height <= 0 || !material.isAttachedToWindow) return
-        if (compositorGlass.ensure(module, service, material)) {
+        val popup = isPopupMaterial(service, material)
+        val surface = if (popup) floatingGlass else compositorGlass
+        if (surface.ensure(module, service, material)) {
+            if (popup) compositorGlass.remove() else floatingGlass.remove()
             // Clear both pass-window blur and the inner-shadow shader only
             // after the replacement is ready; retain native rendering on failure.
             invokeHelper(helper, profile.materialCleanupMethod)
         }
+        if (popup) AppearanceDiagnostics.record(module, service, "floating-keyboard", material, surface.owns(material))
     }
 
     private fun installWindowTransitionHooks(module: XposedModule) {
@@ -1512,7 +1616,8 @@ object KeyboardStyleV209Hook
                     if (service == null) return
                     ConfigManager.syncFromProvider(service)
                     if (!ConfigManager.isStyleEnabled()) {
-                        compositorGlass.remove()
+                        removeKeyboardGlass()
+                        clipboardGlass.values.toList().forEach { it.remove() }
                         return
                     }
                     applyWindowStyle(service)
@@ -1529,7 +1634,10 @@ object KeyboardStyleV209Hook
         }
         XposedUtils.findMethodExact(serviceClass, "onDestroy")?.let { method ->
             module.hook(method).intercept { chain ->
-                compositorGlass.remove()
+                removeKeyboardGlass()
+                clipboardGlass.values.toList().forEach { it.remove() }
+                clipboardGlass.clear()
+                activeClipboardPopups.clear()
                 chain.proceed()
             }
         }
@@ -1541,7 +1649,7 @@ object KeyboardStyleV209Hook
         try
         {
             val window = service.window?.window ?: return
-            val color = when (ConfigManager.getBgType())
+            val color = if (hasUndockedKeyboard(service)) Color.TRANSPARENT else when (ConfigManager.getBgType())
             {
                 0 -> nativeBackgroundColor(service, ConfigManager.getOpacity())
                 1 -> resolveSolidColor(ConfigManager.getBgColor(), ConfigManager.getOpacity())
@@ -1569,6 +1677,21 @@ object KeyboardStyleV209Hook
         }
     }
 
+    private fun hasUndockedKeyboard(service: android.inputmethodservice.InputMethodService): Boolean {
+        val material = XposedUtils.getObjectField(service, "hyperMaterialHelper")?.let {
+            XposedUtils.getObjectField(it, "i") as? View
+        }
+        if (material != null && isPopupMaterial(service, material)) return true
+        // Verified 21053 UI state: v() is floating; n()==EXTERNAL_HW uses a
+        // compact hardware-keyboard toolbar rather than the docked background.
+        if (TargetCompatibility.detect(service.classLoader) != TargetGeneration.V21053) return false
+        return runCatching {
+            val manager = service.javaClass.getMethod("getUiStateManager\$app_iflytekFullRelease").invoke(service)
+            manager.javaClass.getMethod("v").invoke(manager) == true ||
+                (manager.javaClass.getMethod("n").invoke(manager) as? Enum<*>)?.name == "EXTERNAL_HW"
+        }.getOrDefault(false)
+    }
+
     private fun applyMaterialStyle(
         module: XposedModule,
         service: android.inputmethodservice.InputMethodService,
@@ -1576,8 +1699,11 @@ object KeyboardStyleV209Hook
         material: View
     )
     {
+        if (!ConfigManager.isStyleEnabled() || XposedUtils.getObjectField(helper, "i") !== material) return
         try
         {
+            if (isPopupMaterial(service, material)) watchPopupMaterial(module, service, helper, material)
+            applyWindowStyle(service)
             when (ConfigManager.getBgType())
             {
                 0 ->
@@ -1592,7 +1718,7 @@ object KeyboardStyleV209Hook
 
                 1 ->
                 {
-                    compositorGlass.remove()
+                    removeKeyboardGlass()
                     invokeHelper(helper, profile.materialCleanupMethod)
                     material.background = ColorDrawable(
                         resolveSolidColor(
@@ -1605,7 +1731,7 @@ object KeyboardStyleV209Hook
 
                 2 ->
                 {
-                    compositorGlass.remove()
+                    removeKeyboardGlass()
                     invokeHelper(helper, profile.materialCleanupMethod)
                     val bitmap = getOrLoadBitmap(service)
 
@@ -1627,7 +1753,8 @@ object KeyboardStyleV209Hook
             applyTopCornerOutline(
                 material,
                 ConfigManager.getCornerRadius().coerceAtLeast(0) *
-                    material.resources.displayMetrics.density
+                    material.resources.displayMetrics.density,
+                roundBottom = isPopupMaterial(service, material)
             )
 
             if (ConfigManager.isVerboseLogEnabled())
@@ -1651,6 +1778,34 @@ object KeyboardStyleV209Hook
                 t
             )
         }
+    }
+
+    private fun watchPopupMaterial(
+        module: XposedModule,
+        service: android.inputmethodservice.InputMethodService,
+        helper: Any,
+        material: View
+    ) {
+        if (popupMaterialListeners.containsKey(material)) return
+        val layoutListener = View.OnLayoutChangeListener { view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                applyMaterialStyle(module, service, helper, view)
+            }
+        }
+        val attachListener = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) {
+                view.post { applyMaterialStyle(module, service, helper, view) }
+            }
+            override fun onViewDetachedFromWindow(view: View) {
+                view.removeOnLayoutChangeListener(layoutListener)
+                popupMaterialListeners.remove(view)
+                view.removeOnAttachStateChangeListener(this)
+            }
+        }
+        popupMaterialListeners[material] = attachListener
+        material.addOnLayoutChangeListener(layoutListener)
+        material.addOnAttachStateChangeListener(attachListener)
     }
 
     private fun forceMaterialStateEnabled(helper: Any)
@@ -1771,7 +1926,7 @@ object KeyboardStyleV209Hook
         }
     }
 
-    private fun applyTopCornerOutline(view: View, radiusPx: Float)
+    private fun applyTopCornerOutline(view: View, radiusPx: Float, roundBottom: Boolean = false)
     {
         if (radiusPx <= 0f)
         {
@@ -1790,7 +1945,7 @@ object KeyboardStyleV209Hook
                         0,
                         0,
                         target.width,
-                        target.height + radiusPx.toInt(),
+                        target.height + if (roundBottom) 0 else radiusPx.toInt(),
                         radiusPx
                     )
                 }

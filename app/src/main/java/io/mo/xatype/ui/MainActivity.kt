@@ -18,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.SeekBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -912,7 +913,7 @@ class MainActivity : AppCompatActivity() {
 
         AlertDialog.Builder(this)
             .setTitle("调整${controls.title}")
-            .setView(dialogView)
+            .setView(ScrollView(this).apply { addView(dialogView) })
             .setPositiveButton("完成") { _, _ ->
                 showRestartHint()
             }
