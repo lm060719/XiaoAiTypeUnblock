@@ -40,8 +40,10 @@ object KeyboardStyleV209Hook
     private val clipboardSwipeHooks = ConcurrentHashMap.newKeySet<Class<*>>()
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
     private val preserveDynamicGlassCleanup = ThreadLocal<Boolean>()
-    private val compositorGlass = CompositorGlassSurface("i")
-    private val floatingGlass = CompositorGlassSurface("i", popupWindow = true)
+    private val compositorGlass by lazy { CompositorGlassSurface(profile.helperMaterialField) }
+    private val floatingGlass by lazy {
+        CompositorGlassSurface(profile.helperMaterialField, popupWindow = true)
+    }
     private val clipboardGlass = WeakHashMap<View, CompositorGlassSurface>()
     private data class ClipboardPopupState(val nightMode: Int, val nativeColors: Boolean)
     private val activeClipboardPopups = WeakHashMap<PopupWindow, ClipboardPopupState>()
@@ -177,7 +179,7 @@ object KeyboardStyleV209Hook
     {
         val helperClass = XposedUtils.findClass(profile.helperClassName, classLoader) ?: return
 
-        listOf("e", profile.materialCleanupMethod).forEach { methodName ->
+        listOf(profile.helperDetachMethod, profile.materialCleanupMethod).forEach { methodName ->
             helperClass.declaredMethods.firstOrNull {
                 it.name == methodName &&
                     it.parameterTypes.isEmpty()
@@ -191,20 +193,21 @@ object KeyboardStyleV209Hook
                     }
                     else
                     {
-                        if (methodName == "e") removeKeyboardGlass()
+                        if (methodName == profile.helperDetachMethod) removeKeyboardGlass()
                         chain.proceed()
                     }
                 }
+                XposedUtils.log(module, "KeyboardStyleV209Hook: Hooked ${profile.helperClassName}.$methodName material teardown")
             }
         }
 
         // Clipboard and floating materials use separate surfaces; they must
         // never take ownership of the main IME window's retained blur layer.
-        XposedUtils.findMethodExact(helperClass, "b", View::class.java)?.let { method ->
+        XposedUtils.findMethodExact(helperClass, profile.helperApplyMethod, View::class.java)?.let { method ->
             module.hook(method).intercept { chain ->
                 val popupMaterial = chain.getArg(0) as? View
                 val popupSurface = clipboardGlass[popupMaterial]
-                val popupService = XposedUtils.getObjectField(chain.thisObject, "a") as?
+                val popupService = XposedUtils.getObjectField(chain.thisObject, profile.helperServiceField) as?
                     android.inputmethodservice.InputMethodService
                 if (popupMaterial != null && popupSurface != null && popupService != null &&
                     usesCompositorGlass() && popupSurface.ensure(module, popupService, popupMaterial)) {
@@ -214,8 +217,8 @@ object KeyboardStyleV209Hook
                 val result = chain.proceed()
                 val helper = chain.thisObject
                 val material = chain.getArg(0) as? View
-                if (material != null && XposedUtils.getObjectField(helper, "i") === material) {
-                    val service = XposedUtils.getObjectField(helper, "a") as?
+                if (material != null && XposedUtils.getObjectField(helper, profile.helperMaterialField) === material) {
+                    val service = XposedUtils.getObjectField(helper, profile.helperServiceField) as?
                         android.inputmethodservice.InputMethodService
                     if (service != null) useCompositorGlass(module, service, helper, material)
                 }
@@ -229,12 +232,13 @@ object KeyboardStyleV209Hook
             XposedUtils.findMethodExact(rendererClass, profile.rendererUpdateMethod)?.let { method ->
                 module.hook(method).intercept { chain ->
                     val renderer = chain.thisObject
-                    val service = XposedUtils.getObjectField(renderer, "a")
+                    val service = XposedUtils.getObjectField(renderer, profile.rendererServiceField)
                     val helper = service?.let { XposedUtils.getObjectField(it, "hyperMaterialHelper") }
                     if (usesCompositorGlass() && helper != null &&
-                        ownsKeyboardGlass(XposedUtils.getObjectField(helper, "i"))) {
-                        (XposedUtils.getObjectField(renderer, "c") as? View)?.setRenderEffect(null)
-                        XposedUtils.setObjectField(renderer, "d", null)
+                        ownsKeyboardGlass(XposedUtils.getObjectField(helper, profile.helperMaterialField))) {
+                        (XposedUtils.getObjectField(renderer, profile.rendererViewField) as? View)
+                            ?.setRenderEffect(null)
+                        XposedUtils.setObjectField(renderer, profile.rendererEffectField, null)
                         null
                     } else {
                         chain.proceed()
@@ -311,7 +315,7 @@ object KeyboardStyleV209Hook
 
         helperClass.declaredMethods
             .filter {
-                (it.name == "f" && it.parameterTypes.size == 3) ||
+                (it.name == profile.helperAttachMethod && it.parameterTypes.size == 3) ||
                     (it.name == profile.materialRefreshMethod && it.parameterTypes.isEmpty())
             }
             .forEach { method ->
@@ -323,9 +327,9 @@ object KeyboardStyleV209Hook
                     if (ConfigManager.isStyleEnabled())
                     {
                         val helper = chain.thisObject
-                        val service = XposedUtils.getObjectField(helper, "a") as?
+                        val service = XposedUtils.getObjectField(helper, profile.helperServiceField) as?
                             android.inputmethodservice.InputMethodService
-                        val material = XposedUtils.getObjectField(helper, "i") as? View
+                        val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View
 
                         if (service != null && material != null)
                         {
@@ -345,7 +349,7 @@ object KeyboardStyleV209Hook
     {
         val paletteFactory = XposedUtils.findClass(profile.paletteFactoryClassName, classLoader) ?: return
         val method = paletteFactory.declaredMethods.firstOrNull {
-            it.name == "z" &&
+            it.name == profile.paletteFactoryMethod &&
                 it.parameterTypes.size == 1 &&
                 it.returnType.name == profile.paletteClassName
         } ?: return
@@ -374,7 +378,7 @@ object KeyboardStyleV209Hook
             palette
         }
 
-        XposedUtils.log(module, "KeyboardStyleV209Hook: Hooked ${profile.paletteFactoryClassName}.z Compose palette")
+        XposedUtils.log(module, "KeyboardStyleV209Hook: Hooked ${profile.paletteFactoryClassName}.${profile.paletteFactoryMethod} Compose palette")
     }
 
     private fun rememberPalette(palette: Any)
@@ -384,7 +388,7 @@ object KeyboardStyleV209Hook
             originalPaletteColors[palette] = snapshotLongFields(palette)
         }
 
-        val appsPanel = XposedUtils.getObjectField(palette, "U")
+        val appsPanel = XposedUtils.getObjectField(palette, profile.palette("appsPanel"))
 
         if (appsPanel != null && !originalAppsPanelColors.containsKey(appsPanel))
         {
@@ -398,7 +402,7 @@ object KeyboardStyleV209Hook
             writeLongField(palette, name, value)
         }
 
-        val appsPanel = XposedUtils.getObjectField(palette, "U")
+        val appsPanel = XposedUtils.getObjectField(palette, profile.palette("appsPanel"))
         if (appsPanel != null)
         {
             originalAppsPanelColors[appsPanel]?.forEach { (name, value) ->
@@ -415,14 +419,14 @@ object KeyboardStyleV209Hook
         // The v209 palette exposes separate keyboard, top and toolbar surfaces.
         // Custom backgrounds are drawn by the retained HyperMaterial view, so
         // these Compose surfaces must stay transparent instead of painting over it.
-        listOf("a", "b", "u").forEach { fieldName ->
-            writeLongField(palette, fieldName, transparent)
+        listOf("keyboardBackground", "keyboardBackgroundTop", "toolbarBackground").forEach { label ->
+            writeLongField(palette, profile.palette(label), transparent)
         }
 
-        val appsPanel = XposedUtils.getObjectField(palette, "U")
+        val appsPanel = XposedUtils.getObjectField(palette, profile.palette("appsPanel"))
         if (appsPanel != null)
         {
-            writeLongField(appsPanel, "a", transparent)
+            writeLongField(appsPanel, profile.appsPanel("background"), transparent)
         }
 
         val solidBackground =
@@ -437,7 +441,7 @@ object KeyboardStyleV209Hook
 
         val surfaceDark =
             solidBackground?.let(::isDarkColor)
-                ?: readBooleanField(palette, "Y")
+                ?: readBooleanField(palette, profile.palette("isDark"))
                 ?: false
 
         val letterColor = parseOptionalColor(
@@ -447,10 +451,10 @@ object KeyboardStyleV209Hook
 
         if (letterColor != null)
         {
-            writeLongField(palette, "c", composeColor(letterColor))
+            writeLongField(palette, profile.palette("keyBackgroundDefault"), composeColor(letterColor))
             writeLongField(
                 palette,
-                "d",
+                profile.palette("keyBackgroundPressed"),
                 composeColor(
                     resolvePressedColor(
                         letterColor,
@@ -468,8 +472,12 @@ object KeyboardStyleV209Hook
         if (functionColor != null)
         {
             val value = composeColor(functionColor)
-            listOf("e", "f", "g").forEach { fieldName ->
-                writeLongField(palette, fieldName, value)
+            listOf(
+                "keyBackgroundSpecial",
+                "keyBackgroundEnter",
+                "keyBackgroundEnterGradientEnd"
+            ).forEach { label ->
+                writeLongField(palette, profile.palette(label), value)
             }
         }
 
@@ -517,28 +525,32 @@ object KeyboardStyleV209Hook
             val secondaryCompose = composeColor(secondary)
 
             listOf(
-                "h",
-                "j",
-                "l",
-                "m",
-                "w",
-                "x",
-                "A",
-                "I",
-                "L",
-                "M"
-            ).forEach { fieldName ->
+                "keyTextColor",
+                "keyTextColorEnter",
+                "modeSelectorTitleColor",
+                "navBackIconColor",
+                "toolbarIconColor",
+                "toolbarIconColorCollapse",
+                "bottomBarIconColor",
+                "candidateExpandIconColor",
+                "modeSelectorUnselectedIconColor",
+                "modeSelectorUnselectedTextColor"
+            ).forEach { label ->
                 writeLongField(
                     palette,
-                    fieldName,
+                    profile.palette(label),
                     primaryCompose
                 )
             }
 
-            listOf("i", "k", "y").forEach { fieldName ->
+            listOf(
+                "keyTextColorSecondary",
+                "keyHintColor",
+                "symbolLockIndicatorInactive"
+            ).forEach { label ->
                 writeLongField(
                     palette,
-                    fieldName,
+                    profile.palette(label),
                     secondaryCompose
                 )
             }
@@ -591,17 +603,22 @@ object KeyboardStyleV209Hook
                 val primaryCompose = composeColor(menuPrimary)
                 val secondaryCompose = composeColor(menuSecondary)
 
-                listOf("c", "d", "g", "i").forEach { fieldName ->
+                listOf(
+                    "cardIconColor",
+                    "cardTextColor",
+                    "backArrowColor",
+                    "tooltipTextColor"
+                ).forEach { label ->
                     writeLongField(
                         appsPanel,
-                        fieldName,
+                        profile.appsPanel(label),
                         primaryCompose
                     )
                 }
 
                 writeLongField(
                     appsPanel,
-                    "f",
+                    profile.appsPanel("toggleActiveColor"),
                     secondaryCompose
                 )
             }
@@ -627,8 +644,8 @@ object KeyboardStyleV209Hook
             if (resolvedCard != null)
             {
                 val value = composeColor(resolvedCard)
-                writeLongField(appsPanel, "b", value)
-                writeLongField(appsPanel, "h", value)
+                writeLongField(appsPanel, profile.appsPanel("cardBackground"), value)
+                writeLongField(appsPanel, profile.appsPanel("tooltipBackground"), value)
             }
         }
     }
@@ -742,7 +759,7 @@ object KeyboardStyleV209Hook
                                 clearPopupNativeMaterial(module, service, inside)
                             } else {
                                 surface.remove()
-                                invokeHelper(helper, "b", inside)
+                                invokeHelper(helper, profile.helperApplyMethod, inside)
                             }
                         }
                     }
@@ -1539,7 +1556,7 @@ object KeyboardStyleV209Hook
         val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper") ?: return
         forceMaterialStateEnabled(helper)
 
-        val material = XposedUtils.getObjectField(helper, "i") as? View ?: return
+        val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View ?: return
 
         applyMaterialStyle(module, service, helper, material)
         material.post {
@@ -1573,7 +1590,8 @@ object KeyboardStyleV209Hook
         try {
             val api = Class.forName(profile.materialApiClassName, false, service.classLoader)
             val clear = api.declaredMethods.first {
-                it.name == "a" && it.parameterTypes.size == 2 && it.parameterTypes[0] == View::class.java
+                it.name == profile.materialApiClearMethod && it.parameterTypes.size == 2 &&
+                    it.parameterTypes[0] == View::class.java
             }
             clear.isAccessible = true
             clear.invoke(null, material, null)
@@ -1623,7 +1641,7 @@ object KeyboardStyleV209Hook
         val observer = material.viewTreeObserver
         val listener = object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
-                val current = XposedUtils.getObjectField(helper, "i") === material
+                val current = XposedUtils.getObjectField(helper, profile.helperMaterialField) === material
                 if (current && (material.width <= 0 || material.height <= 0 || !material.isAttachedToWindow)) {
                     return true
                 }
@@ -1655,7 +1673,7 @@ object KeyboardStyleV209Hook
                     }
                     applyWindowStyle(service)
                     val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper") ?: return
-                    val material = XposedUtils.getObjectField(helper, "i") as? View ?: return
+                    val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View ?: return
                     useCompositorGlass(module, service, helper, material)
                 }
                 // Insets animation is submitted before onWindowShown/Hidden.
@@ -1712,7 +1730,7 @@ object KeyboardStyleV209Hook
 
     private fun hasUndockedKeyboard(service: android.inputmethodservice.InputMethodService): Boolean {
         val material = XposedUtils.getObjectField(service, "hyperMaterialHelper")?.let {
-            XposedUtils.getObjectField(it, "i") as? View
+            XposedUtils.getObjectField(it, profile.helperMaterialField) as? View
         }
         if (material != null && isPopupMaterial(service, material)) return true
         // Verified 21053 UI state: v() is floating; n()==EXTERNAL_HW uses a
@@ -1732,7 +1750,7 @@ object KeyboardStyleV209Hook
         material: View
     )
     {
-        if (!ConfigManager.isStyleEnabled() || XposedUtils.getObjectField(helper, "i") !== material) return
+        if (!ConfigManager.isStyleEnabled() || XposedUtils.getObjectField(helper, profile.helperMaterialField) !== material) return
         try
         {
             if (isPopupMaterial(service, material)) watchPopupMaterial(module, service, helper, material)
@@ -1746,7 +1764,7 @@ object KeyboardStyleV209Hook
                         nativeBackgroundColor(service, ConfigManager.getOpacity())
                     )
                     material.alpha = 1f
-                    invokeHelper(helper, "b", material)
+                    invokeHelper(helper, profile.helperApplyMethod, material)
                 }
 
                 1 ->
@@ -1845,7 +1863,7 @@ object KeyboardStyleV209Hook
     {
         try
         {
-            val state = XposedUtils.getObjectField(helper, "e") ?: return
+            val state = XposedUtils.getObjectField(helper, profile.helperStateField) ?: return
             val setValue = state.javaClass.methods.firstOrNull {
                 it.name == "setValue" && it.parameterTypes.size == 1
             } ?: return
@@ -1861,7 +1879,7 @@ object KeyboardStyleV209Hook
     {
         var updated = false
 
-        listOf("r", "s").forEach { fieldName ->
+        profile.helperTokenFields.forEach { fieldName ->
             try
             {
                 val lazyValue = XposedUtils.getObjectField(helper, fieldName) ?: return@forEach
@@ -1872,14 +1890,14 @@ object KeyboardStyleV209Hook
 
                 XposedUtils.setObjectField(
                     token,
-                    "p",
+                    profile.tokenBlurField,
                     blurRadiusDp.coerceIn(0, 400)
                 )
 
-                val blends = XposedUtils.getObjectField(token, "e") as? IntArray
+                val blends = XposedUtils.getObjectField(token, profile.tokenBlendField) as? IntArray
                 if (blends != null)
                 {
-                    XposedUtils.setObjectField(token, "e", IntArray(blends.size))
+                    XposedUtils.setObjectField(token, profile.tokenBlendField, IntArray(blends.size))
                 }
 
                 updated = true
@@ -1901,8 +1919,9 @@ object KeyboardStyleV209Hook
         val originalColor = palette?.let { current ->
             synchronized(originalPaletteColors)
             {
-                originalPaletteColors[current]?.get("a")
-                    ?: readLongField(current, "a")
+                val background = profile.palette("keyboardBackground")
+                originalPaletteColors[current]?.get(background)
+                    ?: readLongField(current, background)
             }
         }
         val color = originalColor
@@ -1922,9 +1941,9 @@ object KeyboardStyleV209Hook
                     Configuration.UI_MODE_NIGHT_MASK
                 ) == Configuration.UI_MODE_NIGHT_YES
 
-            holder.getDeclaredField(if (dark) "e" else "d").apply {
-                isAccessible = true
-            }.get(null)
+            profile.paletteHolderFields
+                .map { holder.getDeclaredField(it).apply { isAccessible = true }.get(null) }
+                .firstOrNull { readBooleanField(it, profile.palette("isDark")) == dark }
         }
         catch (_: Throwable)
         {

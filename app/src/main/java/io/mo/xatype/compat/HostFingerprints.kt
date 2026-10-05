@@ -32,6 +32,9 @@ internal object HostFingerprints {
             HostSymbols.HEIGHT_DRAG,
             HostSymbols.HEIGHT_DRAG_KIND
         ) { keyboardHeight(bridge, loader).map { listOf(it) } }
+        collector.put(HostSymbols.MODERN_KEYBOARD) {
+            listOf(ModernKeyboardFingerprint.resolve(bridge, loader).toProperties())
+        }
         return collector.result()
     }
 

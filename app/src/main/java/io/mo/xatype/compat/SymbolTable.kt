@@ -104,6 +104,9 @@ open class SymbolTable(
 
     fun describe(): Map<String, List<String>> = symbols
 
+    /** Raw entries of a key that stores values other than descriptors. */
+    fun strings(key: String): List<String>? = symbols[key]
+
     fun clazz(key: String): Class<*>? = symbols[key]?.singleOrNull()?.let {
         runCatching { DexClass(it).getInstance(loader()) }.getOrNull()
     }

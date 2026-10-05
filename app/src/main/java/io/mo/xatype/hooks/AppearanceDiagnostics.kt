@@ -4,6 +4,7 @@ import android.inputmethodservice.InputMethodService
 import android.view.View
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.BuildConfig
+import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.concurrent.atomic.AtomicInteger
@@ -25,7 +26,9 @@ internal object AppearanceDiagnostics {
             val configuration = service.resources.configuration
             val window = service.window?.window
             val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
-            val nativeEnabled = helper?.let { XposedUtils.getObjectField(it, "e") }
+            val stateField = TargetCompatibility.modernKeyboardProfile(service.classLoader)
+                ?.helperStateField ?: "e"
+            val nativeEnabled = helper?.let { XposedUtils.getObjectField(it, stateField) }
             val nativeState = nativeEnabled?.javaClass?.methods?.firstOrNull {
                 it.name == "getValue" && it.parameterCount == 0
             }?.invoke(nativeEnabled)

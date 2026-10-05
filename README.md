@@ -75,7 +75,7 @@
 > 本模块基于最新的 **libxposed API 102** 标准构建，摒弃了传统的 legacy Xposed API 与已被废弃的 `XSharedPreferences` 方案，完美兼容 Android 14/15/16/17 (HyperOS 4) 严苛的 SELinux 策略与隐藏 API 限制。
 
 > [!TIP]
-> **小版本自适配**：AI 安全、语音风控、系统版本判定、键盘高度与剪贴板永久保存等 Hook 不再依赖写死的混淆类名，而是用 [DexKit](https://github.com/LuckyPray/DexKit) 按字符串、常量与方法签名特征在运行时定位目标。输入法每次更新后首次启动会扫描一次（约 1 秒），结果缓存到各进程自己的 `/data/user_de/0/<包名>/cache/xatype-*symbols.json`，之后启动直接读缓存。某项特征找不到或不唯一时，只跳过对应功能，并回退到已验证版本的类名。可用 `scripts/verify-host-fingerprints.ps1`（剪贴板与常用语加 `-Table PhraseSymbols`）在已连接的 Root 设备上检查新版 APK 的定位结果。
+> **小版本自适配**：AI 安全、语音风控、系统版本判定、键盘高度、剪贴板永久保存与键盘外观（材质、调色板）等 Hook 不再依赖写死的混淆类名，而是用 [DexKit](https://github.com/LuckyPray/DexKit) 按字符串、常量与方法签名特征在运行时定位目标。输入法每次更新后首次启动会扫描一次（约 1 秒），结果缓存到各进程自己的 `/data/user_de/0/<包名>/cache/xatype-*symbols.json`，之后启动直接读缓存。某项特征找不到或不唯一时，只跳过对应功能，并回退到已验证版本的类名。键盘外观的配色字段按 Kotlin data class 的 `toString` 标签（如 `keyTextColor`）定位，不依赖字段名。悬浮键盘识别与 AI 面板动画仍只在 0.2.1053 上启用。可用 `scripts/verify-host-fingerprints.ps1`（剪贴板与常用语加 `-Table PhraseSymbols`）在已连接的 Root 设备上检查新版 APK 的定位结果。
 
 ---
 

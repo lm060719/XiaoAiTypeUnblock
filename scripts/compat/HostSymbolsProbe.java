@@ -58,6 +58,9 @@ public final class HostSymbolsProbe {
 
     /** A key holds methods, one class, or one field; any of them must load. */
     private static boolean load(Class<?> symbols, Object instance, String key) throws Exception {
+        List<?> raw = (List<?>) symbols.getMethod("strings", String.class).invoke(instance, key);
+        // Entries such as "palette.isDark=Y" are data rather than descriptors.
+        if (raw != null && !raw.isEmpty() && String.valueOf(raw.get(0)).matches("^[\\w.]+=.*")) return true;
         List<?> methods = (List<?>) symbols.getMethod("methods", String.class).invoke(instance, key);
         return !methods.isEmpty() ||
                 symbols.getMethod("clazz", String.class).invoke(instance, key) != null ||

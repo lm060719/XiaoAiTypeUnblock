@@ -12,7 +12,11 @@ enum class TargetGeneration {
     UNKNOWN
 }
 
-/** Verified obfuscated names; palette and material field layouts are shared. */
+/**
+ * Obfuscated members used by the modern (Compose) appearance hooks. The
+ * defaults are the names shared by the verified 0.2.974 and 0.2.1053 builds;
+ * [HostFingerprints] resolves every entry for other builds.
+ */
 data class ModernKeyboardProfile(
     val helperClassName: String,
     val rendererClassName: String,
@@ -25,8 +29,127 @@ data class ModernKeyboardProfile(
     val materialCleanupMethod: String,
     val materialVisibilityMethod: String,
     val rendererUpdateMethod: String,
-    val materialApiClassName: String
-)
+    val materialApiClassName: String,
+    val helperServiceField: String = "a",
+    val helperMaterialField: String = "i",
+    val helperStateField: String = "e",
+    val helperTokenFields: List<String> = listOf("r", "s"),
+    val helperApplyMethod: String = "b",
+    val helperDetachMethod: String = "e",
+    val helperAttachMethod: String = "f",
+    val rendererServiceField: String = "a",
+    val rendererViewField: String = "c",
+    val rendererEffectField: String = "d",
+    val paletteFactoryMethod: String = "z",
+    /** Static palettes on the holder; light and dark are told apart by `isDark`. */
+    val paletteHolderFields: List<String> = listOf("d", "e"),
+    val materialApiClearMethod: String = "a",
+    val tokenBlurField: String = "p",
+    val tokenBlendField: String = "e",
+    /** KeyboardColors property label to field name. */
+    val paletteFields: Map<String, String> = VERIFIED_PALETTE_FIELDS,
+    /** AppsPanel colors property label to field name. */
+    val appsPanelFields: Map<String, String> = VERIFIED_APPS_PANEL_FIELDS
+) {
+    fun palette(label: String): String = paletteFields.getValue(label)
+
+    fun appsPanel(label: String): String = appsPanelFields.getValue(label)
+
+    fun toProperties(): List<String> = buildList {
+        SCALARS.forEach { (key, getter) -> add(key + "=" + getter(this@ModernKeyboardProfile)) }
+        add("helperTokenFields=" + helperTokenFields.joinToString(","))
+        add("paletteHolderFields=" + paletteHolderFields.joinToString(","))
+        paletteFields.forEach { (label, field) -> add("palette.$label=$field") }
+        appsPanelFields.forEach { (label, field) -> add("apps.$label=$field") }
+    }
+
+    companion object {
+        /** Labels the hooks read or write; resolution fails unless all are found. */
+        val PALETTE_LABELS = listOf(
+            "keyboardBackground", "keyboardBackgroundTop", "toolbarBackground",
+            "keyBackgroundDefault", "keyBackgroundPressed", "keyBackgroundSpecial",
+            "keyBackgroundEnter", "keyBackgroundEnterGradientEnd", "keyTextColor",
+            "keyTextColorSecondary", "keyTextColorEnter", "keyHintColor",
+            "modeSelectorTitleColor", "navBackIconColor", "toolbarIconColor",
+            "toolbarIconColorCollapse", "symbolLockIndicatorInactive", "bottomBarIconColor",
+            "candidateExpandIconColor", "modeSelectorUnselectedIconColor",
+            "modeSelectorUnselectedTextColor", "appsPanel", "isDark"
+        )
+        val APPS_PANEL_LABELS = listOf(
+            "background", "cardBackground", "cardIconColor", "cardTextColor",
+            "toggleActiveColor", "backArrowColor", "tooltipBackground", "tooltipTextColor"
+        )
+
+        private val VERIFIED_PALETTE_FIELDS = PALETTE_LABELS.zip(
+            listOf(
+                "a", "b", "u", "c", "d", "e", "f", "g", "h", "i", "j", "k",
+                "l", "m", "w", "x", "y", "A", "I", "L", "M", "U", "Y"
+            )
+        ).toMap()
+        private val VERIFIED_APPS_PANEL_FIELDS = APPS_PANEL_LABELS.zip(
+            listOf("a", "b", "c", "d", "f", "g", "h", "i")
+        ).toMap()
+
+        private val SCALARS: List<Pair<String, (ModernKeyboardProfile) -> String>> = listOf(
+            "helperClassName" to { it.helperClassName },
+            "rendererClassName" to { it.rendererClassName },
+            "paletteClassName" to { it.paletteClassName },
+            "paletteFactoryClassName" to { it.paletteFactoryClassName },
+            "paletteHolderClassName" to { it.paletteHolderClassName },
+            "materialSupportMethod" to { it.materialSupportMethod },
+            "materialUpdateMethod" to { it.materialUpdateMethod },
+            "materialRefreshMethod" to { it.materialRefreshMethod },
+            "materialCleanupMethod" to { it.materialCleanupMethod },
+            "materialVisibilityMethod" to { it.materialVisibilityMethod },
+            "rendererUpdateMethod" to { it.rendererUpdateMethod },
+            "materialApiClassName" to { it.materialApiClassName },
+            "helperServiceField" to { it.helperServiceField },
+            "helperMaterialField" to { it.helperMaterialField },
+            "helperStateField" to { it.helperStateField },
+            "helperApplyMethod" to { it.helperApplyMethod },
+            "helperDetachMethod" to { it.helperDetachMethod },
+            "helperAttachMethod" to { it.helperAttachMethod },
+            "rendererServiceField" to { it.rendererServiceField },
+            "rendererViewField" to { it.rendererViewField },
+            "rendererEffectField" to { it.rendererEffectField },
+            "paletteFactoryMethod" to { it.paletteFactoryMethod },
+            "materialApiClearMethod" to { it.materialApiClearMethod },
+            "tokenBlurField" to { it.tokenBlurField },
+            "tokenBlendField" to { it.tokenBlendField }
+        )
+
+        fun fromProperties(lines: List<String>): ModernKeyboardProfile {
+            val values = lines.associate { it.substringBefore('=') to it.substringAfter('=') }
+            fun v(key: String) = values[key] ?: throw IllegalArgumentException("missing $key")
+            fun prefixed(prefix: String) = values.filterKeys { it.startsWith(prefix) }
+                .mapKeys { it.key.removePrefix(prefix) }
+            return ModernKeyboardProfile(
+                v("helperClassName"), v("rendererClassName"), v("paletteClassName"),
+                v("paletteFactoryClassName"), v("paletteHolderClassName"),
+                v("materialSupportMethod"), v("materialUpdateMethod"), v("materialRefreshMethod"),
+                v("materialCleanupMethod"), v("materialVisibilityMethod"),
+                v("rendererUpdateMethod"), v("materialApiClassName"),
+                helperServiceField = v("helperServiceField"),
+                helperMaterialField = v("helperMaterialField"),
+                helperStateField = v("helperStateField"),
+                helperTokenFields = v("helperTokenFields").split(','),
+                helperApplyMethod = v("helperApplyMethod"),
+                helperDetachMethod = v("helperDetachMethod"),
+                helperAttachMethod = v("helperAttachMethod"),
+                rendererServiceField = v("rendererServiceField"),
+                rendererViewField = v("rendererViewField"),
+                rendererEffectField = v("rendererEffectField"),
+                paletteFactoryMethod = v("paletteFactoryMethod"),
+                paletteHolderFields = v("paletteHolderFields").split(','),
+                materialApiClearMethod = v("materialApiClearMethod"),
+                tokenBlurField = v("tokenBlurField"),
+                tokenBlendField = v("tokenBlendField"),
+                paletteFields = prefixed("palette."),
+                appsPanelFields = prefixed("apps.")
+            )
+        }
+    }
+}
 
 object TargetCompatibility {
 
@@ -41,7 +164,7 @@ object TargetCompatibility {
     )
 
     fun modernKeyboardProfile(classLoader: ClassLoader): ModernKeyboardProfile? =
-        when (detect(classLoader)) {
+        HostSymbols.modernKeyboard() ?: when (detect(classLoader)) {
             TargetGeneration.V209 -> v209Keyboard
             TargetGeneration.V21053 -> v21053Keyboard
             else -> null
