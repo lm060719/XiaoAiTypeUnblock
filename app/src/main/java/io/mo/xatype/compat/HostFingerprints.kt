@@ -17,27 +17,14 @@ import java.lang.reflect.Modifier
 internal object HostFingerprints {
     private const val SERVICE = "com.mi.ime.MiInputMethodService"
 
-    class Result(val resolved: Map<String, List<String>>, val missing: Map<String, String>)
-
-    private class Miss(message: String) : Exception(message)
-
-    fun resolve(bridge: DexKitBridge, loader: ClassLoader): Result {
-        val resolved = LinkedHashMap<String, List<String>>()
-        val missing = LinkedHashMap<String, String>()
-        fun put(vararg keys: String, block: () -> List<List<String>>) {
-            try {
-                block().forEachIndexed { index, values -> resolved[keys[index]] = values }
-            } catch (t: Throwable) {
-                keys.forEach { missing[it] = (t as? Miss)?.message ?: t.toString() }
-            }
-        }
-
-        put(HostSymbols.AI_SAFETY_PARSERS) { listOf(aiSafetyParsers(bridge, loader)) }
-        put(HostSymbols.VOICE_MODERATION) { listOf(listOf(voiceModeration(bridge))) }
-        put(HostSymbols.ASR_ERROR_MAPPER) { listOf(listOf(asrErrorMapper(bridge, loader))) }
-        put(HostSymbols.ASR_ERROR_CALLBACK) { listOf(listOf(asrErrorCallback(bridge))) }
-        put(HostSymbols.OS_VERSION_GATE) { listOf(listOf(osVersionGate(bridge, loader))) }
-        put(
+    fun resolve(bridge: DexKitBridge, loader: ClassLoader): FingerprintResult {
+        val collector = FingerprintCollector()
+        collector.put(HostSymbols.AI_SAFETY_PARSERS) { listOf(aiSafetyParsers(bridge, loader)) }
+        collector.put(HostSymbols.VOICE_MODERATION) { listOf(listOf(voiceModeration(bridge))) }
+        collector.put(HostSymbols.ASR_ERROR_MAPPER) { listOf(listOf(asrErrorMapper(bridge, loader))) }
+        collector.put(HostSymbols.ASR_ERROR_CALLBACK) { listOf(listOf(asrErrorCallback(bridge))) }
+        collector.put(HostSymbols.OS_VERSION_GATE) { listOf(listOf(osVersionGate(bridge, loader))) }
+        collector.put(
             HostSymbols.HEIGHT_RECT,
             HostSymbols.HEIGHT_CLAMP,
             HostSymbols.HEIGHT_RECT_GETTER,
@@ -45,7 +32,7 @@ internal object HostFingerprints {
             HostSymbols.HEIGHT_DRAG,
             HostSymbols.HEIGHT_DRAG_KIND
         ) { keyboardHeight(bridge, loader).map { listOf(it) } }
-        return Result(resolved, missing)
+        return collector.result()
     }
 
     /** JSON parsers of AI smart replies; their input carries `safety_blocked`. */
@@ -203,8 +190,4 @@ internal object HostFingerprints {
     private fun isHostType(type: Class<*>): Boolean =
         !type.isPrimitive && !type.isArray &&
             !type.name.startsWith("java.") && !type.name.startsWith("kotlin.")
-
-    private fun <T> single(candidates: Collection<T>, what: String): T =
-        candidates.singleOrNull()
-            ?: throw Miss("$what: ${candidates.size} candidates")
 }

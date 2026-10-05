@@ -9,10 +9,13 @@ import android.os.Handler
 import android.util.Base64
 import android.widget.TextView
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.BuildConfig
+import io.mo.xatype.compat.PhraseSymbols
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.lang.reflect.Method
 import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
@@ -49,8 +52,18 @@ object ClipboardPermanentHook {
     private val disabledCallbackLogged = AtomicBoolean(false)
     private val popupInitHookHitLogged = AtomicBoolean(false)
     private val frameworkBridgeInstalled = AtomicBoolean(false)
+    @Volatile private var popupInitTaskName = POPUP_INIT_TASK_CLASS
 
-    fun install(module: XposedInterface, classLoader: ClassLoader) {
+    /**
+     * @param phraseApk the com.miui.phrase APK behind [classLoader], when known;
+     * @param cacheDir a directory this process may write fingerprint results to.
+     */
+    fun install(
+        module: XposedInterface,
+        classLoader: ClassLoader,
+        phraseApk: String? = null,
+        cacheDir: File? = null
+    ) {
         installFrameworkBridge(module)
         val managerClass = XposedUtils.findClass(MANAGER_CLASS, classLoader)
         if (managerClass == null) {
@@ -63,7 +76,7 @@ object ClipboardPermanentHook {
             return
         }
 
-        installForManagerClass(module, managerClass)
+        installForManagerClass(module, managerClass, phraseApk, cacheDir)
     }
 
     private fun installFrameworkBridge(module: XposedInterface) {
@@ -112,7 +125,7 @@ object ClipboardPermanentHook {
                     val task = chain.getArg(0) as? Runnable ?: return@intercept chain.proceed()
                     if (
                         ConfigManager.isClipboardPermanentEnabled() &&
-                        task.javaClass.name == POPUP_INIT_TASK_CLASS
+                        task.javaClass.name == popupInitTaskName
                     ) {
                         val args = chain.args.toTypedArray()
                         args[0] = Runnable {
@@ -155,9 +168,24 @@ object ClipboardPermanentHook {
         }
     }
 
-    private fun installForManagerClass(module: XposedInterface, managerClass: Class<*>) {
+    @Synchronized
+    private fun installForManagerClass(
+        module: XposedInterface,
+        managerClass: Class<*>,
+        phraseApk: String? = null,
+        cacheDir: File? = null
+    ) {
         val classLoader = managerClass.classLoader ?: return
         if (!installedManagerClasses.add(managerClass)) return
+
+        val summary = PhraseSymbols.init(
+            classLoader,
+            phraseApk,
+            cacheDir?.let { File(it, "xatype-phrase-symbols.json") },
+            BuildConfig.VERSION_CODE.toLong()
+        )
+        XposedUtils.log(module, "[Permanent Clipboard] Phrase symbols: $summary")
+        PhraseSymbols.clazz(PhraseSymbols.POPUP_INIT_TASK)?.let { popupInitTaskName = it.name }
 
         installTextLengthHooks(module, managerClass)
         installCleanupHooks(module, managerClass)
@@ -196,7 +224,12 @@ object ClipboardPermanentHook {
                                 PHRASE_PACKAGE,
                                 Context.CONTEXT_INCLUDE_CODE or Context.CONTEXT_IGNORE_SECURITY
                             )
-                            install(module, phraseContext.classLoader)
+                            install(
+                                module,
+                                phraseContext.classLoader,
+                                phraseContext.applicationInfo.sourceDir,
+                                File(context.applicationInfo.deviceProtectedDataDir, "cache")
+                            )
                         } catch (t: Throwable) {
                             XposedUtils.logError(
                                 module,
@@ -475,16 +508,17 @@ object ClipboardPermanentHook {
         classLoader: ClassLoader,
         managerClass: Class<*>
     ) {
-        val storageClass = XposedUtils.findClass(STORAGE_CLASS, classLoader) ?: return
-        val method = storageClass.declaredMethods.firstOrNull {
-            it.name == "f" && it.returnType == String::class.java &&
-                it.parameterTypes.map(Class<*>::getName) == listOf(
-                    "android.content.Context",
-                    "android.database.sqlite.SQLiteDatabase",
-                    "com.miui.inputmethod.ClipboardContentModel",
-                    "java.lang.String"
-                )
-        } ?: return
+        val method = PhraseSymbols.method(PhraseSymbols.STORAGE_WRITE)
+            ?: XposedUtils.findClass(STORAGE_CLASS, classLoader)?.declaredMethods?.firstOrNull {
+                it.name == "f" && it.returnType == String::class.java &&
+                    it.parameterTypes.map(Class<*>::getName) == listOf(
+                        "android.content.Context",
+                        "android.database.sqlite.SQLiteDatabase",
+                        "com.miui.inputmethod.ClipboardContentModel",
+                        "java.lang.String"
+                    )
+            }
+            ?: return
         method.isAccessible = true
         module.hook(method).intercept { chain ->
             refreshConfig(chain.getArg(0) as? Context)
@@ -512,12 +546,15 @@ object ClipboardPermanentHook {
 
     private fun installPopupHooks(module: XposedInterface, classLoader: ClassLoader) {
         val popupClass = XposedUtils.findClass(POPUP_CLASS, classLoader) ?: return
-        popupClass.declaredMethods
-            .filter {
-                (it.name == "lambda\$updateClipboardData\$8" && it.parameterTypes.size == 1) ||
-                    (it.name == "lambda\$setRemoteDataToView\$5" && it.parameterTypes.isEmpty())
-            }
-            .forEach { method -> installListPreservationHook(module, method) }
+        fun legacy(name: String, paramCount: Int) = popupClass.declaredMethods.firstOrNull {
+            it.name == name && it.parameterTypes.size == paramCount
+        }
+        listOfNotNull(
+            PhraseSymbols.method(PhraseSymbols.POPUP_UPDATE_LAMBDA)
+                ?: legacy("lambda\$updateClipboardData\$8", 1),
+            PhraseSymbols.method(PhraseSymbols.POPUP_REMOTE_LAMBDA)
+                ?: legacy("lambda\$setRemoteDataToView\$5", 0)
+        ).forEach { method -> installListPreservationHook(module, method) }
     }
 
     private fun installListPreservationHook(module: XposedInterface, method: Method) {
@@ -596,7 +633,9 @@ object ClipboardPermanentHook {
         classLoader: ClassLoader,
         managerClass: Class<*>
     ) {
-        val taskClass = XposedUtils.findClass(POPUP_INIT_TASK_CLASS, classLoader) ?: return
+        val taskClass = PhraseSymbols.clazz(PhraseSymbols.POPUP_INIT_TASK)
+            ?: XposedUtils.findClass(POPUP_INIT_TASK_CLASS, classLoader)
+            ?: return
         taskClass.declaredMethods
             .filter { it.name == "run" && it.parameterTypes.isEmpty() }
             .forEach { method ->
@@ -649,13 +688,9 @@ object ClipboardPermanentHook {
         classLoader: ClassLoader,
         managerClass: Class<*>
     ) {
-        val storageClass = XposedUtils.findClass(STORAGE_CLASS, classLoader) ?: return
-        val method = storageClass.declaredMethods.firstOrNull {
-            it.name == "v" && it.returnType == Bundle::class.java &&
-                it.parameterTypes.size == 3 &&
-                it.parameterTypes[0] == Context::class.java &&
-                it.parameterTypes[2] == Bundle::class.java
-        } ?: return
+        val method = PhraseSymbols.method(PhraseSymbols.STORAGE_ENTRY)
+            ?: legacyStorageEntries(classLoader).firstOrNull()
+            ?: return
         val modelClass = XposedUtils.findClass(
             "com.miui.inputmethod.ClipboardContentModel",
             classLoader
@@ -828,9 +863,9 @@ object ClipboardPermanentHook {
                 }
             }
 
-        XposedUtils.findClass(STORAGE_CLASS, classLoader)?.declaredMethods
-            ?.filter { it.name == "v" }
-            ?.forEach { method ->
+        (PhraseSymbols.method(PhraseSymbols.STORAGE_ENTRY)?.let(::listOf)
+            ?: legacyStorageEntries(classLoader))
+            .forEach { method ->
                 try {
                     module.deoptimize(method)
                 } catch (_: Throwable) {
@@ -846,19 +881,28 @@ object ClipboardPermanentHook {
                 }
             }
 
-        listOf(
-            POPUP_INIT_TASK_CLASS,
-            "com.miui.inputmethod.b",
-            "A0.d"
-        ).forEach { className ->
-            XposedUtils.findClass(className, classLoader)?.declaredMethods
-                ?.filter { it.name == "run" }
-                ?.forEach { method ->
-                    try {
-                        module.deoptimize(method)
-                    } catch (_: Throwable) {
-                    }
-                }
+        val runnables = listOf(popupInitTaskName, "com.miui.inputmethod.b", "A0.d")
+            .flatMap { className ->
+                XposedUtils.findClass(className, classLoader)?.declaredMethods
+                    ?.filter { it.name == "run" }
+                    .orEmpty()
+            } + PhraseSymbols.methods(PhraseSymbols.MANAGER_RUNNABLES)
+        runnables.toSet().forEach { method ->
+            try {
+                module.deoptimize(method)
+            } catch (_: Throwable) {
+            }
         }
     }
+
+    /** Verified on com.miui.phrase 5.7.0 and earlier. */
+    private fun legacyStorageEntries(classLoader: ClassLoader): List<Method> =
+        XposedUtils.findClass(STORAGE_CLASS, classLoader)?.declaredMethods
+            ?.filter {
+                it.name == "v" && it.returnType == Bundle::class.java &&
+                    it.parameterTypes.size == 3 &&
+                    it.parameterTypes[0] == Context::class.java &&
+                    it.parameterTypes[2] == Bundle::class.java
+            }
+            .orEmpty()
 }

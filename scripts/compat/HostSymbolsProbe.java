@@ -8,16 +8,16 @@ import java.util.Map;
 /**
  * Runs the module's fingerprint scan against real target APKs on Android,
  * without starting or modifying the IME. Usage:
- * HostSymbolsProbe <libDir> <workDir> <target.apk>...
+ * HostSymbolsProbe <HostSymbols|PhraseSymbols> <libDir> <workDir> <target.apk>...
  */
 public final class HostSymbolsProbe {
     public static void main(String[] args) throws Exception {
         // libdexkit links against the shared C++ runtime shipped beside it.
         for (String name : new String[]{"libc++_shared.so", "libdexkit.so"}) {
-            File lib = new File(args[0], name);
+            File lib = new File(args[1], name);
             if (lib.isFile()) System.load(lib.getAbsolutePath());
         }
-        Class<?> symbols = Class.forName("io.mo.xatype.compat.HostSymbols");
+        Class<?> symbols = Class.forName("io.mo.xatype.compat." + args[0]);
         Object instance = symbols.getField("INSTANCE").get(null);
         Method init = symbols.getMethod("init", ClassLoader.class, String.class, File.class,
                 long.class, Class.forName("kotlin.jvm.functions.Function0"));
@@ -29,9 +29,9 @@ public final class HostSymbolsProbe {
         ClassLoader boot = ClassLoader.getSystemClassLoader().getParent();
         boolean failed = false;
 
-        for (int i = 2; i < args.length; i++) {
+        for (int i = 3; i < args.length; i++) {
             String apk = args[i];
-            File work = new File(args[1], "t" + i);
+            File work = new File(args[2], "t" + i);
             work.mkdirs();
             File cache = new File(work, "symbols.json");
             cache.delete();
@@ -56,14 +56,11 @@ public final class HostSymbolsProbe {
         System.out.println(failed ? "FAIL" : "DONE");
     }
 
+    /** A key holds methods, one class, or one field; any of them must load. */
     private static boolean load(Class<?> symbols, Object instance, String key) throws Exception {
-        if (key.equals("os.versionGate") || key.equals("height.rect")) {
-            return symbols.getMethod("clazz", String.class).invoke(instance, key) != null;
-        }
-        if (key.equals("height.dragKind")) {
-            return symbols.getMethod("field", String.class).invoke(instance, key) != null;
-        }
         List<?> methods = (List<?>) symbols.getMethod("methods", String.class).invoke(instance, key);
-        return !methods.isEmpty();
+        return !methods.isEmpty() ||
+                symbols.getMethod("clazz", String.class).invoke(instance, key) != null ||
+                symbols.getMethod("field", String.class).invoke(instance, key) != null;
     }
 }

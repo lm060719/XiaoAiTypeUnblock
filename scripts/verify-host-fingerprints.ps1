@@ -4,6 +4,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string[]]$TargetApk,
+    # HostSymbols for com.xiaomi.type, PhraseSymbols for com.miui.phrase.
+    [ValidateSet('HostSymbols', 'PhraseSymbols')][string]$Table = 'HostSymbols',
     [string]$ModuleApk,
     [string]$SdkPath,
     [string]$AdbPath = 'adb',
@@ -77,7 +79,7 @@ for ($i = 0; $i -lt $targets.Count; $i++) {
 Invoke-Adb shell chmod 444 "$remote/probe.dex" "$remote/module.apk" @remoteTargets | Out-Null
 # Root is used solely to execute the probe and read these temporary files.
 $command = "CLASSPATH=$remote/probe.dex:$remote/module.apk app_process /system/bin " +
-    "HostSymbolsProbe $remote/lib $remote/work $($remoteTargets -join ' ')"
+    "HostSymbolsProbe $Table $remote/lib $remote/work $($remoteTargets -join ' ')"
 $result = @(Invoke-Adb shell su -c "'$command'")
 # The probe ran as root, so its cache files need root to remove.
 Invoke-Adb shell su -c "'rm -rf $remote'" | Out-Null

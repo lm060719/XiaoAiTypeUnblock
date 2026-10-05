@@ -20,6 +20,8 @@ import java.io.File
 
 class XiaoAiTypeModule : XposedModule() {
 
+    private var processCacheDir: File? = null
+
     companion object {
         const val TARGET_PACKAGE = "com.xiaomi.type"
         const val PHRASE_PACKAGE = "com.miui.phrase"
@@ -36,6 +38,10 @@ class XiaoAiTypeModule : XposedModule() {
 
         // Initialize remote preferences
         ConfigManager.initRemote(this)
+        if (param.isFirstPackage) {
+            // The process's own storage; phrase classes also load inside the IME.
+            processCacheDir = File(param.applicationInfo.deviceProtectedDataDir, "cache")
+        }
 
         val classLoader = param.defaultClassLoader
         XposedUtils.log(this, "================================================")
@@ -62,7 +68,16 @@ class XiaoAiTypeModule : XposedModule() {
         }
 
         try {
-            ClipboardPermanentHook.install(this, classLoader)
+            if (param.packageName == PHRASE_PACKAGE) {
+                ClipboardPermanentHook.install(
+                    this,
+                    classLoader,
+                    param.applicationInfo.sourceDir,
+                    processCacheDir
+                )
+            } else {
+                ClipboardPermanentHook.install(this, classLoader)
+            }
         } catch (t: Throwable) {
             XposedUtils.logError(this, "Error installing ClipboardPermanentHook", t)
         }
