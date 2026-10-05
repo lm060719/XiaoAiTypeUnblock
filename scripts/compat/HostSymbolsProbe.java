@@ -20,7 +20,7 @@ public final class HostSymbolsProbe {
         Class<?> symbols = Class.forName("io.mo.xatype.compat." + args[0]);
         Object instance = symbols.getField("INSTANCE").get(null);
         Method init = symbols.getMethod("init", ClassLoader.class, String.class, File.class,
-                long.class, Class.forName("kotlin.jvm.functions.Function0"));
+                String.class, Class.forName("kotlin.jvm.functions.Function0"));
         Method describe = symbols.getMethod("describe");
         Method has = symbols.getMethod("has", String.class);
         Object noNative = Proxy.newProxyInstance(symbols.getClassLoader(),
@@ -37,8 +37,8 @@ public final class HostSymbolsProbe {
             cache.delete();
             ClassLoader target = new DexClassLoader(apk, work.getAbsolutePath(), null, boot);
             System.out.println("== " + new File(apk).getName());
-            System.out.println("scan:  " + init.invoke(instance, target, apk, cache, 1L, noNative));
-            System.out.println("cache: " + init.invoke(instance, target, apk, cache, 1L, noNative));
+            System.out.println("scan:  " + init.invoke(instance, target, apk, cache, "probe", noNative));
+            System.out.println("cache: " + init.invoke(instance, target, apk, cache, "probe", noNative));
             @SuppressWarnings("unchecked")
             Map<String, List<String>> resolved = (Map<String, List<String>>) describe.invoke(instance);
             for (Map.Entry<String, List<String>> entry : resolved.entrySet()) {

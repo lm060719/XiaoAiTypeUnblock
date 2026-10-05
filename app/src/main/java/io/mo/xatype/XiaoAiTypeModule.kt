@@ -2,6 +2,7 @@ package io.mo.xatype
 
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
+import io.mo.xatype.compat.AdaptationReporter
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
@@ -38,6 +39,7 @@ class XiaoAiTypeModule : XposedModule() {
 
         // Initialize remote preferences
         ConfigManager.initRemote(this)
+        AdaptationReporter.install(this)
         if (param.isFirstPackage) {
             // The process's own storage; phrase classes also load inside the IME.
             processCacheDir = File(param.applicationInfo.deviceProtectedDataDir, "cache")
@@ -149,9 +151,10 @@ class XiaoAiTypeModule : XposedModule() {
                 param.defaultClassLoader,
                 appInfo.sourceDir,
                 cache,
-                BuildConfig.VERSION_CODE.toLong()
+                XposedUtils.moduleStamp(this)
             )
             XposedUtils.log(this, "Host symbols: $summary")
+            AdaptationReporter.report(this, TARGET_PACKAGE, HostSymbols)
         } catch (t: Throwable) {
             XposedUtils.logError(this, "Error resolving host symbols", t)
         }

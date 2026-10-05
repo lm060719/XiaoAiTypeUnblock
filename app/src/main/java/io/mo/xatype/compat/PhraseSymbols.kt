@@ -11,13 +11,18 @@ import org.luckypray.dexkit.query.enums.StringMatchType
  * the input method for its clipboard panel. Most of its API keeps readable
  * names; these are the obfuscated or compiler-numbered ones.
  */
-object PhraseSymbols : SymbolTable(1, PhraseFingerprints::resolve) {
+object PhraseSymbols : SymbolTable(2, PhraseFingerprints::resolve) {
     const val STORAGE_WRITE = "storage.write"
     const val STORAGE_ENTRY = "storage.entry"
     const val POPUP_UPDATE_LAMBDA = "popup.updateLambda"
     const val POPUP_REMOTE_LAMBDA = "popup.remoteLambda"
     const val POPUP_INIT_TASK = "popup.initTask"
     const val MANAGER_RUNNABLES = "manager.runnables"
+
+    override val keys = listOf(
+        STORAGE_WRITE, STORAGE_ENTRY, POPUP_UPDATE_LAMBDA, POPUP_REMOTE_LAMBDA,
+        POPUP_INIT_TASK, MANAGER_RUNNABLES
+    )
 }
 
 /** Anchors verified on com.miui.phrase 5.6.9 to 5.7.4. */

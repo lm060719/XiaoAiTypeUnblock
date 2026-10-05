@@ -7,7 +7,10 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.content.res.Configuration
+import io.mo.xatype.compat.AdaptationStatus
 import io.mo.xatype.config.AppearanceProfiles
+import org.json.JSONArray
+import org.json.JSONObject
 class LogContentProvider : ContentProvider() {
 
     companion object {
@@ -23,6 +26,7 @@ class LogContentProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         val result = Bundle()
         when (method) {
+            AdaptationStatus.METHOD_REPORT -> saveAdaptationReport(extras)
             METHOD_GET_CONFIG -> {
                 val ctx = context
                 if (ctx != null) {
@@ -71,6 +75,24 @@ class LogContentProvider : ContentProvider() {
             }
         }
         return result
+    }
+
+    private fun saveAdaptationReport(extras: Bundle?) {
+        val ctx = context ?: return
+        val caller = callingPackage
+        val reported = extras?.getString(AdaptationStatus.EXTRA_PACKAGE) ?: return
+        val trusted = setOf(AdaptationStatus.IME_PACKAGE, AdaptationStatus.PHRASE_PACKAGE)
+        if (caller !in trusted || reported !in trusted) return
+        val json = JSONObject()
+            .put(AdaptationStatus.EXTRA_VERSION_CODE, extras.getLong(AdaptationStatus.EXTRA_VERSION_CODE, -1L))
+            .put(AdaptationStatus.EXTRA_MODULE_STAMP, extras.getString(AdaptationStatus.EXTRA_MODULE_STAMP))
+            .put(AdaptationStatus.EXTRA_SOURCE, extras.getString(AdaptationStatus.EXTRA_SOURCE))
+            .put(
+                AdaptationStatus.EXTRA_MISSING,
+                JSONArray(extras.getStringArrayList(AdaptationStatus.EXTRA_MISSING).orEmpty())
+            )
+        ctx.getSharedPreferences(AdaptationStatus.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(reported, json.toString()).apply()
     }
 
     override fun openFile(uri: Uri, mode: String): android.os.ParcelFileDescriptor? {

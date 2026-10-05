@@ -2,6 +2,8 @@ package io.mo.xatype.util
 
 import android.util.Log
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.BuildConfig
+import io.mo.xatype.compat.AdaptationStatus
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
 
@@ -27,6 +29,11 @@ object XposedUtils {
             Log.e(TAG, msg)
         }
     }
+
+    fun moduleStamp(module: XposedInterface): String = AdaptationStatus.moduleStamp(
+        BuildConfig.VERSION_CODE,
+        runCatching { module.moduleApplicationInfo.sourceDir }.getOrNull()
+    )
 
     fun findClass(className: String, classLoader: ClassLoader): Class<*>? {
         return try {

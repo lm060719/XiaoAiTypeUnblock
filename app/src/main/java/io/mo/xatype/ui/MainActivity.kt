@@ -25,11 +25,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.appcompat.widget.SwitchCompat
+import io.mo.xatype.BuildConfig
 import io.mo.xatype.R
+import io.mo.xatype.compat.AdaptationStatus
 import io.mo.xatype.config.AppearanceProfiles
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.hooks.BackgroundOpacity
 import java.io.DataOutputStream
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
@@ -198,12 +202,54 @@ class MainActivity : AppCompatActivity() {
                 pkgInfo.versionCode.toLong()
             }
             tvStatusTitle.text = "小爱输入法已安装"
-            tvStatusDesc.text = "版本: $versionName ($versionCode) | 模块已生效"
-            viewStatusDot.setBackgroundResource(R.drawable.dot_active)
+            val adaptation = adaptationSummary(versionCode)
+            tvStatusDesc.text = "版本: $versionName ($versionCode) | ${adaptation.first}"
+            viewStatusDot.setBackgroundResource(
+                if (adaptation.second) R.drawable.dot_active else R.drawable.dot_inactive
+            )
         } catch (_: PackageManager.NameNotFoundException) {
             tvStatusTitle.text = "未检测到超级小爱输入法"
             tvStatusDesc.text = "请确认已安装 com.xiaomi.type 并启用模块"
             viewStatusDot.setBackgroundResource(R.drawable.dot_inactive)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reports arrive whenever the input method restarts.
+        initStatus()
+    }
+
+    /**
+     * Reads what the hooked processes reported about locating their targets.
+     * @return the status text, and whether every feature was located.
+     */
+    private fun adaptationSummary(imeVersionCode: Long): Pair<String, Boolean> {
+        val prefs = getSharedPreferences(AdaptationStatus.PREFS_NAME, Context.MODE_PRIVATE)
+        fun report(pkg: String) = prefs.getString(pkg, null)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+
+        val ime = report(AdaptationStatus.IME_PACKAGE)
+            ?: return "模块未运行：请在 LSPosed 中启用模块并重启输入法" to false
+        val stamp = AdaptationStatus.moduleStamp(BuildConfig.VERSION_CODE, applicationInfo.sourceDir)
+        if (ime.optLong(AdaptationStatus.EXTRA_VERSION_CODE) != imeVersionCode ||
+            ime.optString(AdaptationStatus.EXTRA_MODULE_STAMP) != stamp
+        ) {
+            return "输入法或模块已更新，重启输入法后重新适配" to false
+        }
+
+        val reports = listOfNotNull(ime, report(AdaptationStatus.PHRASE_PACKAGE))
+        if (reports.any { it.optString(AdaptationStatus.EXTRA_SOURCE) == "UNAVAILABLE" }) {
+            return "自适配未能运行，已回退到内置适配" to false
+        }
+        val missing = reports.flatMap { json ->
+            val keys = json.optJSONArray(AdaptationStatus.EXTRA_MISSING) ?: JSONArray()
+            List(keys.length()) { keys.getString(it) }
+        }
+        return if (missing.isEmpty()) {
+            "模块已生效" to true
+        } else {
+            "未生效：" + AdaptationStatus.featureNames(missing).joinToString("、") to false
         }
     }
 

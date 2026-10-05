@@ -47,17 +47,32 @@ internal class FingerprintCollector {
  * disables only the hook that needs it, which then falls back to the names
  * verified for earlier builds.
  */
-open class SymbolTable(
+abstract class SymbolTable(
     /** Bump whenever a fingerprint changes so stale caches are rescanned. */
     private val schema: Int,
     private val scan: (DexKitBridge, ClassLoader) -> FingerprintResult
 ) {
+    /** How the current symbols were obtained, for the status shown to users. */
+    enum class Source { CACHE, SCAN, UNAVAILABLE }
+
+    /** Every key the fingerprints produce. */
+    abstract val keys: List<String>
+
     private var classLoader: ClassLoader? = null
     private var symbols: Map<String, List<String>> = emptyMap()
+
+    var source: Source = Source.UNAVAILABLE
+        private set
+
+    /** Unresolved keys with the reason each fingerprint missed. */
+    var missing: Map<String, String> = emptyMap()
+        private set
 
     /**
      * @param apkPath the APK [loader] was created from; without it the dex is
      * read through the class loader and the result is not cached.
+     * @param moduleStamp identifies the installed module build, so any
+     * reinstall rescans even when the version code is unchanged.
      * @param loadNative loads libdexkit; only called on a cache miss.
      * @return a one-line summary for the module log.
      */
@@ -66,18 +81,20 @@ open class SymbolTable(
         loader: ClassLoader,
         apkPath: String?,
         cacheFile: File?,
-        moduleVersion: Long,
+        moduleStamp: String,
         loadNative: () -> Unit = { System.loadLibrary("dexkit") }
     ): String {
         classLoader = loader
         val cacheKey = apkPath?.let {
             val apk = File(it)
-            "$moduleVersion/$schema/${apk.length()}/${apk.lastModified()}/${centralDirectoryCrc(apk)}"
+            "$moduleStamp/$schema/${apk.length()}/${apk.lastModified()}/${centralDirectoryCrc(apk)}"
         }
         if (cacheKey != null) {
             readCache(cacheFile, cacheKey)?.let {
-                symbols = it
-                return "fingerprints from cache: ${it.size} resolved"
+                symbols = it.resolved
+                missing = it.missing
+                source = Source.CACHE
+                return "fingerprints from cache: ${it.resolved.size} resolved" + describeMissing()
             }
         }
 
@@ -90,15 +107,20 @@ open class SymbolTable(
         } catch (t: Throwable) {
             // Not cached: a transient failure (e.g. native load) retries next launch.
             symbols = emptyMap()
+            missing = keys.associateWith { t.toString() }
+            source = Source.UNAVAILABLE
             return "fingerprint scan unavailable: $t"
         }
         symbols = result.resolved
-        if (cacheKey != null) writeCache(cacheFile, cacheKey, result.resolved)
+        missing = result.missing
+        source = Source.SCAN
+        if (cacheKey != null) writeCache(cacheFile, cacheKey, result)
         val elapsed = (System.nanoTime() - started) / 1_000_000
-        val missing = result.missing.entries.joinToString { "${it.key} (${it.value})" }
-        return "fingerprint scan ${elapsed}ms: ${result.resolved.size} resolved" +
-            if (missing.isEmpty()) "" else "; missing: $missing"
+        return "fingerprint scan ${elapsed}ms: ${result.resolved.size} resolved" + describeMissing()
     }
+
+    private fun describeMissing(): String =
+        if (missing.isEmpty()) "" else "; missing: " + missing.entries.joinToString { "${it.key} (${it.value})" }
 
     fun has(key: String): Boolean = symbols.containsKey(key)
 
@@ -140,26 +162,33 @@ open class SymbolTable(
         }
     }.getOrDefault(0L)
 
-    private fun readCache(file: File?, key: String): Map<String, List<String>>? = runCatching {
+    private fun readCache(file: File?, key: String): FingerprintResult? = runCatching {
         if (file == null || !file.isFile) return null
         val json = JSONObject(file.readText())
         if (json.getString("key") != key) return null
         val entries = json.getJSONObject("symbols")
-        entries.keys().asSequence().associateWith { name ->
+        val resolved = entries.keys().asSequence().associateWith { name ->
             val values = entries.getJSONArray(name)
             List(values.length()) { values.getString(it) }
         }
+        val misses = json.optJSONObject("missing")
+        val missing = misses?.keys()?.asSequence()?.associateWith { misses.getString(it) }.orEmpty()
+        FingerprintResult(resolved, missing)
     }.getOrNull()
 
-    private fun writeCache(file: File?, key: String, resolved: Map<String, List<String>>) {
+    private fun writeCache(file: File?, key: String, result: FingerprintResult) {
         if (file == null) return
         runCatching {
             val entries = JSONObject()
-            resolved.forEach { (name, values) -> entries.put(name, JSONArray(values)) }
+            result.resolved.forEach { (name, values) -> entries.put(name, JSONArray(values)) }
+            val misses = JSONObject()
+            result.missing.forEach { (name, reason) -> misses.put(name, reason) }
             file.parentFile?.mkdirs()
             // Several processes may scan concurrently; rename publishes atomically.
             val temp = File(file.parentFile, "${file.name}.${android.os.Process.myPid()}.tmp")
-            temp.writeText(JSONObject().put("key", key).put("symbols", entries).toString())
+            temp.writeText(
+                JSONObject().put("key", key).put("symbols", entries).put("missing", misses).toString()
+            )
             if (!temp.renameTo(file)) temp.delete()
         }
     }

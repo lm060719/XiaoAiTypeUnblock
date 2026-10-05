@@ -9,7 +9,7 @@ import android.os.Handler
 import android.util.Base64
 import android.widget.TextView
 import io.github.libxposed.api.XposedInterface
-import io.mo.xatype.BuildConfig
+import io.mo.xatype.compat.AdaptationReporter
 import io.mo.xatype.compat.PhraseSymbols
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
@@ -182,9 +182,10 @@ object ClipboardPermanentHook {
             classLoader,
             phraseApk,
             cacheDir?.let { File(it, "xatype-phrase-symbols.json") },
-            BuildConfig.VERSION_CODE.toLong()
+            XposedUtils.moduleStamp(module)
         )
         XposedUtils.log(module, "[Permanent Clipboard] Phrase symbols: $summary")
+        AdaptationReporter.report(module, PHRASE_PACKAGE, PhraseSymbols)
         PhraseSymbols.clazz(PhraseSymbols.POPUP_INIT_TASK)?.let { popupInitTaskName = it.name }
 
         installTextLengthHooks(module, managerClass)
