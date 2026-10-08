@@ -35,6 +35,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.AppearanceActivity"
+            android:exported="false"
+            android:label="键盘外观个性化"
+            android:windowSoftInputMode="adjustResize" />
+
         <provider
             android:name=".provider.LogContentProvider"
             android:authorities="io.mo.xatype.logprovider"
