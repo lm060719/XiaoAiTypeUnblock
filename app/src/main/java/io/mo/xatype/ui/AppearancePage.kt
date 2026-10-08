@@ -190,13 +190,18 @@ class AppearancePage(
             Option("背景不透明度", "100% 保留原背景，越低越透明", Focus.BACKGROUND,
                 { Summary("${stylePrefs().getInt(ConfigManager.KEY_OPACITY, 85)}%") }) { panel ->
                 val warning = warningText(panel)
+                val combined = note(panel, "")
                 slider(panel, "背景不透明度", 0, 100, stylePrefs().getInt(ConfigManager.KEY_OPACITY, 85), { "$it%" }) {
                     stylePrefs().edit().putInt(ConfigManager.KEY_OPACITY, it).apply()
                     updateWarning(warning)
+                    updateCombinedOpacity(combined)
                 }
+                panel.removeView(combined)
+                panel.addView(combined)
                 panel.removeView(warning)
                 panel.addView(warning)
                 updateWarning(warning)
+                updateCombinedOpacity(combined)
             },
             Option("毛玻璃模糊强度", "仅对动态毛玻璃背景生效", Focus.BACKGROUND,
                 { Summary("${stylePrefs().getInt(ConfigManager.KEY_BLUR_RADIUS, 50)} dp") }) { panel ->
@@ -392,14 +397,31 @@ class AppearancePage(
         panel.addView(this)
     }
 
+    /** Scrim opacity in effect, 0 when it is switched off. */
+    private fun activeScrimOpacity(): Int =
+        if (prefs.getBoolean(ConfigManager.KEY_SCRIM_ENABLED, true)) {
+            stylePrefs().getInt(ConfigManager.KEY_SCRIM_OPACITY, ConfigManager.DEFAULT_SCRIM_OPACITY).coerceIn(0, 100)
+        } else 0
+
+    /** Background and scrim stack, so the keyboard is at least as opaque as the scrim. */
+    private fun effectiveOpacity(): Int {
+        val opacity = stylePrefs().getInt(ConfigManager.KEY_OPACITY, 85).coerceIn(0, 100)
+        return opacity + activeScrimOpacity() * (100 - opacity) / 100
+    }
+
+    private fun updateCombinedOpacity(view: TextView) {
+        val scrim = activeScrimOpacity()
+        view.visibility = if (scrim > 0) View.VISIBLE else View.GONE
+        view.text = if (scrim >= 100) {
+            "可读性底色为 100%，会完全盖住背景，调这里看不出变化。想要透明效果，请先调低「可读性底色」。"
+        } else {
+            "叠加可读性底色 $scrim% 后，键盘整体不透明度约 ${effectiveOpacity()}%，不会低于 $scrim%。"
+        }
+    }
+
     /** Warn when the keyboard, scrim included, is mostly see-through. */
     private fun updateWarning(view: TextView) {
-        val p = stylePrefs()
-        val opacity = p.getInt(ConfigManager.KEY_OPACITY, 85).coerceIn(0, 100)
-        val scrim = if (prefs.getBoolean(ConfigManager.KEY_SCRIM_ENABLED, true)) {
-            p.getInt(ConfigManager.KEY_SCRIM_OPACITY, ConfigManager.DEFAULT_SCRIM_OPACITY).coerceIn(0, 100)
-        } else 0
-        val effective = opacity + scrim * (100 - opacity) / 100
+        val effective = effectiveOpacity()
         view.visibility = if (effective < 40) View.VISIBLE else View.GONE
         view.text = "键盘整体不透明度约 $effective%，在浅色或深色背景的应用中，" +
             "按键和候选字可能看不清。建议开启可读性底色并调到 30% 以上。"
