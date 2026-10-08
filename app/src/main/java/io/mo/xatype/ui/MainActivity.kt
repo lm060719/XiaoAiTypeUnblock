@@ -37,7 +37,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvBottomSpacingValue: TextView
     private lateinit var switchVerboseLog: SwitchCompat
 
-    private lateinit var tvAppearanceSummary: TextView
+    private lateinit var appearancePage: AppearancePage
+    private lateinit var restartMenuItem: android.view.MenuItem
     private lateinit var btnRestartIme: Button
     private lateinit var btnAbout: Button
 
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         initViews()
         initStatus()
         initSwitches()
+        initTabs(savedInstanceState)
         initButtons()
         findViewById<Button>(R.id.btnInputDiagnostics).apply {
             visibility = if (io.mo.xatype.BuildConfig.INPUT_DIAGNOSTICS) View.VISIBLE else View.GONE
@@ -74,10 +76,6 @@ class MainActivity : AppCompatActivity() {
         tvBottomSpacingValue = findViewById(R.id.tvBottomSpacingValue)
         switchVerboseLog = findViewById(R.id.switchVerboseLog)
 
-        tvAppearanceSummary = findViewById(R.id.tvAppearanceSummary)
-        findViewById<View>(R.id.rowAppearance).setOnClickListener {
-            startActivity(android.content.Intent(this, AppearanceActivity::class.java))
-        }
         btnRestartIme = findViewById(R.id.btnRestartIme)
         btnAbout = findViewById(R.id.btnAbout)
     }
@@ -110,11 +108,48 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Reports arrive whenever the input method restarts.
         initStatus()
-        tvAppearanceSummary.text = if (AppearanceActivity.isEnabled(this)) {
-            "已启用 · 圆角、背景、透明度、字体与键帽颜色"
-        } else {
-            "未启用 · 点击进入设置，底部带实时预览"
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_APPEARANCE_TAB, findViewById<View>(R.id.pageAppearance).visibility == View.VISIBLE)
+        appearancePage.saveState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        appearancePage.destroy()
+        super.onDestroy()
+    }
+
+    private fun initTabs(savedInstanceState: Bundle?) {
+        val functions = findViewById<View>(R.id.pageFunctions)
+        val appearance = findViewById<View>(R.id.pageAppearance)
+        val tabFunctions = findViewById<TextView>(R.id.tabFunctions)
+        val tabAppearance = findViewById<TextView>(R.id.tabAppearance)
+        appearancePage = AppearancePage(this, appearance, savedInstanceState)
+        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+        restartMenuItem = toolbar.menu.add("重启输入法").apply {
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS)
         }
+        toolbar.setOnMenuItemClickListener {
+            ImeRestarter.restart(this)
+            true
+        }
+
+        fun select(showAppearance: Boolean) {
+            if (!showAppearance) appearancePage.closePanel()
+            functions.visibility = if (showAppearance) View.GONE else View.VISIBLE
+            appearance.visibility = if (showAppearance) View.VISIBLE else View.GONE
+            restartMenuItem.isVisible = showAppearance
+            for ((tab, selected) in listOf(tabFunctions to !showAppearance, tabAppearance to showAppearance)) {
+                tab.setTextColor(getColor(if (selected) R.color.primary else R.color.text_secondary))
+                tab.setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                tab.isSelected = selected
+            }
+        }
+        tabFunctions.setOnClickListener { select(false) }
+        tabAppearance.setOnClickListener { select(true) }
+        select(savedInstanceState?.getBoolean(STATE_APPEARANCE_TAB) == true)
     }
 
     /**
@@ -262,5 +297,9 @@ class MainActivity : AppCompatActivity() {
             lastToastTime = now
             Toast.makeText(this, "配置已更新，重启超级小爱输入法生效", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private companion object {
+        const val STATE_APPEARANCE_TAB = "appearance_tab"
     }
 }

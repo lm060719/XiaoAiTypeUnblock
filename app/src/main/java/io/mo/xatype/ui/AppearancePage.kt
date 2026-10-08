@@ -1,6 +1,7 @@
 package io.mo.xatype.ui
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
 import android.content.res.Configuration
@@ -27,7 +28,6 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.appcompat.widget.SwitchCompat
-import androidx.appcompat.widget.Toolbar
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.mo.xatype.R
@@ -37,10 +37,14 @@ import io.mo.xatype.hooks.BackgroundOpacity
 import io.mo.xatype.ui.KeyboardPreviewView.Focus
 
 /**
- * Keyboard appearance settings. Every option opens a floating panel, and the
- * fixed preview at the bottom highlights the part that option changes.
+ * The appearance tab. Every option opens a floating panel, and the fixed
+ * preview at the bottom highlights the part that option changes.
  */
-class AppearanceActivity : AppCompatActivity() {
+class AppearancePage(
+    private val activity: AppCompatActivity,
+    private val root: View,
+    savedInstanceState: Bundle?
+) : ContextWrapper(activity) {
 
     private class Summary(val text: String, val color: Int? = null)
 
@@ -76,9 +80,7 @@ class AppearanceActivity : AppCompatActivity() {
         override fun handleOnBackPressed() = closePanel()
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_appearance)
+    init {
         prefs = ConfigManager.getLocalPrefs(this)
         AppearanceProfiles.initialize(prefs)
         migrateProfiles()
@@ -91,49 +93,35 @@ class AppearanceActivity : AppCompatActivity() {
             systemDark
         )
 
-        findViewById<Toolbar>(R.id.toolbar).apply {
-            setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
-            navigationIcon?.setTint(getColor(R.color.text_primary))
-            setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
-            menu.add("重启输入法").setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS)
-            setOnMenuItemClickListener {
-                ImeRestarter.restart(this@AppearanceActivity)
-                true
-            }
-        }
-
-        preview = findViewById(R.id.keyboardPreview)
-        previewHint = findViewById(R.id.tvPreviewHint)
-        overlay = findViewById(R.id.overlayPanel)
-        panelCard = findViewById(R.id.panelCard)
-        panelTitle = findViewById(R.id.tvPanelTitle)
-        panelContent = findViewById(R.id.panelContent)
+        preview = root.findViewById(R.id.keyboardPreview)
+        previewHint = root.findViewById(R.id.tvPreviewHint)
+        overlay = root.findViewById(R.id.overlayPanel)
+        panelCard = root.findViewById(R.id.panelCard)
+        panelTitle = root.findViewById(R.id.tvPanelTitle)
+        panelContent = root.findViewById(R.id.panelContent)
         overlay.setOnClickListener { closePanel() }
         preview.setOnClickListener { if (overlay.visibility == View.VISIBLE) closePanel() }
-        onBackPressedDispatcher.addCallback(this, closePanelOnBack)
+        activity.onBackPressedDispatcher.addCallback(activity, closePanelOnBack)
         // While typing a hex value the real keyboard shows the result, so the
         // drawn preview gives its space to the panel.
-        val previewContainer = findViewById<View>(R.id.previewContainer)
-        val root = previewContainer.parent as View
+        val previewContainer = root.findViewById<View>(R.id.previewContainer)
         root.viewTreeObserver.addOnGlobalLayoutListener {
             val typing = ViewCompat.getRootWindowInsets(root)?.isVisible(WindowInsetsCompat.Type.ime()) == true
             val visibility = if (typing) View.GONE else View.VISIBLE
             if (previewContainer.visibility != visibility) previewContainer.visibility = visibility
         }
 
-        buildOptions(findViewById(R.id.layoutOptions))
+        buildOptions(root.findViewById(R.id.layoutOptions))
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         refresh()
     }
 
-    override fun onDestroy() {
+    fun destroy() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
-        super.onDestroy()
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
+    fun saveState(outState: Bundle) {
         outState.putBoolean(STATE_EDITING_DARK, editingDark)
-        super.onSaveInstanceState(outState)
     }
 
     private fun stylePrefs() = AppearanceProfiles.forProfile(prefs, editingDark)
@@ -438,9 +426,9 @@ class AppearanceActivity : AppCompatActivity() {
         panelCard.animate().scaleX(1f).scaleY(1f).setDuration(180).start()
     }
 
-    private fun closePanel() {
+    fun closePanel() {
         if (overlay.visibility != View.VISIBLE) return
-        currentFocus?.let {
+        activity.currentFocus?.let {
             getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(it.windowToken, 0)
             it.clearFocus()
         }
@@ -661,15 +649,15 @@ class AppearanceActivity : AppCompatActivity() {
         private val onColor: (String) -> Unit,
         private val onOpacity: (Int) -> Unit
     ) {
-        val root = LinearLayout(this@AppearanceActivity).apply { orientation = LinearLayout.VERTICAL }
+        val root = LinearLayout(this@AppearancePage).apply { orientation = LinearLayout.VERTICAL }
         var hex = hex(parseColor(initialHex) ?: Color.WHITE)
             private set
-        private val swatch = View(this@AppearanceActivity)
-        private val wheel = ColorWheelView(this@AppearanceActivity)
-        private val brightness = SeekBar(this@AppearanceActivity)
+        private val swatch = View(this@AppearancePage)
+        private val wheel = ColorWheelView(this@AppearancePage)
+        private val brightness = SeekBar(this@AppearancePage)
         private val brightnessValue = label("", 12f, R.color.primary)
         private var syncingText = false
-        private val input = AppCompatEditText(this@AppearanceActivity).apply {
+        private val input = AppCompatEditText(this@AppearancePage).apply {
             textSize = 15f
             typeface = Typeface.MONOSPACE
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
@@ -679,7 +667,7 @@ class AppearanceActivity : AppCompatActivity() {
         }
 
         init {
-            val header = LinearLayout(this@AppearanceActivity).apply {
+            val header = LinearLayout(this@AppearancePage).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(8), 0, 0)
@@ -694,7 +682,7 @@ class AppearanceActivity : AppCompatActivity() {
             root.addView(sliderRow("明度", brightness, brightnessValue))
             brightness.max = 100
             opacity?.let { value ->
-                val bar = SeekBar(this@AppearanceActivity).apply {
+                val bar = SeekBar(this@AppearancePage).apply {
                     max = 100
                     progress = value
                 }
@@ -773,7 +761,7 @@ class AppearanceActivity : AppCompatActivity() {
             swatch.background = swatchDrawable(BackgroundOpacity.argb(color, opacity ?: 100), dp(10).toFloat())
         }
 
-        private fun sliderRow(title: String, bar: SeekBar, value: TextView) = LinearLayout(this@AppearanceActivity).apply {
+        private fun sliderRow(title: String, bar: SeekBar, value: TextView) = LinearLayout(this@AppearancePage).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             bar.progressTintList = ColorStateList.valueOf(getColor(R.color.primary))
@@ -814,9 +802,5 @@ class AppearanceActivity : AppCompatActivity() {
 
         private fun luma(color: Int) =
             (299 * Color.red(color) + 587 * Color.green(color) + 114 * Color.blue(color)) / 1000
-
-        /** Whether the main screen should report the style as enabled. */
-        fun isEnabled(context: Context) =
-            ConfigManager.getLocalPrefs(context).getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)
     }
 }
