@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
+import android.view.View
 import io.mo.xatype.config.ConfigManager
 
 /**
@@ -64,6 +65,21 @@ internal object ReadabilityScrim {
     /** Image backgrounds keep their own alpha; the scrim sits beneath the bitmap. */
     fun behind(context: Context, drawable: Drawable): Drawable =
         current(context)?.let { LayerDrawable(arrayOf(ColorDrawable(it), drawable)) } ?: drawable
+
+    /**
+     * Dynamic glass: Xiaomi's material apply clears the material background
+     * about 20 ms later, so the scrim lives in its foreground instead. The
+     * material sits below the key layer, so labels still draw above it.
+     */
+    fun overlayGlass(material: View) {
+        fun apply() {
+            material.foreground = if (ConfigManager.getBgType() == 0) {
+                current(material.context)?.let { ColorDrawable(it) }
+            } else null
+        }
+        apply()
+        material.postDelayed(::apply, 48L)
+    }
 
     private fun parse(value: String): Int? = value.takeIf { it.isNotBlank() }?.let {
         try {

@@ -221,6 +221,9 @@ object KeyboardStyleV209Hook
                     val service = XposedUtils.getObjectField(helper, profile.helperServiceField) as?
                         android.inputmethodservice.InputMethodService
                     if (service != null) useCompositorGlass(module, service, helper, material)
+                    if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
+                        ReadabilityScrim.overlayGlass(material)
+                    }
                 }
                 result
             }

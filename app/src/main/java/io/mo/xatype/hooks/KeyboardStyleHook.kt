@@ -366,6 +366,12 @@ object KeyboardStyleHook {
                 module.hook(cMethod).intercept { chain ->
                     val result = chain.proceed()
                     useCompositorGlassForTransparentMaterial(module, chain.thisObject, chain.getArg(0) as? View)
+                    (chain.getArg(0) as? View)?.let { material ->
+                        if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0 &&
+                            material === XposedUtils.getObjectField(chain.thisObject, "h")) {
+                            ReadabilityScrim.overlayGlass(material)
+                        }
+                    }
                     if (isToolbarTransitionGuardActive()) {
                         forceHyperMaterialLayersInvisible(chain.thisObject)
                     }
@@ -2362,7 +2368,7 @@ object KeyboardStyleHook {
                             false
                         }
 
-                        f3500h.foreground = null
+                        ReadabilityScrim.overlayGlass(f3500h)
                         val guarded = hideMaterialDuringBottomTransition &&
                             SystemClock.uptimeMillis() < bottomTransitionGuardUntil &&
                             opacity < 100
