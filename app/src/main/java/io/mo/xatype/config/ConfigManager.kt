@@ -40,6 +40,11 @@ object ConfigManager {
     const val KEY_CLIPBOARD_CARD_OPACITY = "pref_clipboard_card_opacity" // 0 to 100
     const val KEY_LETTER_KEYCAP_OPACITY = "pref_letter_keycap_opacity" // 0 to 100
     const val KEY_BG_IMAGE_VERSION = "pref_bg_image_version"
+    // Readability scrim: one switch for both profiles, color and opacity per profile.
+    const val KEY_SCRIM_ENABLED = "pref_scrim_enabled"
+    const val KEY_SCRIM_COLOR = "pref_scrim_color" // Empty: contrast with the label color
+    const val KEY_SCRIM_OPACITY = "pref_scrim_opacity" // 0 to 100
+    const val DEFAULT_SCRIM_OPACITY = 35
 
     private var remotePrefs: SharedPreferences? = null
     @Volatile private var remoteStylePrefs: SharedPreferences? = null
@@ -71,6 +76,9 @@ object ConfigManager {
     @Volatile private var cachedClipboardCardOpacity = 100
     @Volatile private var cachedLetterKeycapOpacity = 100
     @Volatile private var cachedBgImageVersion = 0L
+    @Volatile private var cachedScrimEnabled = true
+    @Volatile private var cachedScrimColor = ""
+    @Volatile private var cachedScrimOpacity = DEFAULT_SCRIM_OPACITY
     @Volatile private var hasSyncedFromProvider = false
 
     fun initRemote(module: XposedInterface) {
@@ -126,6 +134,9 @@ object ConfigManager {
                 ).coerceIn(0, 100)
                 cachedLetterKeycapOpacity = bundle.getInt(KEY_LETTER_KEYCAP_OPACITY, 100).coerceIn(0, 100)
                 cachedBgImageVersion = bundle.getLong(KEY_BG_IMAGE_VERSION, 0L)
+                cachedScrimEnabled = bundle.getBoolean(KEY_SCRIM_ENABLED, true)
+                cachedScrimColor = bundle.getString(KEY_SCRIM_COLOR, "") ?: ""
+                cachedScrimOpacity = bundle.getInt(KEY_SCRIM_OPACITY, DEFAULT_SCRIM_OPACITY).coerceIn(0, 100)
                 hasSyncedFromProvider = true
             }
         } catch (_: Throwable) {
@@ -277,6 +288,21 @@ object ConfigManager {
     fun getBgImageVersion(): Long {
         if (hasSyncedFromProvider) return cachedBgImageVersion
         return remoteStylePrefs?.getLong(KEY_BG_IMAGE_VERSION, cachedBgImageVersion) ?: cachedBgImageVersion
+    }
+
+    fun isScrimEnabled(): Boolean {
+        if (hasSyncedFromProvider) return cachedScrimEnabled
+        return remotePrefs?.getBoolean(KEY_SCRIM_ENABLED, cachedScrimEnabled) ?: cachedScrimEnabled
+    }
+
+    fun getScrimColor(): String {
+        if (hasSyncedFromProvider) return cachedScrimColor
+        return remoteStylePrefs?.getString(KEY_SCRIM_COLOR, cachedScrimColor) ?: cachedScrimColor
+    }
+
+    fun getScrimOpacity(): Int {
+        if (hasSyncedFromProvider) return cachedScrimOpacity
+        return (remoteStylePrefs?.getInt(KEY_SCRIM_OPACITY, cachedScrimOpacity) ?: cachedScrimOpacity).coerceIn(0, 100)
     }
 
     fun isVerboseLogEnabled(): Boolean {

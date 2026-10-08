@@ -768,9 +768,12 @@ object KeyboardStyleV209Hook
                     {
                         surface.remove()
                         inside.background = ColorDrawable(
-                            resolveSolidColor(
-                                ConfigManager.getBgColor(),
-                                ConfigManager.getOpacity()
+                            ReadabilityScrim.apply(
+                                service,
+                                resolveSolidColor(
+                                    ConfigManager.getBgColor(),
+                                    ConfigManager.getOpacity()
+                                )
                             )
                         )
                     }
@@ -782,16 +785,19 @@ object KeyboardStyleV209Hook
 
                         if (bitmap != null && !bitmap.isRecycled)
                         {
-                            inside.background = BitmapDrawable(
-                                service.resources,
-                                bitmap
-                            ).apply {
-                                alpha =
-                                    ConfigManager.getOpacity()
-                                        .coerceIn(0, 100) *
-                                        255 /
-                                        100
-                            }
+                            inside.background = ReadabilityScrim.behind(
+                                service,
+                                BitmapDrawable(
+                                    service.resources,
+                                    bitmap
+                                ).apply {
+                                    alpha =
+                                        ConfigManager.getOpacity()
+                                            .coerceIn(0, 100) *
+                                            255 /
+                                            100
+                                }
+                            )
                         }
                     }
                 }
@@ -1703,7 +1709,10 @@ object KeyboardStyleV209Hook
             val color = if (hasUndockedKeyboard(service)) Color.TRANSPARENT else when (ConfigManager.getBgType())
             {
                 0 -> nativeBackgroundColor(service, ConfigManager.getOpacity())
-                1 -> resolveSolidColor(ConfigManager.getBgColor(), ConfigManager.getOpacity())
+                1 -> ReadabilityScrim.apply(
+                    service,
+                    resolveSolidColor(ConfigManager.getBgColor(), ConfigManager.getOpacity())
+                )
                 else -> Color.TRANSPARENT
             }
 
@@ -1772,9 +1781,12 @@ object KeyboardStyleV209Hook
                     removeKeyboardGlass()
                     invokeHelper(helper, profile.materialCleanupMethod)
                     material.background = ColorDrawable(
-                        resolveSolidColor(
-                            ConfigManager.getBgColor(),
-                            ConfigManager.getOpacity()
+                        ReadabilityScrim.apply(
+                            service,
+                            resolveSolidColor(
+                                ConfigManager.getBgColor(),
+                                ConfigManager.getOpacity()
+                            )
                         )
                     )
                     material.alpha = 1f
@@ -1788,9 +1800,12 @@ object KeyboardStyleV209Hook
 
                     if (bitmap != null && !bitmap.isRecycled)
                     {
-                        material.background = BitmapDrawable(service.resources, bitmap).apply {
-                            alpha = ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100
-                        }
+                        material.background = ReadabilityScrim.behind(
+                            service,
+                            BitmapDrawable(service.resources, bitmap).apply {
+                                alpha = ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100
+                            }
+                        )
                     }
 
                     material.alpha = 1f
@@ -1928,7 +1943,7 @@ object KeyboardStyleV209Hook
             ?.let { (it ushr 32).toInt() }
             ?: Color.TRANSPARENT
 
-        return BackgroundOpacity.argb(color, opacity)
+        return ReadabilityScrim.apply(service, BackgroundOpacity.argb(color, opacity))
     }
 
     private fun staticNativePalette(service: android.inputmethodservice.InputMethodService): Any?

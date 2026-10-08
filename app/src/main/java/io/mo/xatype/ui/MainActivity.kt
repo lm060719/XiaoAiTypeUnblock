@@ -88,6 +88,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchCustomTextColor: SwitchCompat
     private lateinit var layoutTextColorConfig: LinearLayout
     private lateinit var textRgb: ColorControls
+    private lateinit var switchScrim: SwitchCompat
+    private lateinit var layoutScrimConfig: LinearLayout
+    private lateinit var tvScrimOpacityValue: TextView
+    private lateinit var sbScrimOpacity: SeekBar
+    private lateinit var tvScrimWarning: TextView
+    private lateinit var switchCustomScrimColor: SwitchCompat
+    private lateinit var layoutScrimColorConfig: LinearLayout
+    private lateinit var scrimRgb: ColorControls
     private lateinit var switchCustomFunctionKeycapColor: SwitchCompat
     private lateinit var layoutFunctionKeycapColorConfig: LinearLayout
     private lateinit var functionKeycapRgb: ColorControls
@@ -160,6 +168,14 @@ class MainActivity : AppCompatActivity() {
         switchCustomTextColor = findViewById(R.id.switchCustomTextColor)
         layoutTextColorConfig = findViewById(R.id.layoutTextColorConfig)
         textRgb = createColorControls(layoutTextColorConfig, "按键字体颜色")
+        switchScrim = findViewById(R.id.switchScrim)
+        layoutScrimConfig = findViewById(R.id.layoutScrimConfig)
+        tvScrimOpacityValue = findViewById(R.id.tvScrimOpacityValue)
+        sbScrimOpacity = findViewById(R.id.sbScrimOpacity)
+        tvScrimWarning = findViewById(R.id.tvScrimWarning)
+        switchCustomScrimColor = findViewById(R.id.switchCustomScrimColor)
+        layoutScrimColorConfig = findViewById(R.id.layoutScrimColorConfig)
+        scrimRgb = createColorControls(layoutScrimColorConfig, "可读性底色颜色")
         switchCustomFunctionKeycapColor = findViewById(R.id.switchCustomFunctionKeycapColor)
         layoutFunctionKeycapColorConfig = findViewById(R.id.layoutFunctionKeycapColorConfig)
         functionKeycapRgb = createColorControls(
@@ -375,7 +391,8 @@ class MainActivity : AppCompatActivity() {
     private fun initStyleControls() {
         // Detach old profile listeners before binding values to avoid writing
         // the newly selected colors into the previously selected profile.
-        listOf(switchStyleEnabled, switchCustomTextColor, switchCustomFunctionKeycapColor,
+        listOf(switchStyleEnabled, switchCustomTextColor, switchScrim, switchCustomScrimColor,
+            switchCustomFunctionKeycapColor,
             switchCustomMenuCardColor, switchCustomClipboardCardColor,
             switchCustomLetterKeycapColor).forEach { it.setOnCheckedChangeListener(null) }
         rgBgType.setOnCheckedChangeListener(null)
@@ -416,6 +433,7 @@ class MainActivity : AppCompatActivity() {
                 if (fromUser) {
                     prefs.edit().putInt(ConfigManager.KEY_OPACITY, clamped).apply()
                 }
+                updateScrimWarning()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
@@ -495,6 +513,45 @@ class MainActivity : AppCompatActivity() {
             }
             showRestartHint()
         }
+
+        // Readability scrim. The switch is shared; color and opacity follow the profile.
+        val globalPrefs = ConfigManager.getLocalPrefs(this)
+        switchScrim.isChecked = globalPrefs.getBoolean(ConfigManager.KEY_SCRIM_ENABLED, true)
+        layoutScrimConfig.visibility = if (switchScrim.isChecked) View.VISIBLE else View.GONE
+        switchScrim.setOnCheckedChangeListener { _, isChecked ->
+            globalPrefs.edit().putBoolean(ConfigManager.KEY_SCRIM_ENABLED, isChecked).apply()
+            layoutScrimConfig.visibility = if (isChecked) View.VISIBLE else View.GONE
+            updateScrimWarning()
+            showRestartHint()
+        }
+        val scrimOpacity = prefs.getInt(ConfigManager.KEY_SCRIM_OPACITY, ConfigManager.DEFAULT_SCRIM_OPACITY)
+            .coerceIn(0, 100)
+        sbScrimOpacity.progress = scrimOpacity
+        tvScrimOpacityValue.text = "$scrimOpacity%"
+        sbScrimOpacity.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                tvScrimOpacityValue.text = "$progress%"
+                if (fromUser) prefs.edit().putInt(ConfigManager.KEY_SCRIM_OPACITY, progress).apply()
+                updateScrimWarning()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
+        })
+        val savedScrimColor = prefs.getString(ConfigManager.KEY_SCRIM_COLOR, "") ?: ""
+        configureColorControls(scrimRgb, savedScrimColor.ifBlank { "#121212" }) { hex ->
+            prefs.edit().putString(ConfigManager.KEY_SCRIM_COLOR, hex).apply()
+        }
+        switchCustomScrimColor.isChecked = savedScrimColor.isNotBlank()
+        layoutScrimColorConfig.visibility = if (savedScrimColor.isNotBlank()) View.VISIBLE else View.GONE
+        switchCustomScrimColor.setOnCheckedChangeListener { _, isChecked ->
+            layoutScrimColorConfig.visibility = if (isChecked) View.VISIBLE else View.GONE
+            prefs.edit().putString(
+                ConfigManager.KEY_SCRIM_COLOR,
+                if (isChecked) scrimRgb.currentColorHex else ""
+            ).apply()
+            showRestartHint()
+        }
+        updateScrimWarning()
 
         // 5. Function keycap color. The existing preference key is retained for migration.
         val savedFunctionKeycapColor = prefs.getString(ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, "") ?: ""
@@ -603,6 +660,16 @@ class MainActivity : AppCompatActivity() {
             }
             showRestartHint()
         }
+    }
+
+    /** Warn when the keyboard, scrim included, is mostly see-through. */
+    private fun updateScrimWarning() {
+        val opacity = sbOpacity.progress.coerceIn(0, 100)
+        val scrim = if (switchScrim.isChecked) sbScrimOpacity.progress.coerceIn(0, 100) else 0
+        val effective = opacity + scrim * (100 - opacity) / 100
+        tvScrimWarning.visibility = if (effective < 40) View.VISIBLE else View.GONE
+        tvScrimWarning.text = "键盘整体不透明度约 $effective%，在浅色或深色背景的应用中，" +
+            "按键和候选字可能看不清。建议开启可读性底色并调到 30% 以上。"
     }
 
     private fun createColorControls(
