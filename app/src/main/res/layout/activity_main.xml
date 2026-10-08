@@ -431,6 +431,56 @@
                     android:layout_marginEnd="14dp"
                     android:background="@color/card_stroke" />
 
+                <!-- Keyboard bottom spacing is independent of appearance profiles. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switchBottomSpacing"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="自定义键盘底部间距"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="调节按键下方留白；0 dp 尽量贴底，关闭恢复原生。保留系统导航区域，悬浮键盘保持原生间距；重启输入法生效。"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tvBottomSpacingValue"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="end"
+                        android:text="原生间距"
+                        android:textColor="@color/primary"
+                        android:textSize="13sp" />
+
+                    <SeekBar
+                        android:id="@+id/sbBottomSpacing"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:contentDescription="键盘底部间距，0 到 100 dp"
+                        android:max="100"
+                        android:enabled="false" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="14dp"
+                    android:layout_marginEnd="14dp"
+                    android:background="@color/card_stroke" />
+
                 <!-- Verbose Log -->
                 <LinearLayout
                     android:layout_width="match_parent"

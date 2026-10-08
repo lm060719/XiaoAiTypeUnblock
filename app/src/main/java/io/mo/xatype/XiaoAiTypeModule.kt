@@ -14,6 +14,7 @@ import io.mo.xatype.hooks.HyperOsVersionHook
 import io.mo.xatype.hooks.InputDiagnosticsHook
 import io.mo.xatype.hooks.KeyboardStyleHook
 import io.mo.xatype.hooks.KeyboardHeightUnblockHook
+import io.mo.xatype.hooks.KeyboardBottomSpacingHook
 import io.mo.xatype.hooks.SystemUiNavigationGuardHook
 import io.mo.xatype.hooks.VoiceModerationHook
 import io.mo.xatype.util.XposedUtils
@@ -136,6 +137,12 @@ class XiaoAiTypeModule : XposedModule() {
             KeyboardHeightUnblockHook.install(this, classLoader)
         } catch (t: Throwable) {
             XposedUtils.logError(this, "Error installing KeyboardHeightUnblockHook", t)
+        }
+
+        try {
+            KeyboardBottomSpacingHook.install(this)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error installing KeyboardBottomSpacingHook", t)
         }
 
         XposedUtils.log(this, "XiaoAiTypeUnblock hooks installation complete.")

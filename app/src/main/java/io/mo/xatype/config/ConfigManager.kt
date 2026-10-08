@@ -17,6 +17,8 @@ object ConfigManager {
     const val KEY_CLIPBOARD_PERMANENT = "pref_clipboard_permanent"
     const val KEY_OS_VERSION_UNBLOCK = "pref_os_version_unblock"
     const val KEY_KEYBOARD_HEIGHT_UNBLOCK = "pref_keyboard_height_unblock"
+    const val KEY_BOTTOM_SPACING_ENABLED = "pref_bottom_spacing_enabled"
+    const val KEY_BOTTOM_SPACING = "pref_bottom_spacing" // 0 to 100 dp; global geometry
     const val KEY_VERBOSE_LOG = "pref_verbose_log"
 
     // Style & Appearance Configs
@@ -50,6 +52,8 @@ object ConfigManager {
     @Volatile private var cachedClipboardPermanent = false
     @Volatile private var cachedOsVersionUnblock = false
     @Volatile private var cachedKeyboardHeightUnblock = false
+    @Volatile private var cachedBottomSpacingEnabled = false
+    @Volatile private var cachedBottomSpacing = 0
     @Volatile private var cachedVerboseLog = false
     @Volatile private var cachedStyleEnabled = false
     @Volatile private var cachedCornerRadius = 16
@@ -97,6 +101,8 @@ object ConfigManager {
                 cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, false)
                 cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, false)
                 cachedKeyboardHeightUnblock = bundle.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
+                cachedBottomSpacingEnabled = bundle.getBoolean(KEY_BOTTOM_SPACING_ENABLED, false)
+                cachedBottomSpacing = bundle.getInt(KEY_BOTTOM_SPACING, 0).coerceIn(0, 100)
                 cachedVerboseLog = bundle.getBoolean(KEY_VERBOSE_LOG, false)
                 cachedStyleEnabled = bundle.getBoolean(KEY_STYLE_ENABLED, false)
                 cachedCornerRadius = bundle.getInt(KEY_CORNER_RADIUS, 16)
@@ -169,6 +175,16 @@ object ConfigManager {
     fun getCornerRadius(): Int {
         if (hasSyncedFromProvider) return cachedCornerRadius
         return remoteStylePrefs?.getInt(KEY_CORNER_RADIUS, cachedCornerRadius) ?: cachedCornerRadius
+    }
+
+    fun isBottomSpacingEnabled(): Boolean {
+        if (hasSyncedFromProvider) return cachedBottomSpacingEnabled
+        return remotePrefs?.getBoolean(KEY_BOTTOM_SPACING_ENABLED, false) ?: cachedBottomSpacingEnabled
+    }
+
+    fun getBottomSpacing(): Int {
+        if (hasSyncedFromProvider) return cachedBottomSpacing
+        return (remotePrefs?.getInt(KEY_BOTTOM_SPACING, 0) ?: cachedBottomSpacing).coerceIn(0, 100)
     }
 
     fun getOpacity(): Int {

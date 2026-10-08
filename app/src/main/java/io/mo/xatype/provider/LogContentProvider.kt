@@ -36,6 +36,8 @@ class LogContentProvider : ContentProvider() {
                         ?: ((ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES)
                     val sp = AppearanceProfiles.selected(local, systemDark)
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, false))
+                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING_ENABLED, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING_ENABLED, false))
+                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING, local.getInt(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING, 0).coerceIn(0, 100))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_SAFETY, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_SAFETY, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, false))

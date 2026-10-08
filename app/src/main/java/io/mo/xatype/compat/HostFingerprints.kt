@@ -7,6 +7,7 @@ import org.luckypray.dexkit.result.MethodData
 import org.luckypray.dexkit.wrap.DexClass
 import org.luckypray.dexkit.wrap.DexField
 import org.luckypray.dexkit.wrap.DexMethod
+import org.luckypray.dexkit.query.matchers.FieldMatcher
 import java.lang.reflect.Modifier
 
 /**
@@ -35,7 +36,34 @@ internal object HostFingerprints {
         collector.put(HostSymbols.MODERN_KEYBOARD) {
             listOf(ModernKeyboardFingerprint.resolve(bridge, loader).toProperties())
         }
+        collector.put(HostSymbols.BOTTOM_SPACING, HostSymbols.BOTTOM_SPACING_CONSUME,
+            HostSymbols.BOTTOM_SPACING_CALLERS) { bottomSpacing(bridge, loader) }
         return collector.result()
+    }
+
+    /** Native margin helper; resource names survive R-field and class renaming. */
+    private fun bottomSpacing(bridge: DexKitBridge, loader: ClassLoader): List<List<String>> {
+        val gap = single(bridge.findMethod {
+            matcher {
+                modifiers(Modifier.STATIC)
+                returnType("float")
+                addUsingField(FieldMatcher().name("keyboard_bottom_margin_with_bottom_view"))
+                addUsingField(FieldMatcher().name("keyboard_bottom_margin_three_button"))
+            }
+        }.filter { it.paramCount in 1..2 }, "keyboard bottom margin")
+        val composer = gap.getMethodInstance(loader).parameterTypes.last()
+        // Both verified layouts consume floating-mode as their first Boolean
+        // local. Capture that native read instead of relying on an obfuscated field.
+        val consume = single(gap.invokes.filter {
+            it.className == composer.name && it.paramCount == 1 &&
+                it.returnTypeName == "java.lang.Object" &&
+                it.paramTypeNames.single().let { name ->
+                    name != "java.lang.Object" && name != "int" && name != "boolean"
+                }
+        }.distinctBy { it.descriptor }, "bottom margin Compose consume")
+        val callers = gap.callers.map { it.descriptor }.distinct()
+        check(callers.isNotEmpty()) { "bottom margin callers" }
+        return listOf(listOf(gap.descriptor), listOf(consume.descriptor), callers)
     }
 
     /** JSON parsers of AI smart replies; their input carries `safety_blocked`. */

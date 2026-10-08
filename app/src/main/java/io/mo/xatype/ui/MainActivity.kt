@@ -60,6 +60,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchClipboardPermanent: SwitchCompat
     private lateinit var switchOsVersionUnblock: SwitchCompat
     private lateinit var switchKeyboardHeightUnblock: SwitchCompat
+    private lateinit var switchBottomSpacing: SwitchCompat
+    private lateinit var sbBottomSpacing: SeekBar
+    private lateinit var tvBottomSpacingValue: TextView
     private lateinit var switchVerboseLog: SwitchCompat
 
     // Style Customization Views
@@ -130,6 +133,9 @@ class MainActivity : AppCompatActivity() {
         switchClipboardPermanent = findViewById(R.id.switchClipboardPermanent)
         switchOsVersionUnblock = findViewById(R.id.switchOsVersionUnblock)
         switchKeyboardHeightUnblock = findViewById(R.id.switchKeyboardHeightUnblock)
+        switchBottomSpacing = findViewById(R.id.switchBottomSpacing)
+        sbBottomSpacing = findViewById(R.id.sbBottomSpacing)
+        tvBottomSpacingValue = findViewById(R.id.tvBottomSpacingValue)
         switchVerboseLog = findViewById(R.id.switchVerboseLog)
 
         // Style controls
@@ -255,6 +261,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun initSwitches() {
         val prefs = ConfigManager.getLocalPrefs(this)
+
+        fun updateBottomSpacingLabel() {
+            tvBottomSpacingValue.text = if (switchBottomSpacing.isChecked) "${sbBottomSpacing.progress} dp" else "原生间距"
+        }
+        switchBottomSpacing.isChecked = prefs.getBoolean(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, false)
+        sbBottomSpacing.progress = prefs.getInt(ConfigManager.KEY_BOTTOM_SPACING, 0).coerceIn(0, 100)
+        sbBottomSpacing.isEnabled = switchBottomSpacing.isChecked
+        updateBottomSpacingLabel()
+        switchBottomSpacing.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, checked).apply()
+            sbBottomSpacing.isEnabled = checked
+            updateBottomSpacingLabel()
+            showRestartHint()
+        }
+        sbBottomSpacing.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                updateBottomSpacingLabel()
+                if (fromUser) prefs.edit().putInt(ConfigManager.KEY_BOTTOM_SPACING, progress).apply()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { showRestartHint() }
+        })
 
         switchKeyboardHeightUnblock.isChecked = prefs.getBoolean(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
         switchKeyboardHeightUnblock.setOnCheckedChangeListener { _, isChecked ->
