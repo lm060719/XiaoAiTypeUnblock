@@ -366,6 +366,12 @@ object KeyboardStyleHook {
                 module.hook(cMethod).intercept { chain ->
                     val result = chain.proceed()
                     useCompositorGlassForTransparentMaterial(module, chain.thisObject, chain.getArg(0) as? View)
+                    (chain.getArg(0) as? View)?.let { material ->
+                        if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0 &&
+                            material === XposedUtils.getObjectField(chain.thisObject, "h")) {
+                            ReadabilityScrim.overlayGlass(material)
+                        }
+                    }
                     if (isToolbarTransitionGuardActive()) {
                         forceHyperMaterialLayersInvisible(chain.thisObject)
                     }
@@ -1642,19 +1648,21 @@ object KeyboardStyleHook {
                     }
                     1 -> {
                         inside.foreground = null
-                        inside.background = ColorDrawable(
+                        inside.background = ColorDrawable(ReadabilityScrim.apply(
+                            service,
                             resolveSolidColor(
                                 ConfigManager.getBgColor(),
                                 ConfigManager.getOpacity()
                             )
-                        )
+                        ))
                     }
                     2 -> {
                         inside.foreground = null
                         getOrLoadBitmap(service)?.takeIf { !it.isRecycled }?.let { bitmap ->
-                            inside.background = BitmapDrawable(service.resources, bitmap).apply {
-                                alpha = ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100
-                            }
+                            inside.background = ReadabilityScrim.behind(service,
+                                BitmapDrawable(service.resources, bitmap).apply {
+                                    alpha = ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100
+                                })
                         }
                     }
                 }
@@ -2188,8 +2196,12 @@ object KeyboardStyleHook {
      * it appears much darker than the keyboard card. Flatten it over the light IME
      * backing first; an opaque result also avoids repeated alpha composition.
      */
-    private fun resolveSolidBottomBarColor(colorString: String, opacity: Int): Int {
-        val color = resolveSolidColor(colorString, opacity)
+    private fun resolveSolidBottomBarColor(
+        context: android.content.Context,
+        colorString: String,
+        opacity: Int
+    ): Int {
+        val color = ReadabilityScrim.apply(context, resolveSolidColor(colorString, opacity))
         val alpha = Color.alpha(color)
         fun compositeOverWhite(channel: Int): Int =
             ((channel * alpha + 255 * (255 - alpha)) / 255).coerceIn(0, 255)
@@ -2216,18 +2228,20 @@ object KeyboardStyleHook {
         materialView.alpha = 1.0f
         when (bgType) {
             1 -> {
-                materialView.background = ColorDrawable(
+                materialView.background = ColorDrawable(ReadabilityScrim.apply(
+                    materialView.context,
                     resolveSolidColor(ConfigManager.getBgColor(), ConfigManager.getOpacity())
-                )
+                ))
             }
             2 -> {
                 val service = XposedUtils.getObjectField(helper, "a") as?
                     android.inputmethodservice.InputMethodService
                 val bitmap = service?.let { getOrLoadBitmap(it) }
                 if (service != null && bitmap != null && !bitmap.isRecycled) {
-                    materialView.background = BitmapDrawable(service.resources, bitmap).apply {
-                        alpha = (ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100)
-                    }
+                    materialView.background = ReadabilityScrim.behind(service,
+                        BitmapDrawable(service.resources, bitmap).apply {
+                            alpha = (ConfigManager.getOpacity().coerceIn(0, 100) * 255 / 100)
+                        })
                 }
             }
         }
@@ -2354,7 +2368,7 @@ object KeyboardStyleHook {
                             false
                         }
 
-                        f3500h.foreground = null
+                        ReadabilityScrim.overlayGlass(f3500h)
                         val guarded = hideMaterialDuringBottomTransition &&
                             SystemClock.uptimeMillis() < bottomTransitionGuardUntil &&
                             opacity < 100
@@ -2418,7 +2432,7 @@ object KeyboardStyleHook {
         opacity: Int,
         bgColor: String
     ): Int {
-        if (bgType == 1) return resolveSolidBottomBarColor(bgColor, opacity)
+        if (bgType == 1) return resolveSolidBottomBarColor(service, bgColor, opacity)
         if (bgType != 0) return Color.TRANSPARENT
         return resolveNativeBackgroundColor(service, opacity)
     }
@@ -2453,7 +2467,10 @@ object KeyboardStyleHook {
     private fun resolveNativeBackgroundColor(
         service: android.inputmethodservice.InputMethodService,
         opacity: Int = ConfigManager.getOpacity()
-    ): Int = BackgroundOpacity.argb(nativePaletteColor(service, "a") ?: Color.TRANSPARENT, opacity)
+    ): Int = ReadabilityScrim.apply(
+        service,
+        BackgroundOpacity.argb(nativePaletteColor(service, "a") ?: Color.TRANSPARENT, opacity)
+    )
 
     private fun updateBottomBarAppearance(
         service: android.inputmethodservice.InputMethodService,

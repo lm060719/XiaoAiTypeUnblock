@@ -72,6 +72,9 @@ class LogContentProvider : ContentProvider() {
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, menuCardOpacity)
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, clipboardCardOpacity)
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_OPACITY, 100))
+                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_SCRIM_ENABLED, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_SCRIM_ENABLED, true))
+                    result.putString(io.mo.xatype.config.ConfigManager.KEY_SCRIM_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_SCRIM_COLOR, "") ?: "")
+                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_SCRIM_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_SCRIM_OPACITY, io.mo.xatype.config.ConfigManager.DEFAULT_SCRIM_OPACITY).coerceIn(0, 100))
                     result.putLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, sp.getLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, 0L))
                 }
             }

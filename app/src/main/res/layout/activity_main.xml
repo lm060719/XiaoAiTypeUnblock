@@ -16,10 +16,16 @@
         app:title="@string/app_name"
         app:titleTextColor="@color/text_primary" />
 
-    <androidx.core.widget.NestedScrollView
+    <!-- Tab pages share this area; the bar below switches between them. -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_weight="1">
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/pageFunctions"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:fillViewport="true">
 
         <LinearLayout
@@ -521,29 +527,14 @@
 
                 </LinearLayout>
 
-            </LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="14dp"
+                    android:layout_marginEnd="14dp"
+                    android:background="@color/card_stroke" />
 
-            <!-- Section Title: Style Customization -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:layout_marginTop="8dp"
-                android:layout_marginBottom="8dp"
-                android:text="键盘外观与个性化定制"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <!-- Style Customization Card -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:background="@drawable/bg_card"
-                android:orientation="vertical">
-
-                <!-- Switch: Enable Custom Style -->
+                <!-- Hide launcher icon -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -560,7 +551,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="启用键盘外观个性化"
+                            android:text="隐藏桌面图标"
                             android:textColor="@color/text_primary"
                             android:textSize="15sp"
                             android:textStyle="bold" />
@@ -569,652 +560,16 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="自定义圆角、背景、透明度、字体与键帽颜色"
+                            android:text="隐藏后可在 LSPosed 管理器的模块列表中点击本模块进入设置"
                             android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                     </LinearLayout>
 
                     <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/switchStyleEnabled"
+                        android:id="@+id/switchHideLauncherIcon"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="false" />
-
-                </LinearLayout>
-
-                <!-- Detailed Controls Container -->
-                <LinearLayout
-                    android:id="@+id/layoutStyleControls"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/switchFollowSystem"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:padding="14dp"
-                        android:text="跟随系统切换深浅色配置"
-                        android:textColor="@color/text_primary"
-                        android:textSize="14sp" />
-
-                    <RadioGroup
-                        android:id="@+id/rgAppearanceProfile"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:paddingStart="14dp"
-                        android:paddingEnd="14dp"
-                        android:orientation="horizontal">
-
-                        <RadioButton
-                            android:id="@+id/rbLightProfile"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:minHeight="48dp"
-                            android:text="浅色配置"
-                            android:textColor="@color/text_primary" />
-
-                        <RadioButton
-                            android:id="@+id/rbDarkProfile"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:minHeight="48dp"
-                            android:text="深色配置"
-                            android:textColor="@color/text_primary" />
-                    </RadioGroup>
-
-                    <TextView
-                        android:id="@+id/tvAppearanceProfileHint"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:paddingStart="14dp"
-                        android:paddingEnd="14dp"
-                        android:paddingBottom="14dp"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 1. Corner Radius -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="边角圆角弧度"
-                                android:textColor="@color/text_primary"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:id="@+id/tvCornerRadiusValue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="16 dp"
-                                android:textColor="@color/primary"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-
-                        </LinearLayout>
-
-                        <SeekBar
-                            android:id="@+id/sbCornerRadius"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:max="40"
-                            android:progress="16" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 2. Opacity / Transparency -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="背景不透明度（100% 保留原背景）"
-                                android:textColor="@color/text_primary"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:id="@+id/tvOpacityValue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="85%"
-                                android:textColor="@color/primary"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-
-                        </LinearLayout>
-
-                        <SeekBar
-                            android:id="@+id/sbOpacity"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:max="100"
-                            android:progress="85" />
-
-                        <!-- Blur Radius Control for Dynamic Glass -->
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="毛玻璃模糊强度 (柔光玻璃)"
-                                android:textColor="@color/text_secondary"
-                                android:textSize="12sp" />
-
-                            <TextView
-                                android:id="@+id/tvBlurRadiusValue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="50 dp"
-                                android:textColor="@color/primary"
-                                android:textSize="12sp"
-                                android:textStyle="bold" />
-
-                        </LinearLayout>
-
-                        <SeekBar
-                            android:id="@+id/sbBlurRadius"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:max="100"
-                            android:progress="50" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 3. Background Customization -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="背景类型选择"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-
-                        <RadioGroup
-                            android:id="@+id/rgBgType"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:orientation="horizontal">
-
-                            <RadioButton
-                                android:id="@+id/rbBgDefault"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginEnd="8dp"
-                                android:checked="true"
-                                android:text="动态毛玻璃 (柔光玻璃)"
-                                android:textColor="@color/text_primary"
-                                android:textSize="12sp" />
-
-                            <RadioButton
-                                android:id="@+id/rbBgColor"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginEnd="8dp"
-                                android:text="纯色背景"
-                                android:textColor="@color/text_primary"
-                                android:textSize="12sp" />
-
-                        </RadioGroup>
-
-                        <!-- Solid Color Config Area -->
-                        <LinearLayout
-                            android:id="@+id/layoutBgColorConfig"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="vertical"
-                            android:visibility="gone">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="常用预设色："
-                                android:textColor="@color/text_secondary"
-                                android:textSize="11sp" />
-
-                            <!-- Preset Color Buttons -->
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="6dp"
-                                android:orientation="horizontal">
-
-                                <Button
-                                    android:id="@+id/btnColorCatppuccin"
-                                    android:layout_width="0dp"
-                                    android:layout_height="36dp"
-                                    android:layout_marginEnd="4dp"
-                                    android:layout_weight="1"
-                                    android:backgroundTint="#1E1E2E"
-                                    android:text="深灰"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="10sp" />
-
-                                <Button
-                                    android:id="@+id/btnColorAmoled"
-                                    android:layout_width="0dp"
-                                    android:layout_height="36dp"
-                                    android:layout_marginEnd="4dp"
-                                    android:layout_weight="1"
-                                    android:backgroundTint="#000000"
-                                    android:text="纯黑"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="10sp" />
-
-                                <Button
-                                    android:id="@+id/btnColorSlate"
-                                    android:layout_width="0dp"
-                                    android:layout_height="36dp"
-                                    android:layout_marginEnd="4dp"
-                                    android:layout_weight="1"
-                                    android:backgroundTint="#1E293B"
-                                    android:text="晨曦蓝"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="10sp" />
-
-                                <Button
-                                    android:id="@+id/btnColorPurple"
-                                    android:layout_width="0dp"
-                                    android:layout_height="36dp"
-                                    android:layout_marginEnd="4dp"
-                                    android:layout_weight="1"
-                                    android:backgroundTint="#2E1065"
-                                    android:text="暗夜紫"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="10sp" />
-
-                                <Button
-                                    android:id="@+id/btnColorWhite"
-                                    android:layout_width="0dp"
-                                    android:layout_height="36dp"
-                                    android:layout_weight="1"
-                                    android:backgroundTint="#F1F5F9"
-                                    android:text="极简白"
-                                    android:textColor="#1E293B"
-                                    android:textSize="10sp" />
-
-                            </LinearLayout>
-
-                            <!-- RGB Sliders -->
-                            <LinearLayout
-                                android:id="@+id/rgbBackgroundControls"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="8dp"
-                                android:orientation="vertical" />
-
-                        </LinearLayout>
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 4. Key Text Color -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="自定义按键字体颜色"
-                                    android:textColor="@color/text_primary"
-                                    android:textSize="14sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
-                                    android:text="关闭时根据键盘底色自动使用黑色或白色"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
-
-                            </LinearLayout>
-
-                            <androidx.appcompat.widget.SwitchCompat
-                                android:id="@+id/switchCustomTextColor"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/layoutTextColorConfig"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="vertical"
-                            android:visibility="gone" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 5. Function Keycap Color -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="自定义功能键键帽颜色"
-                                    android:textColor="@color/text_primary"
-                                    android:textSize="14sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
-                                    android:text="分词、退格、符号、123、中/英等功能键"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
-
-                            </LinearLayout>
-
-                            <androidx.appcompat.widget.SwitchCompat
-                                android:id="@+id/switchCustomFunctionKeycapColor"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/layoutFunctionKeycapColorConfig"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="vertical"
-                            android:visibility="gone" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 6. Menu Card Color -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="自定义菜单功能卡片颜色"
-                                    android:textColor="@color/text_primary"
-                                    android:textSize="14sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
-                                    android:text="菜单键展开后的语音键盘、表情等功能卡片，不包含剪贴板内容卡片"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
-
-                            </LinearLayout>
-
-                            <androidx.appcompat.widget.SwitchCompat
-                                android:id="@+id/switchCustomMenuCardColor"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/layoutMenuCardColorConfig"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="vertical"
-                            android:visibility="gone" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 7. Clipboard Card Color -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="自定义剪贴板卡片颜色"
-                                    android:textColor="@color/text_primary"
-                                    android:textSize="14sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
-                                    android:text="仅控制剪贴板与常用语中的内容卡片，不影响菜单功能卡片"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
-
-                            </LinearLayout>
-
-                            <androidx.appcompat.widget.SwitchCompat
-                                android:id="@+id/switchCustomClipboardCardColor"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/layoutClipboardCardColorConfig"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="vertical"
-                            android:visibility="gone" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@color/card_stroke" />
-
-                    <!-- 8. Letter Keycap Color -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="自定义字母键键帽颜色"
-                                    android:textColor="@color/text_primary"
-                                    android:textSize="14sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
-                                    android:text="字母、数字等主键的常态键帽颜色"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
-
-                            </LinearLayout>
-
-                            <androidx.appcompat.widget.SwitchCompat
-                                android:id="@+id/switchCustomLetterKeycapColor"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/layoutLetterKeycapColorConfig"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="vertical"
-                            android:visibility="gone" />
-
-                    </LinearLayout>
-
+                        android:layout_height="wrap_content" />
 
                 </LinearLayout>
 
@@ -1277,5 +632,44 @@
         </LinearLayout>
 
     </androidx.core.widget.NestedScrollView>
+
+    <include
+        layout="@layout/page_appearance"
+        android:visibility="gone" />
+
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/card_stroke" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/surface_light"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/tabFunctions"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:text="功能"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tabAppearance"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:text="个性化"
+            android:textSize="15sp" />
+
+    </LinearLayout>
 
 </LinearLayout>
