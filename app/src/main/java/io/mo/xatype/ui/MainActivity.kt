@@ -36,9 +36,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sbBottomSpacing: SeekBar
     private lateinit var tvBottomSpacingValue: TextView
     private lateinit var switchVerboseLog: SwitchCompat
+    private lateinit var switchHideLauncherIcon: SwitchCompat
 
     private lateinit var appearancePage: AppearancePage
-    private lateinit var restartMenuItem: android.view.MenuItem
     private lateinit var btnRestartIme: Button
     private lateinit var btnAbout: Button
 
@@ -75,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         sbBottomSpacing = findViewById(R.id.sbBottomSpacing)
         tvBottomSpacingValue = findViewById(R.id.tvBottomSpacingValue)
         switchVerboseLog = findViewById(R.id.switchVerboseLog)
+        switchHideLauncherIcon = findViewById(R.id.switchHideLauncherIcon)
 
         btnRestartIme = findViewById(R.id.btnRestartIme)
         btnAbout = findViewById(R.id.btnAbout)
@@ -127,20 +128,11 @@ class MainActivity : AppCompatActivity() {
         val tabFunctions = findViewById<TextView>(R.id.tabFunctions)
         val tabAppearance = findViewById<TextView>(R.id.tabAppearance)
         appearancePage = AppearancePage(this, appearance, savedInstanceState)
-        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
-        restartMenuItem = toolbar.menu.add("重启输入法").apply {
-            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS)
-        }
-        toolbar.setOnMenuItemClickListener {
-            ImeRestarter.restart(this)
-            true
-        }
 
         fun select(showAppearance: Boolean) {
             if (!showAppearance) appearancePage.closePanel()
             functions.visibility = if (showAppearance) View.GONE else View.VISIBLE
             appearance.visibility = if (showAppearance) View.VISIBLE else View.GONE
-            restartMenuItem.isVisible = showAppearance
             for ((tab, selected) in listOf(tabFunctions to !showAppearance, tabAppearance to showAppearance)) {
                 tab.setTextColor(getColor(if (selected) R.color.primary else R.color.text_secondary))
                 tab.setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
@@ -250,6 +242,24 @@ class MainActivity : AppCompatActivity() {
         switchOsVersionUnblock.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, isChecked).apply()
             showRestartHint()
+        }
+
+        // Component state, not a preference: the launcher reads it directly.
+        val launcherAlias = android.content.ComponentName(this, "$packageName.ui.LauncherAlias")
+        switchHideLauncherIcon.isChecked = packageManager.getComponentEnabledSetting(launcherAlias) ==
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        switchHideLauncherIcon.setOnCheckedChangeListener { _, hide ->
+            packageManager.setComponentEnabledSetting(
+                launcherAlias,
+                if (hide) PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            Toast.makeText(
+                this,
+                if (hide) "已隐藏桌面图标，可在 LSPosed 管理器的模块列表中进入" else "已恢复桌面图标",
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
         switchVerboseLog.isChecked = prefs.getBoolean(ConfigManager.KEY_VERBOSE_LOG, false)
