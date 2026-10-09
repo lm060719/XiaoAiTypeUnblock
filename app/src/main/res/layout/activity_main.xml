@@ -409,7 +409,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="AI 能力分闸解锁"
+                            android:text="解除 AI 功能机型限制"
                             android:textColor="@color/text_primary"
                             android:textSize="15sp"
                             android:textStyle="bold" />

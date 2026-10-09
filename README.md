@@ -61,7 +61,7 @@
 * **实时跨进程日志**：基于非阻塞跨进程通信，无需连接电脑抓取 logcat，即可在 UI 中实时查看被净化的事件流与拦截统计。
 * **一键 Root 快速重启**：支持在界面中一键申请 Root 权限强制重启输入法进程，配置秒级生效。
 
-### 9. 🧩 AI 能力分闸解锁 (AI Ability Unlock)
+### 9. 🧩 解除 AI 功能机型限制 (AI Ability Unlock)
 * **业务痛点**：端侧大模型能力（LLM / VLM）由 AI 服务按一组 conditions 下发白名单——机型 `whiteModels`、SoC `whiteSocs`、区域 `whiteRegions`、内存 `minRam` / `minRom`、电量 `minBattery` 等。不在白名单的机型、区域或低配设备上，相关 AI 润色、翻译、问小爱等能力入口会被判定为"不可用"而灰掉或隐藏。
 * **净化方案**：挂钩 `com.xiaomi.taiyi.sdk.base.data.AIDetail` 的 `isSupport()` 与 `isAvailable()`，将被 AI 服务判定为不支持/不可用的能力在键盘侧强制放行。该裁决由外部 `com.xiaomi.aiservice` 经 ContentProvider 下发、键盘进程内解析消费，故 Hook 在本进程有效；与"OS4 版本限制解除"构成"服务总闸 + 能力分闸"的完整链路。开关默认关闭，重启输入法后生效。
 * **注意**：此项仅解除键盘侧的能力入口闸门；真正执行仍需 AI 服务实际支持，确实不满足运行条件（如模型未下发）的能力可能在下游失败，可开启详细日志查看被放开的 ability（`api` / `code`）与下游状态。
@@ -172,7 +172,7 @@ graph TD
 | **云端黑名单清空** | `c1.onPyCloudAttachUpdate(...)` | 拦截云端下发附带词库，将 `blacklistStr` 参数置空。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/CloudBlacklistHook.kt) |
 | **词库实体置空** | `PinyinCloudAttachResult.get/setBlackListStr` | 强制返回空字符串并阻止黑名单内存字段写入。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/CloudBlacklistHook.kt) |
 | **剪贴板敏感绕过** | `PersistableBundle.getBoolean(...)`<br>`BaseBundle.getBoolean(...)` | 拦截 key 为 `android.content.extra.IS_SENSITIVE` 的调用并返回 `false`。 | [`ClipboardSensitiveHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/ClipboardSensitiveHook.kt) |
-| **AI 能力分闸解锁** | `AIDetail.isSupport()`<br>`AIDetail.isAvailable()` | 将被 AI 服务按机型/区域/配置白名单判定为不支持/不可用的能力在键盘侧强制返回 `true`。 | [`AiAbilityUnlockHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/AiAbilityUnlockHook.kt) |
+| **解除 AI 功能机型限制** | `AIDetail.isSupport()`<br>`AIDetail.isAvailable()` | 将被 AI 服务按机型/区域/配置白名单判定为不支持/不可用的能力在键盘侧强制返回 `true`。 | [`AiAbilityUnlockHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/AiAbilityUnlockHook.kt) |
 | **遥测与埋点拦截** | `OneTrack.isDisable()` | 恒返回 `true`，借 OneTrack 自带开关关闭统计/广告监控的事件分发与网络上传。 | [`TelemetryBlockHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/TelemetryBlockHook.kt) |
 
 ### 2. 现代 Xposed 与无阻塞设计
