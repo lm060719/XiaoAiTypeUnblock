@@ -31,6 +31,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchClipboardSensitive: SwitchCompat
     private lateinit var switchClipboardPermanent: SwitchCompat
     private lateinit var switchOsVersionUnblock: SwitchCompat
+    private lateinit var switchAiAbilityUnlock: SwitchCompat
+    private lateinit var switchTelemetryBlock: SwitchCompat
     private lateinit var switchKeyboardHeightUnblock: SwitchCompat
     private lateinit var switchBottomSpacing: SwitchCompat
     private lateinit var sbBottomSpacing: SeekBar
@@ -70,6 +72,8 @@ class MainActivity : AppCompatActivity() {
         switchClipboardSensitive = findViewById(R.id.switchClipboardSensitive)
         switchClipboardPermanent = findViewById(R.id.switchClipboardPermanent)
         switchOsVersionUnblock = findViewById(R.id.switchOsVersionUnblock)
+        switchAiAbilityUnlock = findViewById(R.id.switchAiAbilityUnlock)
+        switchTelemetryBlock = findViewById(R.id.switchTelemetryBlock)
         switchKeyboardHeightUnblock = findViewById(R.id.switchKeyboardHeightUnblock)
         switchBottomSpacing = findViewById(R.id.switchBottomSpacing)
         sbBottomSpacing = findViewById(R.id.sbBottomSpacing)
@@ -241,6 +245,18 @@ class MainActivity : AppCompatActivity() {
         switchOsVersionUnblock.isChecked = prefs.getBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, false)
         switchOsVersionUnblock.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean(ConfigManager.KEY_OS_VERSION_UNBLOCK, isChecked).apply()
+            showRestartHint()
+        }
+
+        switchAiAbilityUnlock.isChecked = prefs.getBoolean(ConfigManager.KEY_AI_ABILITY_UNLOCK, false)
+        switchAiAbilityUnlock.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean(ConfigManager.KEY_AI_ABILITY_UNLOCK, isChecked).apply()
+            showRestartHint()
+        }
+
+        switchTelemetryBlock.isChecked = prefs.getBoolean(ConfigManager.KEY_TELEMETRY_BLOCK, false)
+        switchTelemetryBlock.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean(ConfigManager.KEY_TELEMETRY_BLOCK, isChecked).apply()
             showRestartHint()
         }
 

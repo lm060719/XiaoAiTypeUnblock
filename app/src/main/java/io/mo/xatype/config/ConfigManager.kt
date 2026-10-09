@@ -16,6 +16,8 @@ object ConfigManager {
     const val KEY_CLIPBOARD_SENSITIVE = "pref_clipboard_sensitive"
     const val KEY_CLIPBOARD_PERMANENT = "pref_clipboard_permanent"
     const val KEY_OS_VERSION_UNBLOCK = "pref_os_version_unblock"
+    const val KEY_AI_ABILITY_UNLOCK = "pref_ai_ability_unlock"
+    const val KEY_TELEMETRY_BLOCK = "pref_telemetry_block"
     const val KEY_KEYBOARD_HEIGHT_UNBLOCK = "pref_keyboard_height_unblock"
     const val KEY_BOTTOM_SPACING_ENABLED = "pref_bottom_spacing_enabled"
     const val KEY_BOTTOM_SPACING = "pref_bottom_spacing" // 0 to 100 dp; global geometry
@@ -56,6 +58,8 @@ object ConfigManager {
     @Volatile private var cachedClipboardSensitive = false
     @Volatile private var cachedClipboardPermanent = false
     @Volatile private var cachedOsVersionUnblock = false
+    @Volatile private var cachedAiAbilityUnlock = false
+    @Volatile private var cachedTelemetryBlock = false
     @Volatile private var cachedKeyboardHeightUnblock = false
     @Volatile private var cachedBottomSpacingEnabled = false
     @Volatile private var cachedBottomSpacing = 0
@@ -108,6 +112,8 @@ object ConfigManager {
                 cachedClipboardSensitive = bundle.getBoolean(KEY_CLIPBOARD_SENSITIVE, false)
                 cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, false)
                 cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, false)
+                cachedAiAbilityUnlock = bundle.getBoolean(KEY_AI_ABILITY_UNLOCK, false)
+                cachedTelemetryBlock = bundle.getBoolean(KEY_TELEMETRY_BLOCK, false)
                 cachedKeyboardHeightUnblock = bundle.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
                 cachedBottomSpacingEnabled = bundle.getBoolean(KEY_BOTTOM_SPACING_ENABLED, false)
                 cachedBottomSpacing = bundle.getInt(KEY_BOTTOM_SPACING, 0).coerceIn(0, 100)
@@ -171,6 +177,16 @@ object ConfigManager {
     fun isOsVersionUnblockEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedOsVersionUnblock
         return remotePrefs?.getBoolean(KEY_OS_VERSION_UNBLOCK, false) ?: cachedOsVersionUnblock
+    }
+
+    fun isAiAbilityUnlockEnabled(): Boolean {
+        if (hasSyncedFromProvider) return cachedAiAbilityUnlock
+        return remotePrefs?.getBoolean(KEY_AI_ABILITY_UNLOCK, false) ?: cachedAiAbilityUnlock
+    }
+
+    fun isTelemetryBlockEnabled(): Boolean {
+        if (hasSyncedFromProvider) return cachedTelemetryBlock
+        return remotePrefs?.getBoolean(KEY_TELEMETRY_BLOCK, false) ?: cachedTelemetryBlock
     }
 
     fun isStyleEnabled(): Boolean {

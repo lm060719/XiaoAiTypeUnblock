@@ -6,6 +6,7 @@ import io.mo.xatype.compat.AdaptationReporter
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.hooks.AiAbilityUnlockHook
 import io.mo.xatype.hooks.AiSafetyHook
 import io.mo.xatype.hooks.ClipboardPermanentHook
 import io.mo.xatype.hooks.ClipboardSensitiveHook
@@ -16,6 +17,7 @@ import io.mo.xatype.hooks.KeyboardStyleHook
 import io.mo.xatype.hooks.KeyboardHeightUnblockHook
 import io.mo.xatype.hooks.KeyboardBottomSpacingHook
 import io.mo.xatype.hooks.SystemUiNavigationGuardHook
+import io.mo.xatype.hooks.TelemetryBlockHook
 import io.mo.xatype.hooks.VoiceModerationHook
 import io.mo.xatype.util.XposedUtils
 import java.io.File
@@ -107,6 +109,18 @@ class XiaoAiTypeModule : XposedModule() {
             AiSafetyHook.install(this, classLoader)
         } catch (t: Throwable) {
             XposedUtils.logError(this, "Error installing AiSafetyHook", t)
+        }
+
+        try {
+            AiAbilityUnlockHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error installing AiAbilityUnlockHook", t)
+        }
+
+        try {
+            TelemetryBlockHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error installing TelemetryBlockHook", t)
         }
 
         try {
