@@ -348,14 +348,12 @@ class AppearancePage(
 
     private fun buildPresetPanel(panel: LinearLayout)
     {
-        note(panel, "预设只会修改当前编辑的" + (if (editingDark) "深色" else "浅色") +
-            "外观，不影响其他净化和键盘功能。选择前会要求确认。")
         AppearancePresetStore.presets.forEach { preset ->
             panel.addView(kit.navRow(preset.name, preset.description, null) {
                 AlertDialog.Builder(activity)
                     .setTitle("应用「" + preset.name + "」")
                     .setMessage("将替换当前" + (if (editingDark) "深色" else "浅色") +
-                        "外观的全部颜色、透明度和圆角设置。建议先保存当前外观配置。")
+                        "外观的全部颜色、透明度和圆角设置。")
                     .setNegativeButton("取消", null)
                     .setPositiveButton("应用") { _, _ ->
                         if (AppearancePresetStore.applyPreset(prefs, editingDark, preset.id))
@@ -381,8 +379,7 @@ class AppearancePage(
     private fun showSchemes(panel: LinearLayout)
     {
         panel.removeAllViews()
-        note(panel, "保存完整的浅色、深色配置及其切换方式。可保存任意多套配置，切换时不会更改净化和键盘增强设置。")
-        panel.addView(kit.navRow("保存当前为新配置", "给当前外观起一个名称并存档", null) {
+        panel.addView(kit.navRow("保存当前为新配置",  null) {
             askSchemeName(panel, "保存新配置", "") { name ->
                 AppearancePresetStore.save(prefs, name)
             }

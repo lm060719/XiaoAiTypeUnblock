@@ -121,9 +121,8 @@ class DiagnosticsActivity : AppCompatActivity() {
         }, spaced(top = LG))
 
         val steps = group(body, "复现步骤", "按顺序操作，日志更完整")
-        steps.addView(step(1, "开始采集", "授权 Root 后会自动重启小爱输入法，状态变为「正在采集」"))
-        steps.addView(step(2, "复现问题", "切到记事本呼出键盘，切换悬浮键盘、拖动位置、打开剪贴板，尝试横竖屏；" +
-            "排查中文输入时，在中文模式输入 nihao 并切换中英文"))
+        steps.addView(step(1, "开始采集", "自动重启小爱输入法，并开始采集"))
+        steps.addView(step(2, "复现问题", "开始复现bug场景"))
         steps.addView(step(3, "停止并导出", "回到本页停止采集，再分享或保存日志"))
 
         val export = group(body, "导出日志", "最长 10 分钟、最多 8 MB；再次开始会覆盖上次日志")
@@ -202,7 +201,6 @@ class DiagnosticsActivity : AppCompatActivity() {
         } else "—"
         primary.text = if (running) "停止采集" else "开始采集并重启输入法"
         footerHint.text = if (running) "离开本页也会继续采集 · 复现后回来停止"
-            else "需要 Root 权限 · 会自动重启小爱输入法"
         exportRows.forEach {
             it.isEnabled = hasLog
             it.alpha = if (hasLog) 1f else DISABLED_ALPHA

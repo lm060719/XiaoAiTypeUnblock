@@ -28,12 +28,12 @@ object AppearancePresetStore
     data class Scheme(val id: String, val name: String, val snapshot: JSONObject)
 
     val presets = listOf(
-        Preset("native", "清爽原生", "保留原生色彩，柔和圆角与清晰背景", mapOf(
+        Preset("native", "清爽原生",  mapOf(
             ConfigManager.KEY_CORNER_RADIUS to 16,
             ConfigManager.KEY_OPACITY to 95,
             ConfigManager.KEY_BLUR_RADIUS to 45
         )),
-        Preset("glass", "冰透玻璃", "半透明毛玻璃，轻盈通透", mapOf(
+        Preset("glass", "冰透玻璃", mapOf(
             ConfigManager.KEY_CORNER_RADIUS to 24,
             ConfigManager.KEY_OPACITY to 58,
             ConfigManager.KEY_BLUR_RADIUS to 70,
@@ -46,7 +46,7 @@ object AppearancePresetStore
             ConfigManager.KEY_CLIPBOARD_CARD_COLOR to "#DDEEFF",
             ConfigManager.KEY_CLIPBOARD_CARD_OPACITY to 70
         )),
-        Preset("midnight", "极夜黑金", "深黑背景与暖金文字，适合夜间", mapOf(
+        Preset("midnight", "极夜黑金",  mapOf(
             ConfigManager.KEY_CORNER_RADIUS to 22,
             ConfigManager.KEY_OPACITY to 98,
             ConfigManager.KEY_BG_TYPE to 1,
@@ -59,7 +59,7 @@ object AppearancePresetStore
             ConfigManager.KEY_SCRIM_COLOR to "#080A0F",
             ConfigManager.KEY_SCRIM_OPACITY to 32
         )),
-        Preset("cream", "暖杏奶油", "暖白底色与杏色键帽，低对比柔和", mapOf(
+        Preset("cream", "暖杏奶油",  mapOf(
             ConfigManager.KEY_CORNER_RADIUS to 26,
             ConfigManager.KEY_OPACITY to 98,
             ConfigManager.KEY_BG_TYPE to 1,
@@ -72,7 +72,7 @@ object AppearancePresetStore
             ConfigManager.KEY_SCRIM_COLOR to "#FFF3E4",
             ConfigManager.KEY_SCRIM_OPACITY to 20
         )),
-        Preset("neon", "赛博霓虹", "深蓝背景与明亮青紫色彩", mapOf(
+        Preset("neon", "赛博霓虹",  mapOf(
             ConfigManager.KEY_CORNER_RADIUS to 18,
             ConfigManager.KEY_OPACITY to 96,
             ConfigManager.KEY_BG_TYPE to 1,
