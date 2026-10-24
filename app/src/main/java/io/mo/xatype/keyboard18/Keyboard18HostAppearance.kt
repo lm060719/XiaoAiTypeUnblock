@@ -37,6 +37,23 @@ class Keyboard18HostAppearance(private val layouts: Keyboard18HostLayout) {
             }
         }
         module.deoptimize(renderer)
+        // From 0.2.1246, letter keys on the "qwerty" layout take their label from the key code and shift
+        // state. English 18-key groups type their first letter, so "we" would render as "w"; label the
+        // whole group instead, following the host's case.
+        val bool = Boolean::class.javaPrimitiveType
+        renderer.declaringClass.declaredMethods.singleOrNull {
+            java.lang.reflect.Modifier.isStatic(it.modifiers) && it.returnType == String::class.java &&
+                it.parameterCount == 4 && it.parameterTypes[0] == key &&
+                it.parameterTypes[1] == bool && it.parameterTypes[2] == bool
+        }?.let { codeLabel ->
+            module.hook(codeLabel).intercept { chain ->
+                val native = chain.proceed() as String?
+                if (drawing.get() != true || native == null) return@intercept native
+                val group = layouts.groupOf(chain.getArg(0)!!) ?: return@intercept native
+                Keyboard18Style.label(group, native.any(Char::isUpperCase))
+            }
+            module.deoptimize(codeLabel)
+        }
         module.hook(typography).intercept { chain ->
             val native = chain.proceed() as Long
             if (drawing.get() == true) Keyboard18Style.scaleTextUnit(native) else native
