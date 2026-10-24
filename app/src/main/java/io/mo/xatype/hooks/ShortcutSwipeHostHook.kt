@@ -49,7 +49,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
         val composerIndex = renderer.parameterTypes.indexOfFirst { it == abi.type("s0.p") }
         check(callbackIndex > MODIFIER_INDEX && composerIndex > callbackIndex) { "key renderer layout" }
         fun changedIndex(parameter: Int) = composerIndex + 1 + parameter / 10
-        fun changedMask(parameter: Int) = (0x7 shl (1 + 3 * (parameter % 10))).inv()
+        fun changedShift(parameter: Int) = 1 + 3 * (parameter % 10)
         val text = abi.namedMethods(abi.type("p0.n"), "a").single {
             it.parameterCount == 19 && it.parameterTypes[0] == String::class.java &&
                 it.parameterTypes[1] == bridge.modifier
@@ -77,10 +77,10 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             }
             args[MODIFIER_INDEX] = key.decoratedModifier ?: args[MODIFIER_INDEX]
             args[callbackIndex] = bridge.guarded(key.callback) { key.blockNative }
-            // Re-evaluate the injected modifier and callback.
+            // Re-evaluate the injected modifier and callback without changing the renderer's slot layout.
             for (parameter in listOf(MODIFIER_INDEX, callbackIndex)) {
                 val index = changedIndex(parameter)
-                args[index] = (args[index] as Int) and changedMask(parameter)
+                args[index] = markDifferent(args[index] as Int, changedShift(parameter))
             }
             val previous = rendering.get()
             rendering.set(key)
@@ -109,7 +109,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                     bridge.drawContent(scope)
                 }
             }
-            args[16] = (args[16] as Int) and 0x70.inv()
+            args[16] = markDifferent(args[16] as Int, TEXT_MODIFIER_SHIFT)
             chain.proceed(args)
         }
         module.deoptimize(text)
@@ -182,5 +182,19 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
     private companion object {
         /** The key's Modifier, unmoved in every verified renderer. */
         const val MODIFIER_INDEX = 2
+        /** Text's Modifier is its second parameter. */
+        const val TEXT_MODIFIER_SHIFT = 1 + 3 * 1
+
+        /**
+         * Compose only calls changed(), which consumes a slot, for parameters the caller left uncertain.
+         * Clearing a caller-certified state to uncertain adds slots on hooked keys only, and a host key
+         * group reused by an unhooked key (nine-key "ABC" -> number "2") then reads misaligned slots.
+         * Mark certified parameters Different instead: the slot layout stays and the value is re-read.
+         */
+        fun markDifferent(changed: Int, shift: Int): Int {
+            val state = (changed shr shift) and 0x7
+            if (state and 0x3 == 0) return changed
+            return (changed and (0x7 shl shift).inv()) or (((state and 0x4) or 0x2) shl shift)
+        }
     }
 }

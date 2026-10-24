@@ -62,9 +62,12 @@ object KeyboardSelectionHook {
             callback, abi.type("kotlin.jvm.functions.Function0"), Set::class.java,
             compose, Int::class.javaPrimitiveType)
         val rows = abi.type("oc.m").abiMethod(abi, "T0", Iterable::class.java, Int::class.javaPrimitiveType)
-        val hostCallback = abi.type("gb.u0")
         val hostService = abi.type("com.mi.ime.MiInputMethodService")
-        val serviceField = hostCallback.declaredFields.single { it.type == hostService }.apply { isAccessible = true }
+        // onModeSelected is a synthetic lambda capturing the service; 0.2.1246 moved it to another
+        // lambda class (qb.z0), so read the captured service instead of matching one class.
+        fun hostContext(callback: Any): Context? = callback.javaClass.declaredFields
+            .firstOrNull { hostService.isAssignableFrom(it.type) }
+            ?.apply { isAccessible = true }?.get(callback) as? Context
 
         // Add mode items at the selector's row grouping boundary. Avoid hooking listOf,
         // which is called throughout ordinary keyboard composition and input handling.
@@ -84,7 +87,7 @@ object KeyboardSelectionHook {
         module.hook(screen).intercept { chain ->
             val original = chain.getArg(1)!!
             val previous = if (Proxy.isProxyClass(original.javaClass)) Proxy.getInvocationHandler(original) as? SelectionCallback else null
-            val ctx = previous?.context ?: if (hostCallback.isInstance(original)) serviceField.get(original) as Context else null
+            val ctx = previous?.context ?: hostContext(original)
             if (ctx == null) chain.proceed() else {
                 val choice = selected(ctx)
                 val visible = visibility
