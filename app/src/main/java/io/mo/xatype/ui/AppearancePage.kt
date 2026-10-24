@@ -379,7 +379,7 @@ class AppearancePage(
     private fun showSchemes(panel: LinearLayout)
     {
         panel.removeAllViews()
-        panel.addView(kit.navRow("保存当前为新配置",  null) {
+        panel.addView(kit.navRow("保存当前为新配置", null, null) {
             askSchemeName(panel, "保存新配置", "") { name ->
                 AppearancePresetStore.save(prefs, name)
             }

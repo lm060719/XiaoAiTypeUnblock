@@ -200,7 +200,7 @@ class DiagnosticsActivity : AppCompatActivity() {
             "%d:%02d".format(seconds / 60, seconds % 60)
         } else "—"
         primary.text = if (running) "停止采集" else "开始采集并重启输入法"
-        footerHint.text = if (running) "离开本页也会继续采集 · 复现后回来停止"
+        footerHint.text = if (running) "离开本页也会继续采集 · 复现后回来停止" else ""
         exportRows.forEach {
             it.isEnabled = hasLog
             it.alpha = if (hasLog) 1f else DISABLED_ALPHA
