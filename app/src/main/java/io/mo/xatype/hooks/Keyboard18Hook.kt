@@ -122,7 +122,7 @@ object Keyboard18Hook {
             if (enabled && label in KeyboardShortcuts.actions) {
                 if (ConfigManager.isKeyboardShortcutsEnabled()) runCatching {
                     flush()
-                    (session?.service ?: service)?.currentInputConnection?.let { KeyboardShortcutActions.perform(it, label) }
+                    (session?.service ?: service)?.let { owner -> owner.currentInputConnection?.let { KeyboardShortcutActions.perform(it, label, owner) } }
                 }.onFailure { XposedUtils.logError(module, "18-key shortcut failed: $label", it) }
                 null
             } else if (session == null) chain.proceed()
@@ -195,12 +195,14 @@ object Keyboard18Hook {
                 reportFailure(context, module, "布局设置读取失败", it)
             }.getOrNull()
             val english = chain.getArg(3) == true
-            if (config?.dictionary == null || (!english && (!chineseReady || layoutMode != "PINYIN"))) original else runCatching {
-                layouts.rebuild(original, english, Keyboard18Store.scheme(config.settings)?.usesSemicolon == true).also { rebuilt ->
+            // English keeps the host's native 26-key QWERTY; only Chinese uses the 18-key grid.
+            if (english || config?.dictionary == null || !chineseReady || layoutMode != "PINYIN") original else runCatching {
+                layouts.rebuild(original, english = false,
+                    semicolon = Keyboard18Store.scheme(config.settings)?.usesSemicolon == true).also { rebuilt ->
                     if (!layoutReported) {
                         layoutReported = true
                         report(context, config.settings, if (rebuilt !== original)
-                            "18键布局已替换（${if (english) "英文" else "中文"}）"
+                            "18键布局已替换（中文）"
                         else "18键未替换：当前不是标准26键布局（分离布局暂不支持）")
                     }
                 }

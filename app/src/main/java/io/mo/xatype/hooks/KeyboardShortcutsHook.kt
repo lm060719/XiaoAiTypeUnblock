@@ -90,7 +90,7 @@ object KeyboardShortcutsHook {
             if (ConfigManager.isKeyboardShortcutsEnabled()) runCatching {
                 val connection = ime.currentInputConnection ?: return@runCatching
                 actions.finishInput(target)
-                KeyboardShortcutActions.perform(connection, action)
+                KeyboardShortcutActions.perform(connection, action, ime)
             }.onFailure { XposedUtils.logError(module, "Key shortcut failed: $action", it) }
             null
         }

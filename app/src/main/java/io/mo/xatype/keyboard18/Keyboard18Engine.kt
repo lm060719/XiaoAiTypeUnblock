@@ -11,7 +11,15 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         private set
     var candidates: List<Pinyin18Candidate> = emptyList()
         private set
-    val display: String get() = Keyboard18Keys.readable(raw)
+    val display: String get() = pinyinDisplay()
+    /** Candidate bar shows the real pinyin of the leading candidate, not group tags. */
+    private fun pinyinDisplay(): String {
+        val top = candidates.firstOrNull() ?: return Keyboard18Keys.readable(raw)
+        val spelling = top.spelling.substringBefore(" · ")
+        val rest = raw.drop(top.consumed)
+        if (rest.isEmpty()) return spelling
+        return spelling + rest.map { Keyboard18Keys.projected(it) }.joinToString("")
+    }
     val scheme get() = dictionary.scheme
     fun snapshot(consumed: Boolean = true, commit: String? = null) =
         Pinyin18Result(consumed, raw, display, candidates, commit)
@@ -24,6 +32,13 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         if (raw.isEmpty()) return snapshot(false)
         raw = raw.dropLast(1); refresh(); return snapshot()
     }
+    /** Distinct pinyin readings for the current input, shown in the expanded candidate page. */
+    fun pinyinVariants(): List<String> = candidates
+        .map { it.spelling.substringBefore(" · ") }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .take(20)
+
     fun select(index: Int): String? {
         val candidate = candidates.getOrNull(index) ?: return null
         raw = raw.drop(candidate.consumed).trimStart('\'')
@@ -35,7 +50,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         if (raw.isEmpty()) return null
         // Space commits the highest ranked candidate; a prefix selection keeps the suffix composing.
         if (candidates.isNotEmpty()) return select(0)
-        val literal = display
+        val literal = Keyboard18Keys.readable(raw)
         clear()
         return literal
     }
@@ -114,11 +129,16 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
                 entry.score - dictionary.maxScore - 3.0 + learning(entry.text)) }
         // Rank corpus words, valid sentences and partial selections together. A fabricated
         // complete path no longer beats every real word merely because it consumes all taps.
-        candidates = (lexical + whole + completion).sortedByDescending {
-            it.score - PREFIX_PENALTY * (raw.length - it.consumed)
-        }.distinctBy { it.text to it.consumed }.take(MAX_CANDIDATES)
+        candidates = (lexical + whole + completion).sortedWith(
+            compareByDescending<Pinyin18Candidate> { frequency(it.text) >= LEARNED_THRESHOLD }
+                .thenByDescending { it.score - PREFIX_PENALTY * (raw.length - it.consumed) }
+        ).distinctBy { it.text to it.consumed }.take(MAX_CANDIDATES)
     }
-    private fun learning(text: String) = kotlin.math.ln(1.0 + frequency(text).coerceIn(0, 10_000)) * 0.6
+    private fun learning(text: String): Double {
+        val count = frequency(text)
+        return kotlin.math.ln(1.0 + count.coerceIn(0, 10_000)) * 0.6 +
+            if (count >= LEARNED_THRESHOLD) LEARNED_BOOST else 0.0
+    }
     private fun prune(paths: MutableList<Path>) {
         val top = paths.sortedByDescending { it.score }.distinctBy { it.text }.take(BEAM)
         paths.clear(); paths.addAll(top)
@@ -133,5 +153,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         private const val REPETITION_PENALTY = 6.0
         private const val MIN_COMPOSITION_WEIGHT = 32
         private const val MAX_CANDIDATES = 160
+        private const val LEARNED_THRESHOLD = 3
+        private const val LEARNED_BOOST = 4.0
     }
 }

@@ -1,7 +1,9 @@
 package io.mo.xatype.keyboard
 
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.view.View
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
@@ -41,6 +43,10 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
     private val canvasGetter = context.returnType.abiMethod(abi, "s")
     private val nativeCanvas = type("l1.b").abiField(abi, "a").apply { isAccessible = true }
     private val argb = type("l1.h0").abiMethod(abi, "v", Long::class.javaPrimitiveType)
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
 
     fun label(instance: Any) = keys.label(instance)
     fun action(instance: Any, layout: KeyboardShortcutLayout) = keys.action(instance, layout)
@@ -105,5 +111,31 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
         val save = canvas.saveLayerAlpha(0f, 0f, max(width, iconSize), max(height, iconSize), ((1f - progress) * 255f).toInt())
         try { content.invoke(scope) } finally { canvas.restoreToCount(save) }
         ShortcutGlyph.draw(canvas, action, width / 2f, height / 2f, iconSize, color, progress)
+    }
+
+    /**
+     * Draw the action text after the key's own content. [offsetX] is measured from the
+     * horizontal centre and [bottomInset] from the key's bottom edge, both in pixels.
+     */
+    fun drawLabel(scope: Any, text: String, color: Int, textSizePx: Float, offsetX: Float, bottomInset: Float) {
+        content.invoke(scope)
+        if (text.isEmpty() || textSizePx <= 0f) return
+        val size = drawSize.invoke(scope) as Long
+        val width = Float.fromBits((size shr 32).toInt())
+        val height = Float.fromBits(size.toInt())
+        if (width <= 0f || height <= 0f) return
+        val canvas = nativeCanvas.get(canvasGetter.invoke(context.invoke(scope))) as Canvas
+        labelPaint.textSize = textSizePx
+        val measured = labelPaint.measureText(text)
+        if (measured > width * 0.92f && measured > 0f) {
+            labelPaint.textSize = textSizePx * (width * 0.92f) / measured
+        }
+        labelPaint.color = color
+        val metrics = labelPaint.fontMetrics
+        val half = labelPaint.measureText(text) / 2f
+        val x = (width / 2f + offsetX).coerceIn(half.coerceAtMost(width / 2f), (width - half).coerceAtLeast(width / 2f))
+        val minBaseline = minOf(-metrics.ascent + 1f, height - 1f)
+        val baseline = (height - bottomInset).coerceIn(minBaseline, height - 1f)
+        canvas.drawText(text, x, baseline, labelPaint)
     }
 }

@@ -4,7 +4,10 @@ import android.content.Context
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.util.AtomicFile
+import java.io.BufferedOutputStream
 import java.io.File
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import io.mo.xatype.keyboard.ShuangpinScheme
 
 object Keyboard18Store {
@@ -40,18 +43,42 @@ object Keyboard18Store {
         putString(STATUS, sp.getString(STATUS, "尚未接入输入法"))
         putLong(STATUS_TIME, sp.getLong(STATUS_TIME, 0))
     } }
+    private const val DICTIONARY_REVISION = 2
+
     @Synchronized
     fun dictionaryFile(context: Context): File {
-        val atomic = AtomicFile(File(device(context).filesDir, "keyboard18-pinyin.table"))
-        if (!atomic.baseFile.exists()) {
+        val baseFile = File(device(context).filesDir, "keyboard18-pinyin.table")
+        val revisionFile = File(device(context).filesDir, "keyboard18-pinyin.revision")
+        val revision = if (revisionFile.exists()) revisionFile.readText().trim().toIntOrNull() else null
+        if (!baseFile.exists() || revision != DICTIONARY_REVISION) {
+            val atomic = AtomicFile(baseFile)
             val stream = atomic.startWrite()
             try {
-                context.assets.open("keyboard18/pinyin.table").use { it.copyTo(stream) }
+                // Merge the base corpus with the module supplement, keeping the higher weight.
+                val merged = LinkedHashMap<String, Int>()
+                for (asset in listOf("keyboard18/pinyin.table", "keyboard18/extra.table")) {
+                    runCatching { context.assets.open(asset) }.getOrNull()?.use { input ->
+                        GZIPInputStream(input).bufferedReader(Charsets.UTF_8).forEachLine { line ->
+                            val parts = line.split('\t')
+                            if (parts.size == 3) {
+                                val weight = parts[2].toIntOrNull() ?: 0
+                                val key = parts[0] + "\t" + parts[1]
+                                if (weight > (merged[key] ?: -1)) merged[key] = weight
+                            }
+                        }
+                    }
+                }
+                val text = buildString {
+                    merged.forEach { (key, weight) -> append(key).append('\t').append(weight).append('\n') }
+                }.toByteArray(Charsets.UTF_8)
+                val gzip = GZIPOutputStream(BufferedOutputStream(stream))
+                gzip.write(text); gzip.finish(); gzip.flush()
                 atomic.finishWrite(stream)
             } catch (failure: Throwable) { atomic.failWrite(stream); throw failure }
+            revisionFile.writeText(DICTIONARY_REVISION.toString())
         }
-        atomic.openRead().close()
-        return atomic.baseFile
+        AtomicFile(baseFile).openRead().close()
+        return baseFile
     }
     fun openDictionary(context: Context): ParcelFileDescriptor =
         ParcelFileDescriptor.open(dictionaryFile(context), ParcelFileDescriptor.MODE_READ_ONLY)

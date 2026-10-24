@@ -25,6 +25,11 @@ object ConfigManager {
     const val KEY_T9_SHUANGPIN_SCHEME = "pref_t9_shuangpin_scheme"
     const val KEY_BOTTOM_SPACING_ENABLED = "pref_bottom_spacing_enabled"
     const val KEY_BOTTOM_SPACING = "pref_bottom_spacing" // 0 to 100 dp; global geometry
+    // Action text drawn on keys that carry a downward-swipe shortcut.
+    const val KEY_SHORTCUT_LABELS = "pref_shortcut_labels"
+    const val KEY_SHORTCUT_LABEL_SIZE = "pref_shortcut_label_size" // sp, 8 to 20
+    const val KEY_SHORTCUT_LABEL_X = "pref_shortcut_label_x" // dp offset, -40 to 40
+    const val KEY_SHORTCUT_LABEL_Y = "pref_shortcut_label_y" // dp offset, -40 to 40
     const val KEY_VERBOSE_LOG = "pref_verbose_log"
     const val KEY_SPLASH_ANIMATION = "pref_splash_animation" // Settings app only; defaults to on
 
@@ -72,6 +77,10 @@ object ConfigManager {
     @Volatile private var cachedT9ShuangpinScheme = "XIAOHE"
     @Volatile private var cachedBottomSpacingEnabled = false
     @Volatile private var cachedBottomSpacing = 0
+    @Volatile private var cachedShortcutLabels = false
+    @Volatile private var cachedShortcutLabelSize = 11
+    @Volatile private var cachedShortcutLabelX = 0
+    @Volatile private var cachedShortcutLabelY = -2
     @Volatile private var cachedVerboseLog = false
     @Volatile private var cachedStyleEnabled = false
     @Volatile private var cachedCornerRadius = 16
@@ -130,6 +139,10 @@ object ConfigManager {
                 cachedT9ShuangpinScheme = bundle.getString(KEY_T9_SHUANGPIN_SCHEME, "XIAOHE") ?: "XIAOHE"
                 cachedBottomSpacingEnabled = bundle.getBoolean(KEY_BOTTOM_SPACING_ENABLED, false)
                 cachedBottomSpacing = bundle.getInt(KEY_BOTTOM_SPACING, 0).coerceIn(0, 100)
+                cachedShortcutLabels = bundle.getBoolean(KEY_SHORTCUT_LABELS, false)
+                cachedShortcutLabelSize = bundle.getInt(KEY_SHORTCUT_LABEL_SIZE, 11).coerceIn(8, 20)
+                cachedShortcutLabelX = bundle.getInt(KEY_SHORTCUT_LABEL_X, 0).coerceIn(-40, 40)
+                cachedShortcutLabelY = bundle.getInt(KEY_SHORTCUT_LABEL_Y, -2).coerceIn(-40, 40)
                 cachedVerboseLog = bundle.getBoolean(KEY_VERBOSE_LOG, false)
                 cachedStyleEnabled = bundle.getBoolean(KEY_STYLE_ENABLED, false)
                 cachedCornerRadius = bundle.getInt(KEY_CORNER_RADIUS, 16)
@@ -245,6 +258,26 @@ object ConfigManager {
     fun getBottomSpacing(): Int {
         if (hasSyncedFromProvider) return cachedBottomSpacing
         return (remotePrefs?.getInt(KEY_BOTTOM_SPACING, 0) ?: cachedBottomSpacing).coerceIn(0, 100)
+    }
+
+    fun isShortcutLabelsEnabled(): Boolean {
+        if (hasSyncedFromProvider) return cachedShortcutLabels
+        return remotePrefs?.getBoolean(KEY_SHORTCUT_LABELS, false) ?: cachedShortcutLabels
+    }
+
+    fun getShortcutLabelSize(): Int {
+        if (hasSyncedFromProvider) return cachedShortcutLabelSize
+        return (remotePrefs?.getInt(KEY_SHORTCUT_LABEL_SIZE, 11) ?: cachedShortcutLabelSize).coerceIn(8, 20)
+    }
+
+    fun getShortcutLabelX(): Int {
+        if (hasSyncedFromProvider) return cachedShortcutLabelX
+        return (remotePrefs?.getInt(KEY_SHORTCUT_LABEL_X, 0) ?: cachedShortcutLabelX).coerceIn(-40, 40)
+    }
+
+    fun getShortcutLabelY(): Int {
+        if (hasSyncedFromProvider) return cachedShortcutLabelY
+        return (remotePrefs?.getInt(KEY_SHORTCUT_LABEL_Y, -2) ?: cachedShortcutLabelY).coerceIn(-40, 40)
     }
 
     fun getOpacity(): Int {

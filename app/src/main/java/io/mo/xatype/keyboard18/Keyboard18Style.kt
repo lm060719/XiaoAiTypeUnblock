@@ -3,9 +3,9 @@ package io.mo.xatype.keyboard18
 /** Shared key geometry and typography for the native layout and settings preview. */
 object Keyboard18Style {
     const val SINGLE_WEIGHT = 1f
-    const val PAIR_WEIGHT = 1.6f
-    const val CONTROL_WEIGHT = 1.3f
-    const val SIDE_WEIGHT = 0.5f
+    /** Equal-width keys: the 7/6/5 rows share one grid instead of widening paired letters. */
+    const val PAIR_WEIGHT = 1f
+    const val CONTROL_WEIGHT = 1f
     const val FALLBACK_SPACING = 5f
     const val MAIN_TEXT_SCALE = 0.9f
     const val PREVIEW_TEXT_SIZE = 18f

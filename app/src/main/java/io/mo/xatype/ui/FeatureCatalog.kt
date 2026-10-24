@@ -33,11 +33,15 @@ internal object FeatureCatalog {
     )
 
     val keyboardShortcuts = Feature(ConfigManager.KEY_KEYBOARD_SHORTCUTS, "按键下滑快捷操作",
-        "按住按键下滑，快速全选、复制、粘贴", Detail(
+        "按住按键下滑，快速段首、复制、粘贴、剪切、全选", Detail(
             "按住对应按键向下滑，字母会随距离渐变为功能图标；轻震后松手执行，往回滑可取消。",
             notes = listOf("适用于拼音九键、18 键与拼音/英文 26 键。"),
             extra = ::shortcutTable
         ))
+
+    /** Hint text drawn on the same keys that carry the swipe action. */
+    val shortcutLabels = Feature(ConfigManager.KEY_SHORTCUT_LABELS, "在按键上显示操作文字",
+        "在九键、18键标出段首、复制、粘贴、全选等文字，大小与位置可调")
 
     val keyboardHeight = Feature(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, "解除键盘高度上限",
         "可继续向上拉伸")
@@ -58,10 +62,11 @@ internal object FeatureCatalog {
 
     /** Rows of action, nine-key, 26-key and 18-key triggers. */
     private val shortcutKeys = listOf(
-        listOf("全选", "7", "Z", "Z"),
+        listOf("段首", "7", "Z", "Z"),
         listOf("复制", "8", "C", "XC"),
         listOf("粘贴", "9", "V", "V"),
-        listOf("段首", "4", "B", "BN"),
+        listOf("剪切", "4", "B", "—"),
+        listOf("全选", "—", "—", "BN"),
         listOf("段尾", "6", "M", "M")
     )
 

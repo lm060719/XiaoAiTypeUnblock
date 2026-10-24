@@ -44,7 +44,9 @@ class Keyboard18Activity : AppCompatActivity() {
     private lateinit var shiftButton: AppCompatButton
     private lateinit var schemeButton: AppCompatButton
     private lateinit var inputHelp: TextView
+    private lateinit var keypad: LinearLayout
     private val letterButtons = LinkedHashMap<String, AppCompatButton>()
+    private val englishButtons = LinkedHashMap<Char, AppCompatButton>()
     private val previewControls = ArrayList<View>()
     private val worker = Executors.newSingleThreadExecutor()
     private var engine: Keyboard18Engine? = null
@@ -78,7 +80,7 @@ class Keyboard18Activity : AppCompatActivity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         body.addView(text("更宽的按键，更轻松地输入", ShapeUiStyle.TITLE, strong = true))
-        body.addView(text("按图片的 7 · 6 · 5 布局。中文点按分组键，长按选择准确字母和数字；开启首页「字母下滑快捷操作」后，底排字母下滑渐变为功能图标，轻震后松手执行。",
+        body.addView(text("按图片的 7 · 6 · 5 布局，三排同宽。中文点按分组键，长按选择准确字母和数字；切到英文自动换成 26 键。开启首页「字母下滑快捷操作」后，底排字母下滑渐变为功能图标，轻震后松手执行。",
             ShapeUiStyle.BODY, secondary = true), spaced())
         val settings = card()
         enabled = SwitchCompat(this).apply {
@@ -146,58 +148,9 @@ class Keyboard18Activity : AppCompatActivity() {
         candidateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         preview.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false
             addView(candidateRow, android.widget.FrameLayout.LayoutParams(-2, -2)) }, LinearLayout.LayoutParams(-1, -2))
-        Keyboard18Keys.rows.forEachIndexed { rowIndex, groups ->
-            val row = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
-            if (rowIndex == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 0, Keyboard18Style.SIDE_WEIGHT))
-            if (rowIndex == 2) {
-                shiftButton = keyButton("⇧") { flush(); uppercase = !uppercase; labels() }
-                row.addView(shiftButton, keyParams(Keyboard18Style.CONTROL_WEIGHT))
-            }
-            groups.forEach { group ->
-                val button = keyButton(group) {
-                    val decoder = engine ?: return@keyButton
-                    if (english || uppercase) { flush(); insert(if (uppercase) group.first().uppercaseChar().toString() else group.first().toString()) }
-                    else showResult(decoder.input(Keyboard18Keys.code(group).toChar()))
-                }
-                button.contentDescription = "${group.uppercase()}键，长按选择字母和符号；下滑快捷操作由首页开关控制"
-                (button as ShortcutSwipeButton).apply {
-                    shortcut = KeyboardShortcuts.groups18[group]
-                    shortcutsEnabled = { ConfigManager.getLocalPrefs(this@Keyboard18Activity)
-                        .getBoolean(ConfigManager.KEY_KEYBOARD_SHORTCUTS, false) }
-                    executeShortcut = { this@Keyboard18Activity.shortcut(it) }
-                }
-                button.chooseOnLongPress { popup(group) }
-                letterButtons[group] = button
-                row.addView(button, keyParams(Keyboard18Style.weight(group)))
-            }
-            if (rowIndex == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 0, Keyboard18Style.SIDE_WEIGHT))
-            if (rowIndex == 2) {
-                val delete = keyButton("⌫") {
-                    val decoder = engine ?: return@keyButton
-                    if (decoder.raw.isNotEmpty()) showResult(decoder.backspace()) else {
-                        val start = output.selectionStart.coerceAtLeast(0)
-                        val end = output.selectionEnd.coerceAtLeast(start)
-                        if (end > start) output.text.delete(start, end)
-                        else if (start > 0) output.text.delete(Character.offsetByCodePoints(output.text, start, -1), start)
-                    }
-                }
-                delete.contentDescription = "退格，长按清空预览"
-                delete.setOnLongClickListener { engine?.clear(); output.text.clear(); showCandidates(); true }
-                row.addView(delete, keyParams(Keyboard18Style.CONTROL_WEIGHT))
-            }
-            preview.addView(row, LinearLayout.LayoutParams(-1, -2))
-        }
-        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        bottom.addView(keyButton("符") { symbols() }, keyParams(1f))
-        bottom.addView(keyButton("123") { choices("数字", (0..9).map(Int::toString)) { literal(it) } }, keyParams(1f))
-        bottom.addView(keyButton("，") { literal(if (english) "," else "，") }, keyParams(0.7f))
-        bottom.addView(keyButton("空格") { val decoder = engine ?: return@keyButton
-            if (decoder.raw.isNotEmpty()) showResult(decoder.input(' ')) else insert(" ") }, keyParams(2.5f))
-        bottom.addView(keyButton("。") { literal(if (english) "." else "。") }, keyParams(0.7f))
-        languageButton = keyButton("中") { flush(); english = !english; labels(); showCandidates() }
-        bottom.addView(languageButton, keyParams(1f))
-        bottom.addView(keyButton("↵", accent = true) { flush(); insert("\n") }, keyParams(1f))
-        preview.addView(bottom, LinearLayout.LayoutParams(-1, -2))
+        keypad = column()
+        preview.addView(keypad, LinearLayout.LayoutParams(-1, -2))
+        buildKeypad()
         progress = text("正在准备离线词库…", ShapeUiStyle.CAPTION, secondary = true)
         preview.addView(progress, spaced())
         preview.addView(button("清空预览") { engine?.clear(); output.text.clear(); showCandidates() }, spaced())
@@ -268,14 +221,100 @@ class Keyboard18Activity : AppCompatActivity() {
         if (snapshot.getLong(Keyboard18Store.STATUS_TIME) > 0) pendingRestart = false
         status.text = if (pendingRestart) "设置已保存，请重启输入法应用。" else snapshot.getString(Keyboard18Store.STATUS)
     }
+    private fun buildKeypad() {
+        keypad.removeAllViews()
+        letterButtons.clear(); englishButtons.clear()
+        if (english) {
+            // English mirrors the host: a plain 26-key QWERTY instead of the 18-key grid.
+            listOf("qwertyuiop", "asdfghjkl", "zxcvbnm").forEachIndexed { index, letters ->
+                val row = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
+                if (index == 2) {
+                    shiftButton = keyButton("⇧") { uppercase = !uppercase; labels() }
+                    row.addView(shiftButton, keyParams(Keyboard18Style.CONTROL_WEIGHT))
+                }
+                letters.forEach { letter ->
+                    val button = keyButton(letter.toString()) {
+                        flush()
+                        insert((if (uppercase) letter.uppercaseChar() else letter).toString())
+                    }
+                    button.contentDescription = "${letter.uppercaseChar()}键"
+                    englishButtons[letter] = button
+                    row.addView(button, keyParams(1f))
+                }
+                if (index == 2) {
+                    val delete = keyButton("⌫") { deletePreview() }
+                    delete.contentDescription = "退格，长按清空预览"
+                    delete.setOnLongClickListener { engine?.clear(); output.text.clear(); showCandidates(); true }
+                    row.addView(delete, keyParams(Keyboard18Style.CONTROL_WEIGHT))
+                }
+                keypad.addView(row, LinearLayout.LayoutParams(-1, -2))
+            }
+        } else {
+            Keyboard18Keys.rows.forEachIndexed { rowIndex, groups ->
+                val row = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
+                if (rowIndex == 2) {
+                    shiftButton = keyButton("⇧") { flush(); uppercase = !uppercase; labels() }
+                    row.addView(shiftButton, keyParams(Keyboard18Style.CONTROL_WEIGHT))
+                }
+                groups.forEach { group ->
+                    val button = keyButton(group) {
+                        val decoder = engine ?: return@keyButton
+                        if (uppercase) { flush(); insert(group.first().uppercaseChar().toString()) }
+                        else showResult(decoder.input(Keyboard18Keys.code(group).toChar()))
+                    }
+                    button.contentDescription = "${group.uppercase()}键，长按选择字母和符号；下滑快捷操作由首页开关控制"
+                    (button as ShortcutSwipeButton).apply {
+                        shortcut = KeyboardShortcuts.groups18[group]
+                        shortcutsEnabled = { ConfigManager.getLocalPrefs(this@Keyboard18Activity)
+                            .getBoolean(ConfigManager.KEY_KEYBOARD_SHORTCUTS, false) }
+                        executeShortcut = { this@Keyboard18Activity.shortcut(it) }
+                    }
+                    button.chooseOnLongPress { popup(group) }
+                    letterButtons[group] = button
+                    row.addView(button, keyParams(Keyboard18Style.weight(group)))
+                }
+                if (rowIndex == 2) {
+                    val delete = keyButton("⌫") { deletePreview() }
+                    delete.contentDescription = "退格，长按清空预览"
+                    delete.setOnLongClickListener { engine?.clear(); output.text.clear(); showCandidates(); true }
+                    row.addView(delete, keyParams(Keyboard18Style.CONTROL_WEIGHT))
+                }
+                keypad.addView(row, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        bottom.addView(keyButton("符") { symbols() }, keyParams(1f))
+        bottom.addView(keyButton("123") { choices("数字", (0..9).map(Int::toString)) { literal(it) } }, keyParams(1f))
+        bottom.addView(keyButton("，") { literal(if (english) "," else "，") }, keyParams(0.7f))
+        bottom.addView(keyButton("空格") { val decoder = engine
+            if (decoder != null && decoder.raw.isNotEmpty()) showResult(decoder.input(' ')) else insert(" ") }, keyParams(2.5f))
+        bottom.addView(keyButton("。") { literal(if (english) "." else "。") }, keyParams(0.7f))
+        languageButton = keyButton(if (english) "英" else "中") { flush(); english = !english; buildKeypad(); showCandidates() }
+        bottom.addView(languageButton, keyParams(1f))
+        bottom.addView(keyButton("↵", accent = true) { flush(); insert("\n") }, keyParams(1f))
+        keypad.addView(bottom, LinearLayout.LayoutParams(-1, -2))
+        labels()
+    }
+    private fun deletePreview() {
+        val decoder = engine
+        if (decoder != null && decoder.raw.isNotEmpty()) showResult(decoder.backspace()) else {
+            val start = output.selectionStart.coerceAtLeast(0)
+            val end = output.selectionEnd.coerceAtLeast(start)
+            if (end > start) output.text.delete(start, end)
+            else if (start > 0) output.text.delete(Character.offsetByCodePoints(output.text, start, -1), start)
+        }
+    }
     private fun labels() {
         letterButtons.forEach { (group, view) ->
             val index = Keyboard18Keys.groups.indexOf(group)
             val hint = Keyboard18Keys.hints[index]
-            view.text = SpannableString(hint + "\n" + Keyboard18Style.label(group, uppercase)).apply {
+            view.text = SpannableString(hint + "\n" + Keyboard18Style.label(group, true)).apply {
                 setSpan(RelativeSizeSpan(Keyboard18Style.PREVIEW_HINT_SCALE), 0, hint.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 setSpan(ForegroundColorSpan(style.secondary), 0, hint.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
+        }
+        englishButtons.forEach { (letter, view) ->
+            view.text = (if (uppercase) letter.uppercaseChar() else letter).toString()
         }
         languageButton.text = if (english) "英" else "中"
         shiftButton.text = if (uppercase) "⇪" else "⇧"
@@ -285,7 +324,7 @@ class Keyboard18Activity : AppCompatActivity() {
         val decoder = engine
         composing.text = decoder?.display?.ifEmpty {
             when {
-                english -> "英文：点按首字母，长按选择另一字母"
+                english -> "英文：26键，点按输入字母"
                 decoder.scheme != null -> "${decoder.scheme!!.title}：按双拼编码输入"
                 else -> "全拼 / 简拼：为什么 → WE · SD · M"
             }
@@ -318,7 +357,8 @@ class Keyboard18Activity : AppCompatActivity() {
         flush()
         when (action) {
             "全选" -> output.selectAll()
-            "复制" -> output.onTextContextMenuItem(android.R.id.copy)
+            "复制" -> { output.selectAll(); output.onTextContextMenuItem(android.R.id.copy) }
+            "剪切" -> { output.selectAll(); output.onTextContextMenuItem(android.R.id.cut) }
             "粘贴" -> output.onTextContextMenuItem(android.R.id.paste)
             "段首", "段尾" -> output.setSelection(KeyboardShortcuts.paragraphPosition(output.text,
                 output.selectionStart.coerceAtLeast(0), 0, action == "段尾"))

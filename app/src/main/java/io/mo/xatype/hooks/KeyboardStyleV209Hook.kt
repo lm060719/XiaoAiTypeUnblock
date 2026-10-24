@@ -364,20 +364,16 @@ object KeyboardStyleV209Hook
 
                 module.hook(method).intercept { chain ->
                     val result = chain.proceed()
+                    val helper = chain.thisObject
+                    val service = XposedUtils.getObjectField(helper, profile.helperServiceField) as?
+                        android.inputmethodservice.InputMethodService
+                    val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View
 
-                    if (ConfigManager.isStyleEnabled())
+                    if (ConfigManager.isStyleEnabled() && service != null && material != null)
                     {
-                        val helper = chain.thisObject
-                        val service = XposedUtils.getObjectField(helper, profile.helperServiceField) as?
-                            android.inputmethodservice.InputMethodService
-                        val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View
-
-                        if (service != null && material != null)
-                        {
+                        applyMaterialStyle(module, service, helper, material)
+                        material.post {
                             applyMaterialStyle(module, service, helper, material)
-                            material.post {
-                                applyMaterialStyle(module, service, helper, material)
-                            }
                         }
                     }
 
