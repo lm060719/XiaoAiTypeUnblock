@@ -10,7 +10,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.lang.reflect.Proxy
 
-/** Decorate the resolved native engine; its decoding, learning and lifecycle stay native. */
+/** Emoji decoration and post-commit prediction control share the resolved native engine. */
 class EmojiHostBridge(
     private val loader: ClassLoader,
     private val abi: KeyboardAbi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_ENGINE)
@@ -24,8 +24,13 @@ class EmojiHostBridge(
     private val candidateConstructor = abi.type("z8.a").getConstructor(String::class.java,
         String::class.java, Int::class.javaPrimitiveType, abi.type("z8.b"), String::class.java)
     private val pairConstructor = abi.type("nc.f").getConstructor(Any::class.java, Any::class.java)
+    private val resultType = abi.type("z8.r")
+    private val resultConstructor = resultType.getConstructor(Boolean::class.javaPrimitiveType,
+        String::class.java, List::class.java, String::class.java, Int::class.javaPrimitiveType,
+        List::class.java, String::class.java)
     private val getState = baseInterface.abiMethod(abi, "f")
     private val getMode = baseInterface.abiMethod(abi, "a")
+    private val predicting = baseInterface.abiMethod(abi, "e")
     private val clear = baseInterface.abiMethod(abi, "clear")
     private val page = extended.abiMethod(abi, "m", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
     private val textField = fieldWithValue(candidateConstructor.newInstance(
@@ -33,8 +38,15 @@ class EmojiHostBridge(
     private val rawField = fieldWithValue(composing.getConstructor(Int::class.javaPrimitiveType,
         String::class.java, String::class.java, List::class.java).newInstance(
         0, "emoji-probe-raw", "emoji-probe-display", emptyList<Any>()), "emoji-probe-raw")
+    private val pairProbe = pairConstructor.newInstance("selection-probe", true)
+    private val commitField = fieldWithValue(pairProbe, "selection-probe")
+    private val acceptedField = fieldWithValue(pairProbe, true)
+    private val resultProbeValues = arrayOf(true, "composing-probe", listOf("candidates-probe"),
+        "commit-probe", 17, listOf("errors-probe"), "accepted-probe")
+    private val resultProbe = resultConstructor.newInstance(*resultProbeValues)
+    private val resultFields = resultProbeValues.map { fieldWithValue(resultProbe, it) }
 
-    private fun fieldWithValue(instance: Any, value: String) = instance.javaClass.declaredFields
+    private fun fieldWithValue(instance: Any, value: Any) = instance.javaClass.declaredFields
         .filterNot { Modifier.isStatic(it.modifiers) }.onEach { it.isAccessible = true }
         .single { it.get(instance) == value }
 
@@ -49,19 +61,23 @@ class EmojiHostBridge(
 
     fun create(engine: Any, dictionary: () -> EmojiCandidates?, enabled: () -> Boolean,
                scheme: () -> ShuangpinScheme? = { null },
+               prediction: () -> PredictionMode = { PredictionMode.KEEP },
+               predictionFailed: (Throwable) -> Unit = {},
                observe: (String) -> Unit = {},
                failed: (Throwable) -> Unit): Any = Proxy.newProxyInstance(loader, arrayOf(extended),
-        Session(engine, dictionary, enabled, scheme, observe, failed))
+        Session(engine, dictionary, enabled, scheme, prediction, predictionFailed, observe, failed))
 
     private inner class Session(
         val engine: Any, val dictionary: () -> EmojiCandidates?, val enabled: () -> Boolean,
-        val scheme: () -> ShuangpinScheme?, val observe: (String) -> Unit, val failed: (Throwable) -> Unit
+        val scheme: () -> ShuangpinScheme?, val prediction: () -> PredictionMode,
+        val predictionFailed: (Throwable) -> Unit, val observe: (String) -> Unit, val failed: (Throwable) -> Unit
     ) : InvocationHandler {
         private var nativeSize = 0
         private var head = emptyList<Any>()
         private var indices = emptyList<Int?>()
         private var composition = ""
         private var unavailable = false
+        private var predictionUnavailable = false
         private var observations = 0
 
         private fun trace(message: String) {
@@ -78,13 +94,61 @@ class EmojiHostBridge(
             return if (composing.isInstance(state)) rawField.get(state) as String else ""
         }
 
+        private fun <T> predictionOr(fallback: T, block: () -> T): T {
+            if (predictionUnavailable) return fallback
+            return try { block() } catch (failure: Exception) {
+                predictionUnavailable = true
+                predictionFailed(failure)
+                fallback
+            }
+        }
+
+        private fun predictionMode() = predictionOr(PredictionMode.KEEP, prediction)
+
+        private fun isPrediction() = predicting.invoke(engine) == true && raw().isEmpty()
+
+        private fun discardPrediction(): Boolean = predictionOr(false) {
+            // Never clear an unconsumed suffix, even if a future engine reports prediction incorrectly.
+            if (isPrediction()) {
+                clear.invoke(engine)
+                reset()
+                trace("post-commit prediction cleared")
+                true
+            } else false
+        }
+
+        private fun selectNative(method: Method, arguments: Array<out Any?>): Any? {
+            val mode = predictionMode()
+            val result = method.invoke(engine, *arguments) // A native selection is never retried.
+            return if (mode == PredictionMode.DISABLE) {
+                predictionOr(result) {
+                    val committed = when {
+                        result is String -> result.isNotEmpty()
+                        resultType.isInstance(result) -> (resultFields[3].get(result) as? String).orEmpty().isNotEmpty()
+                        result != null -> acceptedField.get(result) == true &&
+                            (commitField.get(result) as? String).orEmpty().isNotEmpty()
+                        else -> false
+                    }
+                    if (committed && discardPrediction() && resultType.isInstance(result)) {
+                        // The key callback's snapshot predates clear(); preserve its commit and metadata.
+                        resultConstructor.newInstance(*resultFields.mapIndexed { index, field ->
+                            if (index == 2) emptyList<Any>() else field.get(result)
+                        }.toTypedArray())
+                    } else result
+                }
+            } else result
+        }
+
         // ponytail: serialize one engine's input/page callbacks; use versioned snapshots
         // if asynchronous native pagination later needs to run concurrently.
         @Synchronized
         override fun invoke(proxy: Any, method: Method, args: Array<out Any?>?): Any? {
             val arguments = args.orEmpty()
             try {
-                return when (abi.canonical(method)) {
+                val name = abi.canonical(method)
+                if (name in setOf("e", "f", "s", "m", "v") && predictionMode() == PredictionMode.DISABLE)
+                    discardPrediction()
+                return when (name) {
                     "equals" -> proxy === arguments[0]
                     "hashCode" -> System.identityHashCode(proxy)
                     "toString" -> "EmojiEngine(resolved ABI)"
@@ -133,7 +197,7 @@ class EmojiHostBridge(
                     }
                     "b", "n" -> {
                         val index = arguments[0] as Int
-                        if (head.isEmpty() || index < 0) return method.invoke(engine, *arguments)
+                        if (head.isEmpty() || index < 0) return selectNative(method, arguments)
                         val nativeIndex = if (index < head.size) indices[index] else index - (head.size - nativeSize)
                         if (nativeIndex == null) {
                             // A delayed tap must not clear a newer or partially selected composition;
@@ -150,13 +214,15 @@ class EmojiHostBridge(
                         } else {
                             val forwarded = arguments.copyOf().mapIndexed { i, arg -> if (i == 0) nativeIndex else arg }.toTypedArray()
                             reset()
-                            method.invoke(engine, *forwarded)
+                            selectNative(method, forwarded)
                         }
                     }
                     "a", "e", "f", "j", "v", "singleCharFilterSupported" -> method.invoke(engine, *arguments)
                     else -> {
                         reset()
-                        method.invoke(engine, *arguments)
+                        // Space/enter may commit through a key callback instead of candidate selection.
+                        if (method.returnType == resultType) selectNative(method, arguments)
+                        else method.invoke(engine, *arguments)
                     }
                 }
             } catch (failure: InvocationTargetException) {

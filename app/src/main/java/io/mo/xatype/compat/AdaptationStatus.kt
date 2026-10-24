@@ -22,6 +22,7 @@ object AdaptationStatus {
         HostSymbols.T9_SHUANGPIN_STRING to "九键双拼",
         HostSymbols.KEYBOARD_ENGINE to "虎码/五笔与18键引擎",
         HostSymbols.KEYBOARD_EMOJI to "Emoji 候选增强",
+        HostSymbols.KEYBOARD_PREDICTION to "上屏后联想",
         HostSymbols.KEYBOARD_LAYOUT to "18键布局",
         HostSymbols.KEYBOARD_ACTIONS to "快捷操作输入收尾",
         HostSymbols.KEYBOARD_PICKER to "独立键盘选择",

@@ -136,7 +136,8 @@ class XiaoAiTypeModule : XposedModule() {
             EmojiCandidateHook.install(this, classLoader)
         } catch (t: Throwable) {
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_EMOJI, t)
-            XposedUtils.logError(this, "Emoji candidates unavailable for this host ABI", t)
+            HostSymbols.markUnavailable(HostSymbols.KEYBOARD_PREDICTION, t)
+            XposedUtils.logError(this, "Native candidate enhancements unavailable for this host ABI", t)
         }
 
         if (BuildConfig.INPUT_DIAGNOSTICS) {

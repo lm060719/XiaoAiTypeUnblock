@@ -2,6 +2,7 @@
 <resources>
     <dimen name="settings_row_padding">16dp</dimen>
     <dimen name="settings_touch_height">48dp</dimen>
+    <dimen name="settings_trailing_width">56dp</dimen>
     <dimen name="settings_title_size">15sp</dimen>
     <dimen name="settings_description_size">13sp</dimen>
     <dimen name="settings_divider_height">1dp</dimen>

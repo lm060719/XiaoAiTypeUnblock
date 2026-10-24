@@ -127,31 +127,135 @@ class EmojiCandidatesTest {
         assertEquals(0, native.cleared)
     }
 
+    @Test fun `prediction defaults preserve first and subsequent native associations`() {
+        assertEquals(PredictionMode.KEEP, PredictionMode.resolve(null))
+        assertEquals(PredictionMode.KEEP, PredictionMode.resolve("unknown"))
+        assertEquals(listOf(PredictionMode.KEEP, PredictionMode.DISABLE), PredictionMode.entries)
+        listOf("DISABLE", "DISABLE_NEXT", "DISABLE_CONTINUOUS").forEach {
+            assertEquals(PredictionMode.DISABLE, PredictionMode.resolve(it))
+        }
+        val native = Native().apply { predictAfterSelection = true }
+        val proxy = bridge.create(native, { error("Emoji dictionary must not load") }, { false }) { throw AssertionError(it) } as p
+        assertEquals("小猪", proxy.n(0, "小猪").first)
+        repeat(2) {
+            assertTrue(proxy.e())
+            assertEquals(listOf("你好", "世界"), proxy.s().map { it.text })
+            assertEquals("你好", proxy.b(0))
+        }
+        assertEquals(0, native.cleared)
+    }
+
+    @Test fun `disable clears only predictions across selection and snapshot paths`() {
+        val native = Native().apply { predictAfterSelection = true }
+        val proxy = bridge.create(native, { error("Emoji dictionary must not load") }, { false },
+            prediction = { PredictionMode.DISABLE }) { throw AssertionError(it) } as p
+        assertEquals(listOf("小猪", "小朱"), proxy.s().map { it.text })
+        assertEquals("小猪", proxy.n(0, "小猪").first)
+        assertSame(t, proxy.f())
+        assertTrue(proxy.s().isEmpty())
+        assertFalse(proxy.e())
+        assertEquals(1, native.cleared)
+        proxy.d("xiao'zhu")
+        assertEquals("小朱", proxy.b(1))
+        assertEquals(2, native.cleared)
+        // Predictions may also arrive from a native key commit or an external update.
+        native.hasPredictions = true
+        assertTrue(proxy.m(0, 2).isEmpty())
+        assertEquals(3, native.cleared)
+        native.hasPredictions = true
+        assertSame(t, proxy.f())
+        assertEquals(4, native.cleared)
+        native.raw = "pei'qi"
+        native.hasPredictions = true
+        assertEquals("pei'qi", (proxy.f() as s).raw)
+        assertEquals(4, native.cleared)
+    }
+
+    @Test fun `disable preserves emoji mapping remaining input and space commits`() {
+        val native = Native().apply { predictAfterSelection = true }
+        val proxy = bridge.create(native, { table }, { true },
+            prediction = { PredictionMode.DISABLE }) { throw AssertionError(it) } as p
+        assertEquals(listOf("小猪", "🐷", "🐖", "🐽", "小朱"), proxy.s().map { it.text })
+        assertEquals("小朱", proxy.n(4, "小朱").first)
+        assertTrue(proxy.s().isEmpty())
+        assertEquals(1, native.cleared)
+        // An invalid selection must not duplicate the native commit or clear.
+        assertEquals("", proxy.n(-1, "").first)
+        assertFalse(proxy.e())
+        assertEquals(1, native.cleared)
+        proxy.d("xiaozhu")
+        native.suffixAfterSelection = "pei'qi"
+        assertEquals("小猪", proxy.b(0))
+        assertEquals("pei'qi", (proxy.f() as s).raw)
+        assertEquals(1, native.cleared)
+        native.suffixAfterSelection = ""
+        // A native key result can contain a commit and a stale prediction snapshot.
+        native.raw = ""
+        native.hasPredictions = true
+        val committed = proxy.h(' ')
+        assertEquals("你好", committed.commit)
+        assertTrue(committed.candidates.isEmpty())
+        assertTrue(committed.consumed)
+        assertEquals(2, committed.delete)
+        assertEquals(listOf("metadata"), committed.errors)
+        assertEquals("accepted", committed.acceptedRaw)
+        assertTrue(proxy.s().isEmpty())
+        assertEquals(2, native.cleared)
+    }
+
+    @Test fun `prediction setting failure preserves native commit without retrying selection`() {
+        val native = Native().apply { predictAfterSelection = true }
+        var failures = 0
+        val proxy = bridge.create(native, { table }, { true }, prediction = { error("Unavailable setting") },
+            predictionFailed = { failures++ }) { throw AssertionError(it) } as p
+        assertEquals("小猪", proxy.n(0, "小猪").first)
+        assertEquals(listOf("你好", "世界"), proxy.s().map { it.text })
+        assertEquals("你好", proxy.b(0))
+        assertEquals(1, failures)
+        assertEquals(0, native.cleared)
+    }
+
     /** Records the native index/consumption contract independently of emoji insertion. */
     private class Native : p {
         var raw = "xiao'zhu"
         var selected = -1
         var cleared = 0
         var pageStart = -1
+        var predictAfterSelection = false
+        var hasPredictions = false
+        var suffixAfterSelection = ""
         private val words = listOf("小猪", "小朱") + (2..49).map { "候选$it" }
+        private val predictionWords = listOf("你好", "世界")
+        private fun currentWords() = if (e()) predictionWords else words
         private fun candidate(text: String) = a(text, null, 1, b.SYSTEM, null)
         private fun snapshot() = r(true, raw, s(), null, 0, emptyList(), raw)
         override fun a() = g.PINYIN
-        override fun b(index: Int): String { selected = index; raw = ""; return words.getOrNull(index).orEmpty() }
-        override fun n(index: Int, fallback: String) = nc.f(b(index), true)
-        override fun s() = if (raw.isEmpty()) emptyList() else words.take(2).map(::candidate)
-        override fun m(start: Int, count: Int): List<a> { pageStart = start; return words.drop(start).take(count).map(::candidate) }
-        override fun f(): u = if (raw.isEmpty()) t else s(0, raw, raw, emptyList())
-        override fun clear() { cleared++; raw = "" }
-        override fun d(text: String): r { raw = text; return snapshot() }
+        override fun b(index: Int): String {
+            val word = currentWords().getOrNull(index) ?: return ""
+            selected = index; raw = suffixAfterSelection; hasPredictions = predictAfterSelection
+            return word
+        }
+        override fun n(index: Int, fallback: String) = b(index).let { nc.f(it, it.isNotEmpty()) }
+        override fun s() = if (raw.isEmpty() && !e()) emptyList() else currentWords().take(2).map(::candidate)
+        override fun m(start: Int, count: Int): List<a> {
+            pageStart = start
+            return if (raw.isEmpty() && !e()) emptyList() else currentWords().drop(start).take(count).map(::candidate)
+        }
+        override fun f(): u = if (raw.isEmpty() && !e()) t else s(0, raw, raw, emptyList())
+        override fun clear() { cleared++; raw = ""; hasPredictions = false }
+        override fun d(text: String): r { raw = text; hasPredictions = false; return snapshot() }
         override fun k(): r { raw = raw.dropLast(1); return snapshot() }
         override fun i(code: Int) = h(code.toChar())
-        override fun h(key: Char): r { raw += key; return snapshot() }
+        override fun h(key: Char): r {
+            if (key == ' ' && e()) return r(true, "", s(), b(0), 2, listOf("metadata"), "accepted")
+            raw += key
+            return snapshot()
+        }
         override fun c() = h('\'')
         override fun o(text: String): r { raw += text; return snapshot() }
         override fun g(list: List<Any>) = snapshot()
         override fun r(segment: Int) = snapshot()
-        override fun e() = false
+        override fun e() = raw.isEmpty() && hasPredictions
         override fun j() = ""
         override fun v() = emptyList<Any>()
         override fun destroy() = clear()
