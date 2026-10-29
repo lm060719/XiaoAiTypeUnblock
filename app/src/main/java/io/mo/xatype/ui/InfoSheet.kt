@@ -58,6 +58,8 @@ internal object InfoSheet {
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             val option = if (selectedIndex >= 0) AppCompatRadioButton(context).apply {
+                // RadioGroup reads the checked child's ID before assigning missing IDs.
+                id = View.generateViewId()
                 isChecked = index == selectedIndex
                 buttonTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                     intArrayOf(kit.color(R.color.primary), kit.color(R.color.text_secondary)))
