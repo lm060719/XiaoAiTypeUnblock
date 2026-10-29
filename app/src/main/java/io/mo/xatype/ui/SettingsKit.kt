@@ -9,6 +9,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -121,6 +122,7 @@ internal class SettingsKit(val context: Context) {
 
     private fun trailingIcon(iconRes: Int) = ImageView(context).apply {
         setImageResource(iconRes)
+        scaleType = ImageView.ScaleType.CENTER
         imageTintList = ColorStateList.valueOf(color(R.color.text_secondary))
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
@@ -157,24 +159,29 @@ internal class SettingsKit(val context: Context) {
         detail?.let { row.addView(infoButton(title, it), LinearLayout.LayoutParams(dp(48), dp(48))) }
         val switch = SwitchCompat(context).apply {
             isChecked = checked
-            setPadding(if (detail == null) dimen(R.dimen.space_md) else 0, 0, 0, 0)
+            setPadding(0, 0, 0, 0)
             contentDescription = title
             setOnCheckedChangeListener { view, value ->
                 confirmHaptic(view)
                 onChange(value)
             }
         }
-        row.addView(switch)
+        row.addView(FrameLayout(context).apply {
+            addView(switch, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        }, LinearLayout.LayoutParams(dimen(R.dimen.settings_trailing_width), dp(48)))
         row.setOnClickListener { switch.toggle() }
         return SwitchRow(row, switch)
     }
 
-    fun navRow(title: CharSequence, subtitle: CharSequence?, iconRes: Int?, onClick: () -> Unit): LinearLayout {
+    fun navRow(title: CharSequence, subtitle: CharSequence?, iconRes: Int?, detail: Detail? = null,
+               onClick: () -> Unit): LinearLayout {
         val row = row()
         addLeading(row, iconRes)
         row.addView(titleBlock(title, subtitle, singleLine = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        detail?.let { row.addView(infoButton(title, it), LinearLayout.LayoutParams(dp(48), dp(48))) }
         row.addView(trailingIcon(R.drawable.ic_shape_chevron),
-            LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginStart = dimen(R.dimen.space_sm) })
+            LinearLayout.LayoutParams(dimen(R.dimen.settings_trailing_width), dp(48)))
         row.setOnClickListener { onClick() }
         return row
     }

@@ -10,6 +10,7 @@ import io.mo.xatype.compat.abiMethod
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.EmojiCandidates
 import io.mo.xatype.keyboard.EmojiHostBridge
+import io.mo.xatype.keyboard.PredictionMode
 import io.mo.xatype.keyboard.ShuangpinScheme
 import io.mo.xatype.util.XposedUtils
 import java.util.concurrent.CompletableFuture
@@ -46,8 +47,9 @@ object EmojiCandidateHook {
                 val service = serviceField.get(chain.thisObject) as InputMethodService
                 // Disabled users keep the unwrapped native engine; enabling takes effect after an IME restart.
                 ConfigManager.syncFromProvider(service)
-                if (!ConfigManager.isEmojiCandidatesEnabled()) return@intercept original
-                dictionary.getNow(null) // Start loading off the input thread.
+                if (!ConfigManager.isEmojiCandidatesEnabled() && ConfigManager.getPredictionMode() == PredictionMode.KEEP)
+                    return@intercept original
+                if (ConfigManager.isEmojiCandidatesEnabled()) dictionary.getNow(null) // Load only for emoji enhancement.
                 bridge.create(original, { dictionary.getNow(null) }, {
                     val inputType = service.currentInputEditorInfo?.inputType ?: InputType.TYPE_NULL
                     val variation = inputType and InputType.TYPE_MASK_VARIATION
@@ -61,6 +63,9 @@ object EmojiCandidateHook {
                     } else if (nativeBoolean?.invoke(null, "shuangpin_enabled", false) == true) {
                         ShuangpinScheme.resolve(nativeString?.invoke(null, "shuangpin_scheme", "XIAOHE") as? String)
                     } else null
+                }, prediction = ConfigManager::getPredictionMode, predictionFailed = { failure ->
+                    HostSymbols.markUnavailable(HostSymbols.KEYBOARD_PREDICTION, failure)
+                    XposedUtils.logError(module, "Post-commit prediction control disabled for this session", failure)
                 }, observe = { message ->
                     if (BuildConfig.DEBUG) XposedUtils.log(module, "[Emoji] $message")
                 }, failed = { failure ->
@@ -69,10 +74,11 @@ object EmojiCandidateHook {
                 })
             }.onFailure {
                 HostSymbols.markUnavailable(HostSymbols.KEYBOARD_EMOJI, it)
+                HostSymbols.markUnavailable(HostSymbols.KEYBOARD_PREDICTION, it)
                 XposedUtils.logError(module, "Emoji bridge unavailable; keeping native engine", it)
             }.getOrDefault(original)
         }
         module.deoptimize(factory)
-        XposedUtils.log(module, "Emoji candidate ABI ready (opt-in, resolved ABI)")
+        XposedUtils.log(module, "Native candidate enhancements ready (opt-in, resolved ABI)")
     }
 }

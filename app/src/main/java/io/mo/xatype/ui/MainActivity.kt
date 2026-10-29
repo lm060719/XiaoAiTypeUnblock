@@ -28,6 +28,7 @@ import io.mo.xatype.R
 import io.mo.xatype.compat.AdaptationStatus
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.T9ShuangpinScheme
+import io.mo.xatype.keyboard.PredictionMode
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -351,7 +352,8 @@ class MainActivity : AppCompatActivity() {
     private fun refreshOverview() {
         if (!::purifyCount.isInitialized) return
         purifyCount.text = "${purifyKeys.count { prefs.getBoolean(it, false) }}/${purifyKeys.size}"
-        keyboardCount.text = "${keyboardKeys.count { prefs.getBoolean(it, false) }}/${keyboardKeys.size}"
+        val predictionEnabled = PredictionMode.resolve(prefs.getString(ConfigManager.KEY_PREDICTION_MODE, null)) != PredictionMode.KEEP
+        keyboardCount.text = "${keyboardKeys.count { prefs.getBoolean(it, false) } + if (predictionEnabled) 1 else 0}/${keyboardKeys.size + 1}"
         appearanceState.text = if (prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)) "已启用" else "未启用"
     }
 
@@ -444,7 +446,8 @@ class MainActivity : AppCompatActivity() {
         // Key shortcuts are independent of experimental keyboards and appearance.
         kit.group(root, "输入增强", listOf(
             featureSwitch(FeatureCatalog.keyboardShortcuts).view,
-            featureSwitch(FeatureCatalog.emojiCandidates).view
+            featureSwitch(FeatureCatalog.emojiCandidates).view,
+            predictionModeRow()
         ), first = true)
 
         kit.group(root, "尺寸与布局", listOf(
@@ -464,31 +467,48 @@ class MainActivity : AppCompatActivity() {
         ))
     }
 
+    private fun predictionModeRow(): View {
+        val modes = PredictionMode.entries
+        fun selected() = PredictionMode.resolve(prefs.getString(ConfigManager.KEY_PREDICTION_MODE, null))
+        lateinit var row: View
+        row = kit.navRow("上屏后联想", "${selected().title} · ${selected().summary}", null,
+            detail = SettingsKit.Detail("控制文字上屏后是否显示输入法原有的联想词。",
+                notes = listOf("选择后重启输入法生效。适用于原生拼音与双拼，不影响输入中的候选词和 Emoji 候选增强。"))) {
+            InfoSheet.choose(this, "上屏后联想", modes.map { it.title }, modes.indexOf(selected()),
+                modes.map { it.summary }) { index ->
+                prefs.edit().putString(ConfigManager.KEY_PREDICTION_MODE, modes[index].name).apply()
+                val parent = row.parent as? ViewGroup
+                if (parent != null) {
+                    val position = parent.indexOfChild(row)
+                    val params = row.layoutParams
+                    parent.removeView(row)
+                    parent.addView(predictionModeRow(), position, params)
+                }
+                markRestartNeeded()
+            }
+        }
+        return row
+    }
+
     private fun t9ShuangpinSchemeRow(): View {
         val schemes = T9ShuangpinScheme.entries
         fun selected() = T9ShuangpinScheme.resolve(
             prefs.getString(ConfigManager.KEY_T9_SHUANGPIN_SCHEME, null))
         lateinit var row: View
         row = kit.navRow("九键双拼方案", selected().title, R.drawable.ic_text_fields) {
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("九键双拼方案")
-                .setSingleChoiceItems(schemes.map { it.title }.toTypedArray(), schemes.indexOf(selected())) { dialog, index ->
-                    val scheme = schemes[index]
-                    SettingsKit.confirmHaptic(row)
-                    prefs.edit().putString(ConfigManager.KEY_T9_SHUANGPIN_SCHEME, scheme.name).apply()
-                    // Rebuild the row's subtitle without rebuilding the page or losing scroll position.
-                    val parent = row.parent as? ViewGroup
-                    if (parent != null) {
-                        val position = parent.indexOfChild(row)
-                        val params = row.layoutParams
-                        parent.removeView(row)
-                        parent.addView(t9ShuangpinSchemeRow(), position, params)
-                    }
-                    markRestartNeeded()
-                    dialog.dismiss()
+            InfoSheet.choose(this, "九键双拼方案", schemes.map { it.title }, schemes.indexOf(selected())) { index ->
+                val scheme = schemes[index]
+                prefs.edit().putString(ConfigManager.KEY_T9_SHUANGPIN_SCHEME, scheme.name).apply()
+                // Rebuild the row's subtitle without rebuilding the page or losing scroll position.
+                val parent = row.parent as? ViewGroup
+                if (parent != null) {
+                    val position = parent.indexOfChild(row)
+                    val params = row.layoutParams
+                    parent.removeView(row)
+                    parent.addView(t9ShuangpinSchemeRow(), position, params)
                 }
-                .setNegativeButton("取消", null)
-                .show()
+                markRestartNeeded()
+            }
         }
         return row
     }

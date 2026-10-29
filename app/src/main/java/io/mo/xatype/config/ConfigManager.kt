@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.content.res.Configuration
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.keyboard.PredictionMode
 
 object ConfigManager {
     const val PREFS_NAME = "settings"
@@ -22,6 +23,7 @@ object ConfigManager {
     const val KEY_KEYBOARD_SHORTCUTS = "pref_keyboard_shortcuts"
     const val KEY_T9_SHUANGPIN = "pref_t9_shuangpin"
     const val KEY_EMOJI_CANDIDATES = "pref_emoji_candidates"
+    const val KEY_PREDICTION_MODE = "pref_prediction_mode"
     const val KEY_T9_SHUANGPIN_SCHEME = "pref_t9_shuangpin_scheme"
     const val KEY_BOTTOM_SPACING_ENABLED = "pref_bottom_spacing_enabled"
     const val KEY_BOTTOM_SPACING = "pref_bottom_spacing" // 0 to 100 dp; global geometry
@@ -69,6 +71,7 @@ object ConfigManager {
     @Volatile private var cachedKeyboardShortcuts = false
     @Volatile private var cachedT9Shuangpin = false
     @Volatile private var cachedEmojiCandidates = false
+    @Volatile private var cachedPredictionMode = PredictionMode.KEEP.name
     @Volatile private var cachedT9ShuangpinScheme = "XIAOHE"
     @Volatile private var cachedBottomSpacingEnabled = false
     @Volatile private var cachedBottomSpacing = 0
@@ -127,6 +130,7 @@ object ConfigManager {
                 cachedKeyboardShortcuts = bundle.getBoolean(KEY_KEYBOARD_SHORTCUTS, false)
                 cachedT9Shuangpin = bundle.getBoolean(KEY_T9_SHUANGPIN, false)
                 cachedEmojiCandidates = bundle.getBoolean(KEY_EMOJI_CANDIDATES, false)
+                cachedPredictionMode = bundle.getString(KEY_PREDICTION_MODE, PredictionMode.KEEP.name) ?: PredictionMode.KEEP.name
                 cachedT9ShuangpinScheme = bundle.getString(KEY_T9_SHUANGPIN_SCHEME, "XIAOHE") ?: "XIAOHE"
                 cachedBottomSpacingEnabled = bundle.getBoolean(KEY_BOTTOM_SPACING_ENABLED, false)
                 cachedBottomSpacing = bundle.getInt(KEY_BOTTOM_SPACING, 0).coerceIn(0, 100)
@@ -226,6 +230,10 @@ object ConfigManager {
         if (hasSyncedFromProvider) return cachedEmojiCandidates
         return remotePrefs?.getBoolean(KEY_EMOJI_CANDIDATES, false) ?: cachedEmojiCandidates
     }
+
+    fun getPredictionMode(): PredictionMode = PredictionMode.resolve(
+        if (hasSyncedFromProvider) cachedPredictionMode
+        else remotePrefs?.getString(KEY_PREDICTION_MODE, cachedPredictionMode) ?: cachedPredictionMode)
 
     fun getT9ShuangpinScheme(): String {
         if (hasSyncedFromProvider) return cachedT9ShuangpinScheme

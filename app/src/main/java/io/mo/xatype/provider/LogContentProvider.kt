@@ -39,6 +39,7 @@ class LogContentProvider : ContentProvider() {
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_SHORTCUTS, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_SHORTCUTS, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, false))
+                    result.putString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, local.getString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, "KEEP"))
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN_SCHEME, local.getString(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN_SCHEME, "XIAOHE") ?: "XIAOHE")
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING_ENABLED, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING_ENABLED, false))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING, local.getInt(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING, 0).coerceIn(0, 100))

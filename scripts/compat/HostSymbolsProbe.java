@@ -114,5 +114,13 @@ public final class HostSymbolsProbe {
             Class.forName(bridge[1]).getConstructor(ClassLoader.class, abiType).newInstance(target, abi);
             System.out.println("  BINDINGS OK " + bridge[1]);
         }
+        if ((boolean) has.invoke(instance, "keyboard.surfaceText")) {
+            List<?> methods = (List<?>) abiType.getMethod("namedMethods", String.class, String.class)
+                    .invoke(abi, "qh.c", "h");
+            Object owner = abiType.getMethod("type", String.class).invoke(abi, "qh.c");
+            if (methods.size() != 1 || ((Method) methods.get(0)).getDeclaringClass() != owner)
+                throw new IllegalStateException("Clipboard text scope did not bind uniquely");
+            System.out.println("  BINDINGS OK keyboard.surfaceText");
+        }
     }
 }

@@ -82,20 +82,18 @@ class ShapeInputActivity : AppCompatActivity() {
         }
         val minimum = snapshot.getInt(ShapeStore.DICT_MAX, 1).coerceIn(1, 8)
         val values = (minimum..8).toList()
-        AlertDialog.Builder(this).setTitle("最大码长")
-            .setSingleChoiceItems(values.map { "$it 码" }.toTypedArray(),
-                values.indexOf(snapshot.getInt(ShapeStore.MAX_CODE, 4))) { dialog, index ->
-                val result = runCatching {
-                    val sp = ShapeStore.prefs(this)
-                    check(sp.edit().putInt(ShapeStore.MAX_CODE, values[index])
-                        .putLong(ShapeStore.REVISION, sp.getLong(ShapeStore.REVISION, 0) + 1)
-                        .remove(ShapeStore.STATUS).remove(ShapeStore.STATUS_TIME).commit())
-                    pendingRestart = true
-                }
-                render()
-                result.onFailure { page.showError("无法保存最大码长，请重试。") }
-                dialog.dismiss()
-            }.setNegativeButton("取消", null).show()
+        InfoSheet.choose(this, "最大码长", values.map { "$it 码" },
+            values.indexOf(snapshot.getInt(ShapeStore.MAX_CODE, 4))) { index ->
+            val result = runCatching {
+                val sp = ShapeStore.prefs(this)
+                check(sp.edit().putInt(ShapeStore.MAX_CODE, values[index])
+                    .putLong(ShapeStore.REVISION, sp.getLong(ShapeStore.REVISION, 0) + 1)
+                    .remove(ShapeStore.STATUS).remove(ShapeStore.STATUS_TIME).commit())
+                pendingRestart = true
+            }
+            render()
+            result.onFailure { page.showError("无法保存最大码长，请重试。") }
+        }
     }
 
     private fun showHelp() {

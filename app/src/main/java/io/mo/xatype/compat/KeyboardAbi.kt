@@ -60,9 +60,7 @@ class KeyboardAbi private constructor(private val loader: ClassLoader, private v
      */
     fun method(owner: String, name: String, vararg parameters: Class<*>): Method {
         val prefix = "m:$owner#$name("
-        val candidates = symbols.keys.filter { it.startsWith(prefix) }.map { id ->
-            methods.getOrPut(id) { DexMethod(symbols.getValue(id)).getMethodInstance(loader).apply { isAccessible = true } }
-        }.filter { it.parameterTypes.contentEquals(parameters) }.distinct()
+        val candidates = namedMethods(owner, name).filter { it.parameterTypes.contentEquals(parameters) }
         return candidates.singleOrNull() ?: error("Unresolved keyboard method: $prefix (${candidates.size} matches)")
     }
 
@@ -70,8 +68,11 @@ class KeyboardAbi private constructor(private val loader: ClassLoader, private v
     fun fieldOrNull(type: Class<*>, name: String): Field? =
         if (symbols.containsKey("f:${alias(type)}#$name")) field(type, name) else null
 
-    fun namedMethods(type: Class<*>, name: String): List<Method> {
-        val prefix = "m:${alias(type)}#$name("
+    fun namedMethods(type: Class<*>, name: String): List<Method> = namedMethods(alias(type), name)
+
+    /** Owner IDs remain unambiguous when multiple IDs map to the same host class. */
+    fun namedMethods(owner: String, name: String): List<Method> {
+        val prefix = "m:$owner#$name("
         return symbols.keys.filter { it.startsWith(prefix) }.map { id ->
             methods.getOrPut(id) { DexMethod(symbols.getValue(id)).getMethodInstance(loader).apply { isAccessible = true } }
         }.distinct()

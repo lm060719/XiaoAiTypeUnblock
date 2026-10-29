@@ -15,7 +15,6 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatButton
 import androidx.appcompat.widget.SwitchCompat
@@ -112,12 +111,9 @@ class Keyboard18Activity : AppCompatActivity() {
         schemeButton = button("双拼方案：${ShuangpinScheme.resolve(initialSettings.getString(Keyboard18Store.SCHEME)).title}") {
             val schemes = ShuangpinScheme.entries
             val selected = ShuangpinScheme.resolve(Keyboard18Store.snapshot(this).getString(Keyboard18Store.SCHEME))
-            AlertDialog.Builder(this).setTitle("18键双拼方案")
-                .setSingleChoiceItems(schemes.map { it.title }.toTypedArray(), schemes.indexOf(selected)) { dialog, index ->
-                    schemeButton.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    saveShuangpin(doublePinyin.isChecked, schemes[index])
-                    dialog.dismiss()
-                }.setNegativeButton("取消", null).show()
+            InfoSheet.choose(this, "18 键双拼方案", schemes.map { it.title }, schemes.indexOf(selected)) { index ->
+                saveShuangpin(doublePinyin.isChecked, schemes[index])
+            }
         }
         settings.addView(schemeButton, spaced())
         settings.addView(text("重启应用设置后，在小爱「键盘选择」中选择「18键」。可直接切换拼音26键、虎码/五笔；此开关只控制入口显示。词库和输入均在本地。",
@@ -329,8 +325,7 @@ class Keyboard18Activity : AppCompatActivity() {
     }
     private fun choices(title: String, values: List<String>, selected: (String) -> Unit) {
         if (engine == null) return
-        AlertDialog.Builder(this).setTitle(title).setItems(values.toTypedArray()) { _, index -> selected(values[index]) }
-            .setNegativeButton("取消", null).show()
+        InfoSheet.choose(this, title, values) { index -> selected(values[index]) }
     }
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     private fun card() = column().apply { background = style.surface(); setPadding(style.dp(ShapeUiStyle.MD),

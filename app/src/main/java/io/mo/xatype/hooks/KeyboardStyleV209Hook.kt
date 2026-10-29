@@ -441,7 +441,7 @@ object KeyboardStyleV209Hook
             abi.namedMethods(candidateBar, "i0").single(),
             abi.namedMethods(candidateBar, "t0").single(),
             abi.namedMethods(abi.type("z9.q1"), "b").single { it.parameterTypes[0] == String::class.java },
-            abi.namedMethods(abi.type("qh.c"), "h").single()
+            abi.namedMethods("qh.c", "h").single()
         )
         val textType = abi.type("p0.n")
         val long = Long::class.javaPrimitiveType
