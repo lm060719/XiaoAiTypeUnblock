@@ -24,9 +24,13 @@ class Keyboard18ShuangpinLayoutTest {
         for (english in listOf(false, true)) for (semicolon in listOf(false, true)) {
             val original = native()
             val rebuilt = layouts.rebuild(original, english, semicolon) as g
+            if (english) {
+                assertSame(original, rebuilt)
+                continue
+            }
             val keys = rebuilt.c.flatMap { it.a }
             val l = keys.single { layouts.groupOf(it) == "l" }
-            assertEquals(!english && semicolon, ";" in l.i.orEmpty())
+            assertEquals(semicolon, ";" in l.i.orEmpty())
             assertTrue(keys.filter { it !== l }.none { ";" in it.i.orEmpty() })
             assertSame(original.c.last(), rebuilt.c.last())
             assertTrue(l.i.orEmpty().contains("l"))

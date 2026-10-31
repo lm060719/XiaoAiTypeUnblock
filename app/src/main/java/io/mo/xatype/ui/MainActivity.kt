@@ -447,7 +447,8 @@ class MainActivity : AppCompatActivity() {
         kit.group(root, "输入增强", listOf(
             featureSwitch(FeatureCatalog.keyboardShortcuts).view,
             featureSwitch(FeatureCatalog.emojiCandidates).view,
-            predictionModeRow()
+            predictionModeRow(),
+            shortcutLabelRow()
         ), first = true)
 
         kit.group(root, "尺寸与布局", listOf(
@@ -560,6 +561,99 @@ class MainActivity : AppCompatActivity() {
 
     private fun featureSwitch(feature: Feature, onChange: ((Boolean) -> Unit)? = null) =
         prefSwitch(feature.key, feature.title, feature.summary, feature.detail, onChange = onChange)
+
+    /** Action text shown on the shortcut keys themselves: on/off plus size and position. */
+    private fun shortcutLabelRow(): View {
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val controls = ArrayList<View>()
+        fun enableTree(view: View, on: Boolean) {
+            view.isEnabled = on
+            if (view is ViewGroup) for (index in 0 until view.childCount) enableTree(view.getChildAt(index), on)
+        }
+        fun refresh(on: Boolean) = controls.forEach { enableTree(it, on); it.alpha = if (on) 1f else 0.45f }
+        val toggle = featureSwitch(FeatureCatalog.shortcutLabels) { refresh(it) }
+        container.addView(toggle.view)
+        controls += shortcutLabelSlider("文字大小", 8..20,
+            prefs.getInt(ConfigManager.KEY_SHORTCUT_LABEL_SIZE, 11),
+            "快捷操作文字大小，8 到 20 sp",
+            { "$it sp" }) { size ->
+            prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_SIZE, size).apply()
+        }
+        controls += shortcutLabelSlider("水平位置", -40..40,
+            prefs.getInt(ConfigManager.KEY_SHORTCUT_LABEL_X, 0),
+            "快捷操作文字水平位置，负值向左",
+            ::labelOffset) { x ->
+            prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_X, x).apply()
+        }
+        controls += shortcutLabelSlider("垂直位置", -40..40,
+            prefs.getInt(ConfigManager.KEY_SHORTCUT_LABEL_Y, -2),
+            "快捷操作文字垂直位置，负值向上",
+            ::labelOffset) { y ->
+            prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_Y, y).apply()
+        }
+        controls.forEach { container.addView(it) }
+        val note = kit.label("文字显示在九键和18键的按键底部居中，26键不显示；与按键下滑快捷操作同时开启，重启输入法后生效。",
+            12f, R.color.text_secondary)
+        val pad = kit.dimen(R.dimen.settings_row_padding)
+        note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))
+        container.addView(note)
+        refresh(toggle.switch.isChecked)
+        return container
+    }
+
+    private fun labelOffset(value: Int) = when {
+        value == 0 -> "居中"
+        value > 0 -> "+$value dp"
+        else -> "$value dp"
+    }
+
+    private fun shortcutLabelSlider(
+        title: String,
+        range: IntRange,
+        initial: Int,
+        description: String,
+        format: (Int) -> String,
+        save: (Int) -> Unit
+    ): View {
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val pad = kit.dimen(R.dimen.settings_row_padding)
+            setPadding(pad, kit.dimen(R.dimen.space_sm), pad, 0)
+        }
+        head.addView(kit.label(title, 14f, R.color.text_primary),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val value = kit.label(format(initial), 13f, R.color.primary, bold = true)
+        head.addView(value)
+        column.addView(head)
+        val seek = kit.seekBar(range.last - range.first,
+            (initial - range.first).coerceIn(0, range.last - range.first), description)
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val pad = kit.dimen(R.dimen.settings_row_padding)
+            setPadding(pad - kit.dp(8), 0, pad, 0)
+        }
+        body.addView(seek, LinearLayout.LayoutParams(0, kit.dp(40), 1f))
+        column.addView(body)
+        var lastTick = seek.progress / 8
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                val current = range.first + progress
+                value.text = format(current)
+                if (!fromUser) return
+                save(current)
+                if (progress / 8 != lastTick) {
+                    lastTick = progress / 8
+                    SettingsKit.tickHaptic(seekBar)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) = markRestartNeeded()
+        })
+        return column
+    }
 
     /** A switch bound to a boolean preference that defaults to off. */
     private fun prefSwitch(

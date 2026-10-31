@@ -49,15 +49,44 @@ class KeyboardShortcutsTest {
         }
     }
 
-    @Test fun `18 key actions work in Chinese and English while popup keeps letters and hints only`() {
+    @Test fun `18 key Chinese shortcuts dispatch while popups keep letters and hints only`() {
         val builder = Keyboard18HostLayout(loader, abi)
-        for (english in listOf(false, true)) {
-            val keyboard = builder.rebuild(layout(english, false, false), english) as ka.g
+        for (shift in listOf(false, true)) {
+            val keyboard = builder.rebuild(layout(false, shift, false), english = false) as ka.g
             assertEquals(5, keys(keyboard).mapNotNull { adapter.action(it, KEYBOARD18) }.size)
             assertFalse(keys(keyboard).any { it.i.orEmpty().any(KeyboardShortcuts.actions::contains) })
             val copy = keys(keyboard).single { adapter.action(it, KEYBOARD18) == "复制" }
-            assertTrue(copy.i.orEmpty().containsAll(listOf("x", "c", "7")))
+            assertTrue(copy.i.orEmpty().containsAll(if (shift) listOf("X", "C", "7") else listOf("x", "c", "7")))
             assertNull(adapter.action(copy, QWERTY))
+            keys(keyboard).forEach { source ->
+                adapter.action(source, KEYBOARD18)?.let { action ->
+                    assertEquals(action, (adapter.actionKey(source, action) as ka.c).b)
+                }
+            }
+        }
+    }
+
+    @Test fun `18 key switches to native English layout and all five shortcuts survive shift and split`() {
+        val builder = Keyboard18HostLayout(loader, abi)
+        val expected = mapOf('z' to "全选", 'c' to "复制", 'v' to "粘贴", 'b' to "剪切", 'm' to "段尾")
+        for (shift in listOf(false, true)) for (split in listOf(false, true)) {
+            val original = layout(true, shift, split)
+            assertSame(original, builder.rebuild(original, english = true))
+            val mode = KeyboardShortcutLayout.fromHost("ENGLISH", "qwerty", keyboard18 = true)!!
+            val actual = keys(original).mapNotNull { source ->
+                adapter.action(source, mode)?.let { action ->
+                    assertEquals(action, (adapter.actionKey(source, action) as ka.c).b)
+                    source.a.toChar().lowercaseChar() to action
+                }
+            }.toMap()
+            assertEquals(expected, actual)
+        }
+    }
+
+    @Test fun `every supported action including select all and paragraph start can be dispatched`() {
+        assertEquals(setOf("全选", "复制", "粘贴", "剪切", "段首", "段尾"), KeyboardShortcuts.actions)
+        for (action in KeyboardShortcuts.actions) {
+            assertEquals(action, (adapter.actionKey(key('z'.code, "Z"), action) as ka.c).b)
         }
     }
 
@@ -70,7 +99,7 @@ class KeyboardShortcutsTest {
     }
 
     @Test fun `T9 maps five physical letter groups without binding adjacent number keys`() {
-        val expected = mapOf('4' to "段首", '6' to "段尾", '7' to "全选", '8' to "复制", '9' to "粘贴")
+        val expected = mapOf('4' to "剪切", '6' to "段尾", '7' to "全选", '8' to "复制", '9' to "粘贴")
         for (split in listOf(false, true)) for (multiline in listOf(false, true)) {
             val letters = listOf("ABC", "DEF", "GHI", "JKL", "MNO", "PQRS", "TUV", "WXYZ")
                 .mapIndexed { index, group ->
@@ -86,6 +115,9 @@ class KeyboardShortcutsTest {
             }
             assertEquals(5, shortcuts.size)
             assertEquals(expected, shortcuts.toMap())
+            keys(keyboard).forEach { source -> adapter.action(source, T9)?.let { action ->
+                assertEquals(action, (adapter.actionKey(source, action) as ka.c).b)
+            } }
             assertTrue(keys(keyboard).none { adapter.action(it, QWERTY) != null || adapter.action(it, KEYBOARD18) != null })
         }
     }
@@ -119,7 +151,7 @@ class KeyboardShortcutsTest {
         assertEquals(QWERTY, KeyboardShortcutLayout.fromHost("PINYIN", "qwerty", false))
         assertEquals(QWERTY, KeyboardShortcutLayout.fromHost("ENGLISH", "qwerty", false))
         assertEquals(KEYBOARD18, KeyboardShortcutLayout.fromHost("PINYIN", "qwerty", true))
-        assertEquals(KEYBOARD18, KeyboardShortcutLayout.fromHost("ENGLISH", "qwerty", true))
+        assertEquals(QWERTY, KeyboardShortcutLayout.fromHost("ENGLISH", "qwerty", true))
         for (mode in listOf("T9", "PINYIN", "ENGLISH", "SHUANGPIN", "STROKE", "HANDWRITING", "VOICE", null)) {
             for (layoutId in listOf("number", "stroke", "handwriting", "", null)) {
                 assertNull(KeyboardShortcutLayout.fromHost(mode, layoutId, false))

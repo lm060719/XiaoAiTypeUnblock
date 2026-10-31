@@ -43,7 +43,7 @@ class Keyboard18HostLayout(loader: ClassLoader, private val abi: KeyboardAbi = K
         return group.takeIf { fields.getValue("g").get(instance) == Keyboard18Keys.hints[Keyboard18Keys.groups.indexOf(group)] }
     }
     fun rebuild(original: Any, english: Boolean, semicolon: Boolean = false): Any {
-        if (value(original, "a") != "qwerty") return original
+        if (english || value(original, "a") != "qwerty") return original
         @Suppress("UNCHECKED_CAST")
         val rows = value(original, "c") as List<Any>
         if (rows.size != 4 || rows.any { value(it, "c") != null }) return original // Split-pad layout is retained.
@@ -64,8 +64,6 @@ class Keyboard18HostLayout(loader: ClassLoader, private val abi: KeyboardAbi = K
         fun newKey(code: Int, label: String, weight: Float, hint: String?, popup: List<String>?): Any =
             newKeyData(code, label, weight, null, height, charKind, hint,
                 hint?.takeIf { it.length == 1 }, popup, 0, null, false, english, false, false, null, false, null)
-        fun gap(): Any = newKeyData(-998, "", Keyboard18Style.SIDE_WEIGHT, null,
-            height, gapKind, null, null, null, null, null, false, null, false, false, null, false, null)
         fun resized(source: Any, fixedWidth: Float?, weight: Float): Any = newKeyData(
             fields.getValue("a").get(source), fields.getValue("b").get(source), weight, fixedWidth,
             fields.getValue("e").get(source), fields.getValue("f").get(source), fields.getValue("g").get(source),
@@ -79,11 +77,11 @@ class Keyboard18HostLayout(loader: ClassLoader, private val abi: KeyboardAbi = K
                 val hint = Keyboard18Keys.hints[Keyboard18Keys.groups.indexOf(group)]
                 val popup = group.map { if (uppercase) it.uppercaseChar().toString() else it.toString() } +
                     listOf(hint).filter { it.length == 1 } +
-                    if (!english && !uppercase && semicolon && group == "l") listOf(";") else emptyList()
-                newKey(if (english) (if (uppercase) group.first().uppercaseChar() else group.first()).code else Keyboard18Keys.code(group),
-                    Keyboard18Style.label(group, uppercase), Keyboard18Style.weight(group), hint, popup)
+                    if (!uppercase && semicolon && group == "l") listOf(";") else emptyList()
+                newKey(Keyboard18Keys.code(group),
+                    Keyboard18Style.label(group, true), Keyboard18Style.weight(group), hint, popup)
             }.toMutableList()
-            if (index == 1) { keys.add(0, gap()); keys.add(gap()) }
+            // 7/6/5 rows all span the keyboard width; the middle row's six keys are widened to match.
             if (index == 2) { keys.add(0, resized(shift, null, Keyboard18Style.CONTROL_WEIGHT))
                 keys.add(resized(delete, null, Keyboard18Style.CONTROL_WEIGHT)) }
             val total = keys.sumOf { fields.getValue("c").getFloat(it).toDouble() }.toFloat()

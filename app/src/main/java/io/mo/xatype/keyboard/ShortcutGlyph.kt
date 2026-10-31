@@ -28,6 +28,10 @@ object ShortcutGlyph {
                     box(5f, 5f, 19f, 21f); box(9f, 3f, 15f, 7f)
                     line(9f, 12f, 15f, 12f); line(9f, 16f, 15f, 16f)
                 }
+                "剪切" -> {
+                    canvas.drawCircle(7f, 18.5f, 3f, paint); canvas.drawCircle(17f, 18.5f, 3f, paint)
+                    line(8.6f, 16f, 20f, 3f); line(15.4f, 16f, 4f, 3f)
+                }
                 "全选" -> {
                     line(3f, 8f, 3f, 3f); line(3f, 3f, 8f, 3f)
                     line(16f, 3f, 21f, 3f); line(21f, 3f, 21f, 8f)

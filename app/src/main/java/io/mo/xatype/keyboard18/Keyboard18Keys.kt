@@ -7,7 +7,7 @@ object Keyboard18Keys {
     val groups = rows.flatten()
     private const val BASE = 0xE100
     private val representatives = ('a'..'z').associateWith { letter -> groups.first { letter in it }.first() }
-    val hints = listOf("#", "1", "2", "3", "/", "-", "=", "!", "4", "5", "6", "()", "?", "@", "7", "8", "9", "0")
+    val hints = listOf(":", "1", "2", "3", "/", "-", "=", "!", "4", "5", "6", "()", "?", "@", "7", "8", "9", "0")
     fun code(group: String) = BASE + groups.indexOf(group).also { require(it >= 0) }
     fun group(code: Int): String? = groups.getOrNull(code - BASE)
     fun representative(letter: Char): Char = if (letter == ';') 'l' else representatives.getValue(letter)

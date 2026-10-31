@@ -8,6 +8,7 @@ import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.abiField
 import io.mo.xatype.compat.abiMethod
+import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.KeyboardShortcutLayout
 import io.mo.xatype.keyboard.ShortcutSwipeGesture
 import io.mo.xatype.keyboard.ShortcutSwipeHostBridge
@@ -19,12 +20,16 @@ import kotlin.math.min
 /** Bind to actual Compose key coordinates; cancel native input only once a downward drag wins. */
 class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layout: () -> KeyboardShortcutLayout?) {
     private class Key(val owner: WeakReference<View>, var source: Any, val action: String,
-                      var callback: Any, val state: Any, val layout: KeyboardShortcutLayout) {
+                      var callback: Any, val state: Any, val layout: KeyboardShortcutLayout,
+                      val showsLabel: Boolean) {
         var coordinates: WeakReference<Any>? = null
         var originalModifier: Any? = null
         var decoratedModifier: Any? = null
+        var labelModifier: Any? = null
+        @Volatile var labelColor: Int = 0xFFFFFFFF.toInt()
         var width = Float.MAX_VALUE
         var blockNative = false
+        var lastRendered = 0L
     }
     private class Touch(val key: Key, val pointer: Int, val x: Float, val y: Float, val density: Float,
                         val gesture: ShortcutSwipeGesture = ShortcutSwipeGesture()) {
@@ -35,6 +40,8 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
     private val rendering = ThreadLocal<Key?>()
     private var touch: Touch? = null
     private var drawFailureReported = false
+    private var labelFailureReported = false
+    private var renderSequence = 0L
 
     fun install(module: XposedInterface, loader: ClassLoader) {
         val abi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_SWIPE)
@@ -61,21 +68,45 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             val currentLayout = layout() ?: return@intercept chain.proceed()
             val action = bridge.action(source, currentLayout) ?: return@intercept chain.proceed()
             val owner = bridge.view(chain.getArg(composerIndex)!!)
-            val id = "${currentLayout}:${source.javaClass.abiField(abi, "a").getInt(source)}:${bridge.label(source)}"
+            val code = source.javaClass.abiField(abi, "a").getInt(source)
+            val id = "${currentLayout}:${code}:${bridge.label(source)}"
+            // Only grouped/9-key shortcuts get labels; native 26-key letters stay clean.
+            val showsLabel = code.toChar().lowercaseChar() !in 'a'..'z'
             val key = keys.getOrPut(owner) { LinkedHashMap() }.getOrPut(id) {
-                Key(WeakReference(owner), source, action, bridge.unwrap(chain.getArg(callbackIndex)!!), bridge.progressState(), currentLayout)
+                Key(WeakReference(owner), source, action, bridge.unwrap(chain.getArg(callbackIndex)!!), bridge.progressState(), currentLayout, showsLabel)
             }
             key.source = source
             key.callback = bridge.unwrap(chain.getArg(callbackIndex)!!)
+            key.lastRendered = ++renderSequence
             val args = chain.args.toTypedArray()
-            if (args[MODIFIER_INDEX] !== key.decoratedModifier && args[MODIFIER_INDEX] !== key.originalModifier) {
+            if (args[MODIFIER_INDEX] !== key.decoratedModifier && args[MODIFIER_INDEX] !== key.originalModifier &&
+                args[MODIFIER_INDEX] !== key.labelModifier) {
                 key.originalModifier = args[MODIFIER_INDEX]
                 key.decoratedModifier = bridge.positioned(args[MODIFIER_INDEX]!!) {
                     key.coordinates = WeakReference(it)
                     key.width = bridge.bounds(it)?.width() ?: Float.MAX_VALUE
                 }
+                // Geometry/parent modifiers change on resize and layout switches.
+                key.labelModifier = null
             }
-            args[MODIFIER_INDEX] = key.decoratedModifier ?: args[MODIFIER_INDEX]
+            args[MODIFIER_INDEX] = if (ConfigManager.isShortcutLabelsEnabled() && key.showsLabel) {
+                if (key.labelModifier == null) key.labelModifier = bridge.drawing(key.decoratedModifier!!) { scope ->
+                    try {
+                        val dm = key.owner.get()?.resources?.displayMetrics
+                        if (dm == null) { bridge.drawContent(scope); return@drawing }
+                        bridge.drawLabel(scope, key.action, key.labelColor,
+                            ConfigManager.getShortcutLabelSize() * dm.scaledDensity,
+                            offsetX = ConfigManager.getShortcutLabelX() * dm.density,
+                            bottomInset = (4f - ConfigManager.getShortcutLabelY()) * dm.density)
+                    } catch (failure: Throwable) {
+                        if (!labelFailureReported) {
+                            labelFailureReported = true
+                            XposedUtils.logError(module, "Swipe shortcut label drawing unavailable", failure)
+                        }
+                    }
+                }
+                key.labelModifier ?: key.decoratedModifier ?: args[MODIFIER_INDEX]
+            } else key.decoratedModifier ?: args[MODIFIER_INDEX]
             args[callbackIndex] = bridge.guarded(key.callback) { key.blockNative }
             // Re-evaluate the injected modifier and callback without changing the renderer's slot layout.
             for (parameter in listOf(MODIFIER_INDEX, callbackIndex)) {
@@ -96,6 +127,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                 return@intercept chain.proceed()
             val args = chain.args.toTypedArray()
             val color = bridge.argb(args[2] as Long)
+            key.labelColor = color
             args[1] = bridge.drawing(args[1]!!) { scope ->
                 if (drawFailureReported) { bridge.drawContent(scope); return@drawing }
                 try {
@@ -128,11 +160,14 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                 reset()
                 if (!drawFailureReported && enabled() && event.pointerCount == 1) {
                     val currentLayout = layout()
-                    val key = keys[view]?.values?.lastOrNull { candidate ->
+                    // Compose can reuse attached coordinates when case/layout changes. A
+                    // cached key from the old case can still share those bounds; guard the
+                    // most recently rendered key, not the last key ever added to the map.
+                    val key = keys[view]?.values?.filter { candidate ->
                         candidate.layout == currentLayout && candidate.coordinates?.get()?.let {
                             bridge.bounds(it)?.contains(event.rawX, event.rawY)
                         } == true
-                    }
+                    }?.maxByOrNull { it.lastRendered }
                     if (key != null) {
                         key.blockNative = false
                         touch = Touch(key, event.getPointerId(0), event.rawX, event.rawY,

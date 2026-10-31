@@ -80,11 +80,15 @@ object KeyboardShortcutsHook {
                 (popup.get(key) as? List<*>)?.contains(action) != true)
                 return@intercept chain.proceed()
             val ime = service ?: return@intercept chain.proceed()
-            // The 18-key adapter commits its own pending decoding before dispatching.
-            if (KeyboardSelectionHook.selected(ime) == KeyboardChoice.KEYBOARD18) return@intercept chain.proceed()
             val target = chain.getArg(1)!!
-            if (supported != true || KeyboardSelectionHook.selected(ime) != KeyboardChoice.PINYIN ||
-                KeyboardShortcutLayout.fromHost((mode.invoke(target) as? Enum<*>)?.name,
+            val selectedKeyboard = KeyboardSelectionHook.selected(ime)
+            val currentMode = (mode.invoke(target) as? Enum<*>)?.name
+            // Chinese 18-key owns its decoder; English uses the native engine and must
+            // finish native composition here before dispatching any editor action.
+            if (selectedKeyboard == KeyboardChoice.KEYBOARD18 && currentMode != "ENGLISH")
+                return@intercept chain.proceed()
+            if (supported != true || selectedKeyboard !in setOf(KeyboardChoice.PINYIN, KeyboardChoice.KEYBOARD18) ||
+                KeyboardShortcutLayout.fromHost(currentMode,
                     layoutId.invoke(target) as? String, keyboard18 = false) == null) return@intercept null
             // Consume stale popup actions after disabling as well, never insert their labels.
             if (ConfigManager.isKeyboardShortcutsEnabled()) runCatching {

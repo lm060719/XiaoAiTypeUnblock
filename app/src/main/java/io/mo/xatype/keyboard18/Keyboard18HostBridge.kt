@@ -72,7 +72,7 @@ class Keyboard18HostBridge(private val loader: ClassLoader, private val profile:
                     val selected = engine.select(arguments[0] as Int)
                     pairConstructor.newInstance(selected.orEmpty(), selected != null)
                 }
-                "v" -> emptyList<Any>()
+                "v" -> engine.pinyinVariants()
                 else -> error("Unsupported 18-key host method: ${method.name}")
             }
         }

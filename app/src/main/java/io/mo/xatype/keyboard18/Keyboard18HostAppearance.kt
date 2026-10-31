@@ -37,9 +37,8 @@ class Keyboard18HostAppearance(private val layouts: Keyboard18HostLayout) {
             }
         }
         module.deoptimize(renderer)
-        // From 0.2.1246, letter keys on the "qwerty" layout take their label from the key code and shift
-        // state. English 18-key groups type their first letter, so "we" would render as "w"; label the
-        // whole group instead, following the host's case.
+        // From 0.2.1246 QWERTY labels can be derived from key codes. Generated Chinese
+        // groups must retain their full uppercase label; native English keys are untouched.
         val bool = Boolean::class.javaPrimitiveType
         renderer.declaringClass.declaredMethods.singleOrNull {
             java.lang.reflect.Modifier.isStatic(it.modifiers) && it.returnType == String::class.java &&
@@ -50,7 +49,7 @@ class Keyboard18HostAppearance(private val layouts: Keyboard18HostLayout) {
                 val native = chain.proceed() as String?
                 if (drawing.get() != true || native == null) return@intercept native
                 val group = layouts.groupOf(chain.getArg(0)!!) ?: return@intercept native
-                Keyboard18Style.label(group, native.any(Char::isUpperCase))
+                Keyboard18Style.label(group, true)
             }
             module.deoptimize(codeLabel)
         }

@@ -1,6 +1,8 @@
 package io.mo.xatype.keyboard18
 
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -50,6 +52,41 @@ class Keyboard18EngineTest {
         assertNotEquals("呒", engine.candidates.first().text)
         assertTrue(engine.candidates.any { it.text == "么" })
     }
+
+    @Test fun `learning a prefix three times does not displace a complete word`() {
+        for (corpus in listOf(dictionary, testDictionary("你\tni\t1000\n你好\tni hao\t100000\n好\thao\t1000\n"))) {
+            val counts = mutableMapOf<String, Int>()
+            val engine = Keyboard18Engine(corpus, { counts[it] ?: 0 }, { counts[it] = (counts[it] ?: 0) + 1 })
+            repeat(3) {
+                engine.inputText("ni")
+                assertEquals("你", engine.select(engine.candidates.indexOfFirst { it.text == "你" }))
+                engine.clear()
+            }
+            engine.inputText("nihao")
+            assertEquals("你好", engine.candidates.first().text)
+            assertEquals("ni hao", engine.display)
+            assertEquals("你好", engine.input(' ').commit)
+            assertTrue(engine.raw.isEmpty())
+        }
+    }
+
+    @Test fun `three selections promote a lower frequency complete homophone`() {
+        val counts = mutableMapOf<String, Int>()
+        val engine = Keyboard18Engine(testDictionary("你\tni\t100000\n妮\tni\t100\n"),
+            { counts[it] ?: 0 }, { counts[it] = (counts[it] ?: 0) + 1 })
+        repeat(3) {
+            engine.inputText("ni")
+            assertEquals("你", engine.candidates.first().text)
+            assertEquals("妮", engine.select(engine.candidates.indexOfFirst { it.text == "妮" }))
+        }
+        engine.inputText("ni")
+        assertEquals("妮", engine.candidates.first().text)
+        assertEquals(listOf("ni"), engine.pinyinVariants())
+    }
+
+    private fun testDictionary(rows: String) = ByteArrayOutputStream().apply {
+        GZIPOutputStream(this).bufferedWriter().use { it.write(rows) }
+    }.toByteArray().inputStream().use { Keyboard18Dictionary.read(it) }
 
     companion object {
         private val dictionary by lazy {
