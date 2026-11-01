@@ -6,6 +6,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppearanceProfilesTest {
+    @Test fun popupColorsStayIndependentAcrossProfilesAndSavedSchemes() {
+        val prefs = memoryPreferences()
+        AppearanceProfiles.initialize(prefs)
+        val keys = listOf(ConfigManager.KEY_KEY_POPUP_BACKGROUND,
+            ConfigManager.KEY_KEY_POPUP_SELECTED, ConfigManager.KEY_KEY_POPUP_TEXT)
+        keys.forEachIndexed { index, key ->
+            AppearanceProfiles.forProfile(prefs, false).edit().putString(key, "#11223$index").apply()
+            AppearanceProfiles.forProfile(prefs, true).edit().putString(key, "#44556$index").apply()
+        }
+        val saved = AppearancePresetStore.capture(prefs)
+        AppearancePresetStore.applyPreset(prefs, false, "native")
+        keys.forEach { assertEquals("", AppearanceProfiles.forProfile(prefs, false).getString(it, null)) }
+        assertTrue(AppearancePresetStore.applySnapshot(prefs, saved))
+        keys.forEachIndexed { index, key ->
+            assertEquals("#11223$index", AppearanceProfiles.forProfile(prefs, false).getString(key, null))
+            assertEquals("#44556$index", AppearanceProfiles.forProfile(prefs, true).getString(key, null))
+        }
+    }
+
     @Test fun migrationPreservesOldAppearanceAndGivesDarkModeAutomaticColors() {
         val prefs = memoryPreferences()
         prefs.edit().putString(ConfigManager.KEY_TEXT_COLOR, "#000000")

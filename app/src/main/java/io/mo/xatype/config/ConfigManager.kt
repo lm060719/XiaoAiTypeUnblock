@@ -16,6 +16,8 @@ object ConfigManager {
     const val KEY_CLOUD_BLACKLIST = "pref_cloud_blacklist"
     const val KEY_CLIPBOARD_SENSITIVE = "pref_clipboard_sensitive"
     const val KEY_CLIPBOARD_PERMANENT = "pref_clipboard_permanent"
+    const val KEY_SCREENSHOT_CLIPBOARD = "pref_screenshot_clipboard"
+    val SCREENSHOT_CONFIG_URI: Uri = Uri.parse("content://io.mo.xatype.logprovider/screenshot_config")
     const val KEY_OS_VERSION_UNBLOCK = "pref_os_version_unblock"
     const val KEY_AI_ABILITY_UNLOCK = "pref_ai_ability_unlock"
     const val KEY_TELEMETRY_BLOCK = "pref_telemetry_block"
@@ -49,6 +51,9 @@ object ConfigManager {
     const val KEY_MENU_CARD_COLOR = "pref_menu_card_color" // Empty: system color
     const val KEY_CLIPBOARD_CARD_COLOR = "pref_clipboard_card_color" // Empty: system color
     const val KEY_LETTER_KEYCAP_COLOR = "pref_letter_keycap_color" // Empty: system color
+    const val KEY_KEY_POPUP_BACKGROUND = "pref_key_popup_background"
+    const val KEY_KEY_POPUP_SELECTED = "pref_key_popup_selected"
+    const val KEY_KEY_POPUP_TEXT = "pref_key_popup_text"
     const val KEY_FUNCTION_KEYCAP_OPACITY = "pref_function_keycap_opacity" // 0 to 100
     const val KEY_MENU_CARD_OPACITY = "pref_menu_card_opacity" // 0 to 100
     const val KEY_CLIPBOARD_CARD_OPACITY = "pref_clipboard_card_opacity" // 0 to 100
@@ -69,6 +74,7 @@ object ConfigManager {
     @Volatile private var cachedCloudBlacklist = false
     @Volatile private var cachedClipboardSensitive = false
     @Volatile private var cachedClipboardPermanent = false
+    @Volatile private var cachedScreenshotClipboard = false
     @Volatile private var cachedOsVersionUnblock = false
     @Volatile private var cachedAiAbilityUnlock = false
     @Volatile private var cachedTelemetryBlock = false
@@ -96,6 +102,9 @@ object ConfigManager {
     @Volatile private var cachedMenuCardColor = ""
     @Volatile private var cachedClipboardCardColor = ""
     @Volatile private var cachedLetterKeycapColor = ""
+    @Volatile private var cachedKeyPopupBackground = ""
+    @Volatile private var cachedKeyPopupSelected = ""
+    @Volatile private var cachedKeyPopupText = ""
     @Volatile private var cachedFunctionKeycapOpacity = 100
     @Volatile private var cachedMenuCardOpacity = 100
     @Volatile private var cachedClipboardCardOpacity = 100
@@ -132,6 +141,7 @@ object ConfigManager {
                 cachedCloudBlacklist = bundle.getBoolean(KEY_CLOUD_BLACKLIST, false)
                 cachedClipboardSensitive = bundle.getBoolean(KEY_CLIPBOARD_SENSITIVE, false)
                 cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, false)
+                cachedScreenshotClipboard = bundle.getBoolean(KEY_SCREENSHOT_CLIPBOARD, false)
                 cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, false)
                 cachedAiAbilityUnlock = bundle.getBoolean(KEY_AI_ABILITY_UNLOCK, false)
                 cachedTelemetryBlock = bundle.getBoolean(KEY_TELEMETRY_BLOCK, false)
@@ -162,6 +172,9 @@ object ConfigManager {
                     cachedMenuCardColor
                 ) ?: cachedMenuCardColor
                 cachedLetterKeycapColor = bundle.getString(KEY_LETTER_KEYCAP_COLOR, "") ?: ""
+                cachedKeyPopupBackground = bundle.getString(KEY_KEY_POPUP_BACKGROUND, "") ?: ""
+                cachedKeyPopupSelected = bundle.getString(KEY_KEY_POPUP_SELECTED, "") ?: ""
+                cachedKeyPopupText = bundle.getString(KEY_KEY_POPUP_TEXT, "") ?: ""
                 cachedFunctionKeycapOpacity = bundle.getInt(KEY_FUNCTION_KEYCAP_OPACITY, 100).coerceIn(0, 100)
                 cachedMenuCardOpacity = bundle.getInt(KEY_MENU_CARD_OPACITY, 100).coerceIn(0, 100)
                 cachedClipboardCardOpacity = bundle.getInt(
@@ -202,6 +215,11 @@ object ConfigManager {
     fun isClipboardPermanentEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedClipboardPermanent
         return remotePrefs?.getBoolean(KEY_CLIPBOARD_PERMANENT, false) ?: cachedClipboardPermanent
+    }
+
+    fun isScreenshotClipboardEnabled(): Boolean {
+        if (hasSyncedFromProvider) return cachedScreenshotClipboard
+        return remotePrefs?.getBoolean(KEY_SCREENSHOT_CLIPBOARD, false) ?: cachedScreenshotClipboard
     }
 
     fun isOsVersionUnblockEnabled(): Boolean {
@@ -343,6 +361,15 @@ object ConfigManager {
         return remoteStylePrefs?.getString(KEY_LETTER_KEYCAP_COLOR, cachedLetterKeycapColor)
             ?: cachedLetterKeycapColor
     }
+
+    fun getKeyPopupBackground(): String = if (hasSyncedFromProvider) cachedKeyPopupBackground else
+        remoteStylePrefs?.getString(KEY_KEY_POPUP_BACKGROUND, cachedKeyPopupBackground) ?: cachedKeyPopupBackground
+
+    fun getKeyPopupSelected(): String = if (hasSyncedFromProvider) cachedKeyPopupSelected else
+        remoteStylePrefs?.getString(KEY_KEY_POPUP_SELECTED, cachedKeyPopupSelected) ?: cachedKeyPopupSelected
+
+    fun getKeyPopupText(): String = if (hasSyncedFromProvider) cachedKeyPopupText else
+        remoteStylePrefs?.getString(KEY_KEY_POPUP_TEXT, cachedKeyPopupText) ?: cachedKeyPopupText
 
     fun getFunctionKeycapOpacity(): Int {
         if (hasSyncedFromProvider) return cachedFunctionKeycapOpacity

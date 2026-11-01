@@ -665,8 +665,11 @@ class MainActivity : AppCompatActivity() {
         onChange: ((Boolean) -> Unit)? = null
     ): SettingsKit.SwitchRow = kit.switchRow(title, summary, prefs.getBoolean(key, false), detail = detail) { checked ->
         prefs.edit().putBoolean(key, checked).apply()
+        if (key == ConfigManager.KEY_SCREENSHOT_CLIPBOARD) {
+            contentResolver.notifyChange(ConfigManager.SCREENSHOT_CONFIG_URI, null)
+        }
         onChange?.invoke(checked)
-        if (needsRestart) markRestartNeeded()
+        if (needsRestart && key != ConfigManager.KEY_SCREENSHOT_CLIPBOARD) markRestartNeeded()
     }
 
     private companion object {

@@ -20,6 +20,7 @@ internal object HostFingerprints {
 
     fun resolve(bridge: DexKitBridge, loader: ClassLoader): FingerprintResult {
         val collector = FingerprintCollector()
+        collector.put(HostSymbols.KEYBOARD_KEY_PREVIEW) { listOf(listOf(keyPreview(bridge, loader))) }
         collector.put(HostSymbols.AI_SAFETY_PARSERS) { listOf(aiSafetyParsers(bridge, loader)) }
         collector.put(HostSymbols.VOICE_MODERATION) { listOf(listOf(voiceModeration(bridge))) }
         collector.put(HostSymbols.ASR_ERROR_MAPPER) { listOf(listOf(asrErrorMapper(bridge, loader))) }
@@ -46,6 +47,25 @@ internal object HostFingerprints {
         }
         return collector.result()
     }
+
+    private fun keyPreview(bridge: DexKitBridge, loader: ClassLoader): String = single(
+        bridge.findMethod {
+            matcher {
+                name("onDraw")
+                paramTypes("android.graphics.Canvas")
+                returnType("void")
+                usingEqStrings("canvas")
+            }
+        }.filter { method ->
+            val calls = method.invokes.filter { it.className == "android.graphics.Canvas" }.map { it.name }
+            if ("drawRoundRect" !in calls || "drawText" !in calls) return@filter false
+            val owner = method.getMethodInstance(loader).declaringClass
+            val fields = owner.declaredFields.filter { !Modifier.isStatic(it.modifiers) }
+            owner.superclass == android.view.View::class.java &&
+                fields.count { it.type == android.graphics.Paint::class.java } == 2 &&
+                fields.count { it.type == String::class.java } == 1 &&
+                fields.any { it.type == android.graphics.RectF::class.java }
+        }, "key preview bubble drawing").descriptor
 
     /** T9 already passes digit groups to the native decoder's ShuangPin implementation. */
     private fun t9Shuangpin(bridge: DexKitBridge, loader: ClassLoader): List<List<String>> {

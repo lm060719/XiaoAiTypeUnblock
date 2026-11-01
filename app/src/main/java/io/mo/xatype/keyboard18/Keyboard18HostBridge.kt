@@ -30,6 +30,14 @@ class Keyboard18HostBridge(private val loader: ClassLoader, private val profile:
 
     fun result(value: Pinyin18Result): Any = resultConstructor.newInstance(value.consumed, value.display,
         value.candidates.take(PAGE_SIZE).mapIndexed(::candidate), value.commit, 0, emptyList<Any>(), value.raw)
+    internal fun state(engine: Keyboard18Engine): Any {
+        if (engine.raw.isEmpty()) return checkNotNull(idle)
+        // The host sends Composing.rawInput to editors such as search boxes, and also
+        // uses it for literal commits. Private-use tap codes would render as tofu.
+        // Keep those codes in the engine / acceptedRawInput for decoding and restore.
+        val display = engine.display
+        return stateConstructor.newInstance(8, display, display, emptyList<Any>())
+    }
     private fun candidate(index: Int, value: Pinyin18Candidate): Any = candidateConstructor.newInstance(
         value.text, value.spelling, 1000 - index, source, value.text)
     fun create(engine: Keyboard18Engine, service: InputMethodService, onInput: () -> Unit): Any =
@@ -49,8 +57,7 @@ class Keyboard18HostBridge(private val loader: ClassLoader, private val profile:
                 "clear", "destroy", "t" -> { engine.clear(); null }
                 "d" -> result(engine.restore(arguments[0] as String))
                 "e" -> false
-                "f" -> if (engine.raw.isEmpty()) idle else stateConstructor.newInstance(8,
-                    engine.raw, engine.display, emptyList<Any>())
+                "f" -> state(engine)
                 "g", "r", "filterSingleChar" -> result(engine.snapshot(false))
                 "singleCharFilterSupported" -> false
                 "i" -> { onInput(); result(engine.input((arguments[0] as Int).toChar())) }

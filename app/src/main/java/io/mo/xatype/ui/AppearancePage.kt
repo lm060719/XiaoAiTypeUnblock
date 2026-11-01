@@ -268,6 +268,15 @@ class AppearancePage(
                 "原生")
         ))
 
+        section(root, "按键提示与选择框", listOf(
+            colorOption("选择框背景色", "同时用于单点字母提示框和长按选择框", Focus.KEY_POPUP,
+                ConfigManager.KEY_KEY_POPUP_BACKGROUND, null, "#FFFFFF", "原生"),
+            colorOption("选中项颜色", "当前手指选中的字符底色", Focus.KEY_POPUP,
+                ConfigManager.KEY_KEY_POPUP_SELECTED, null, "#313447", "原生"),
+            colorOption("提示框文字颜色", "含单点提示和长按列表中的全部字符", Focus.KEY_POPUP,
+                ConfigManager.KEY_KEY_POPUP_TEXT, null, "#202124", "跟随按键")
+        ))
+
         section(root, "面板卡片", listOf(
             colorOption("菜单功能卡片颜色", "菜单键展开后的功能卡片", Focus.MENU_CARD,
                 ConfigManager.KEY_MENU_CARD_COLOR, ConfigManager.KEY_MENU_CARD_OPACITY, "#FFFFFF",
@@ -790,7 +799,10 @@ class AppearancePage(
             menuCard = color(ConfigManager.KEY_MENU_CARD_COLOR),
             menuOpacity = p.getInt(ConfigManager.KEY_MENU_CARD_OPACITY, 100),
             clipboardCard = color(ConfigManager.KEY_CLIPBOARD_CARD_COLOR),
-            clipboardOpacity = p.getInt(ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, 100)
+            clipboardOpacity = p.getInt(ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, 100),
+            keyPopupBackground = color(ConfigManager.KEY_KEY_POPUP_BACKGROUND),
+            keyPopupSelected = color(ConfigManager.KEY_KEY_POPUP_SELECTED),
+            keyPopupText = color(ConfigManager.KEY_KEY_POPUP_TEXT)
         )
     }
 

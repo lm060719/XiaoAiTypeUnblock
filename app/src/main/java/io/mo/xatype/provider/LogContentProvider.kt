@@ -52,6 +52,7 @@ class LogContentProvider : ContentProvider() {
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, false))
+                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_SCREENSHOT_CLIPBOARD, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_SCREENSHOT_CLIPBOARD, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_ABILITY_UNLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_ABILITY_UNLOCK, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_TELEMETRY_BLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_TELEMETRY_BLOCK, false))
@@ -79,6 +80,11 @@ class LogContentProvider : ContentProvider() {
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_COLOR, menuCardColor)
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_COLOR, clipboardCardColor)
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, "") ?: "")
+                    for (key in listOf(io.mo.xatype.config.ConfigManager.KEY_KEY_POPUP_BACKGROUND,
+                            io.mo.xatype.config.ConfigManager.KEY_KEY_POPUP_SELECTED,
+                            io.mo.xatype.config.ConfigManager.KEY_KEY_POPUP_TEXT)) {
+                        result.putString(key, sp.getString(key, "") ?: "")
+                    }
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY, 100))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, menuCardOpacity)
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, clipboardCardOpacity)

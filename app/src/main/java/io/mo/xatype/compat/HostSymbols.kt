@@ -1,7 +1,8 @@
 package io.mo.xatype.compat
 
 /** Members of the input method (com.xiaomi.type), located by [HostFingerprints]. */
-object HostSymbols : SymbolTable(8, HostFingerprints::resolve) {
+object HostSymbols : SymbolTable(9, HostFingerprints::resolve) {
+    const val KEYBOARD_KEY_PREVIEW = "keyboard.keyPreview"
     const val T9_SHUANGPIN_INIT = "keyboard.t9ShuangpinInit"
     const val T9_SHUANGPIN_BOOLEAN = "keyboard.t9ShuangpinBoolean"
     const val T9_SHUANGPIN_STRING = "keyboard.t9ShuangpinString"
@@ -34,7 +35,7 @@ object HostSymbols : SymbolTable(8, HostFingerprints::resolve) {
     const val BOTTOM_SPACING_CALLERS = "keyboard.bottomSpacingCallers"
 
     override val keys = listOf(
-        AI_SAFETY_PARSERS, VOICE_MODERATION, ASR_ERROR_MAPPER, ASR_ERROR_CALLBACK,
+        KEYBOARD_KEY_PREVIEW, AI_SAFETY_PARSERS, VOICE_MODERATION, ASR_ERROR_MAPPER, ASR_ERROR_CALLBACK,
         OS_VERSION_GATE, HEIGHT_RECT, HEIGHT_CLAMP, HEIGHT_RECT_GETTER, HEIGHT_LAYOUT,
         HEIGHT_DRAG, HEIGHT_DRAG_KIND, MODERN_KEYBOARD,
         BOTTOM_SPACING, BOTTOM_SPACING_CONSUME, BOTTOM_SPACING_CALLERS,

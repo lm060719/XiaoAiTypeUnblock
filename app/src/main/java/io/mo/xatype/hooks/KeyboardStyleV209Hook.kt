@@ -91,6 +91,7 @@ object KeyboardStyleV209Hook
         installWindowTransitionHooks(module)
         installHyperMaterialHooks(module, classLoader)
         installPaletteHook(module, classLoader)
+        KeyPopupColorHook.install(module, classLoader, profile.paletteClassName)
         try
         {
             installSurfaceTextHooks(module, classLoader)

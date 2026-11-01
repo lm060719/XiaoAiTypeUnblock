@@ -498,6 +498,28 @@ object SystemUiNavigationGuardHook {
                 "[BottomDiag][SystemUI] nav drawable=${original.javaClass.name} fields=$fields"
             )
         }
+        val duration = requestedDuration?.coerceAtLeast(1L) ?: if (
+            ConfigManager.getOpacity() <= SURFACE_ANIMATION_MAX_OPACITY
+        ) LOW_OPACITY_GUARD_DURATION_MS else GUARD_DURATION_MS
+        if (terminalColor != null) {
+            // Hiding: the keyboard is already sliding out (and a second status
+            // 0x0 follows ~350ms later), so painting the keyboard colour here
+            // shows a dark strip under the handle. Go straight to the terminal
+            // colour and keep the native fade suppressed for the same window.
+            holdDrawableColorUntil(
+                view,
+                original,
+                terminalColor,
+                sequence,
+                SystemClock.uptimeMillis() + duration + 260L
+            )
+            XposedUtils.log(
+                module,
+                "[BottomDiag][SystemUI][$sequence] nav-guard hide terminal=${colorHex(terminalColor)} " +
+                    "hold=${duration + 260L}ms"
+            )
+            return
+        }
         val color = resolveGuardColor(view.context)
         view.setBackgroundColor(color)
         XposedUtils.log(
@@ -505,28 +527,14 @@ object SystemUiNavigationGuardHook {
             "[BottomDiag][SystemUI][$sequence] nav-guard applied color=${colorHex(color)} " +
                 "size=${view.width}x${view.height}"
         )
-        val duration = requestedDuration?.coerceAtLeast(1L) ?: if (
-            ConfigManager.getOpacity() <= SURFACE_ANIMATION_MAX_OPACITY
-        ) LOW_OPACITY_GUARD_DURATION_MS else GUARD_DURATION_MS
         view.postDelayed(
             {
                 if (generation.get() == sequence) {
-                    if (terminalColor != null) {
-                        holdDrawableColorUntil(
-                            view,
-                            original,
-                            terminalColor,
-                            sequence,
-                            SystemClock.uptimeMillis() + 260L
-                        )
-                    } else {
-                        view.background = original
-                        original.invalidateSelf()
-                    }
+                    view.background = original
+                    original.invalidateSelf()
                     XposedUtils.log(
                         module,
-                        "[BottomDiag][SystemUI][$sequence] nav-guard restored after=${duration}ms " +
-                            "terminal=${terminalColor?.let(::colorHex) ?: "original"}"
+                        "[BottomDiag][SystemUI][$sequence] nav-guard restored after=${duration}ms"
                     )
                 }
             },

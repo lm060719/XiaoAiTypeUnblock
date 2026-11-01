@@ -22,6 +22,7 @@ import io.mo.xatype.hooks.KeyboardShortcutsHook
 import io.mo.xatype.hooks.KeyboardStyleHook
 import io.mo.xatype.hooks.ShapeInputHook
 import io.mo.xatype.hooks.SystemUiNavigationGuardHook
+import io.mo.xatype.hooks.ScreenshotClipboardHook
 import io.mo.xatype.hooks.TelemetryBlockHook
 import io.mo.xatype.hooks.T9ShuangpinHook
 import io.mo.xatype.hooks.VoiceModerationHook
@@ -70,6 +71,11 @@ class XiaoAiTypeModule : XposedModule() {
         XposedUtils.log(this, "================================================")
 
         if (param.packageName == SYSTEM_UI_PACKAGE) {
+            try {
+                ScreenshotClipboardHook.install(this)
+            } catch (t: Throwable) {
+                XposedUtils.logError(this, "Error installing ScreenshotClipboardHook", t)
+            }
             try {
                 SystemUiNavigationGuardHook.install(this, classLoader)
             } catch (t: Throwable) {

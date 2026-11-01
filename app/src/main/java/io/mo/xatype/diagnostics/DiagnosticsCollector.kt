@@ -111,6 +111,7 @@ object DiagnosticsCollector {
             val keys = listOf(ConfigManager.KEY_OS_VERSION_UNBLOCK, ConfigManager.KEY_AI_SAFETY,
                 ConfigManager.KEY_VOICE_MODERATION, ConfigManager.KEY_CLOUD_BLACKLIST,
                 ConfigManager.KEY_CLIPBOARD_SENSITIVE, ConfigManager.KEY_CLIPBOARD_PERMANENT,
+                ConfigManager.KEY_SCREENSHOT_CLIPBOARD,
                 ConfigManager.KEY_VERBOSE_LOG, ConfigManager.KEY_STYLE_ENABLED)
             keys.forEach { append("Config $it=${prefs.getBoolean(it, false)}") }
             val systemDark = (app.resources.configuration.uiMode and 48) == 32

@@ -49,10 +49,13 @@ class KeyboardPreviewView @JvmOverloads constructor(
         val menuCard: Int? = null,
         val menuOpacity: Int = 100,
         val clipboardCard: Int? = null,
-        val clipboardOpacity: Int = 100
+        val clipboardOpacity: Int = 100,
+        val keyPopupBackground: Int? = null,
+        val keyPopupSelected: Int? = null,
+        val keyPopupText: Int? = null
     )
 
-    enum class Focus { NONE, CORNER, BACKGROUND, TEXT, SCRIM, LETTER_KEY, FUNCTION_KEY, MENU_CARD, CLIPBOARD_CARD }
+    enum class Focus { NONE, CORNER, BACKGROUND, TEXT, SCRIM, LETTER_KEY, FUNCTION_KEY, MENU_CARD, CLIPBOARD_CARD, KEY_POPUP }
 
     var style = Style()
         set(value) { field = value; invalidate() }
@@ -157,6 +160,7 @@ class KeyboardPreviewView @JvmOverloads constructor(
             Focus.CLIPBOARD_CARD -> drawClipboard(canvas, w, h, top)
             else -> drawKeyboard(canvas, w, h, top)
         }
+        if (focus == Focus.KEY_POPUP) drawKeyPopup(canvas, w, h, top)
         canvas.restore()
 
         if (focus == Focus.CORNER) {
@@ -317,6 +321,34 @@ class KeyboardPreviewView @JvmOverloads constructor(
         functionKey("中/英", 3, x, x + keyW * 1.2f)
         x += keyW * 1.2f + gap
         functionKey("发送", 3, x, w - pad)
+    }
+
+    private fun drawKeyPopup(canvas: Canvas, w: Float, h: Float, top: Float) {
+        val left = w * 0.12f
+        val popupWidth = w * 0.42f
+        val popupHeight = minOf(dp(58f), (h - top) * 0.35f)
+        val y = top + dp(35f)
+        val padding = dp(6f)
+        val itemWidth = (popupWidth - padding * 2) / 3
+        val background = if (custom) style.keyPopupBackground ?: nativeCard else nativeCard
+        val selected = if (custom) style.keyPopupSelected ?: style.functionKey ?: nativeFunction else nativeFunction
+        val label = if (custom) style.keyPopupText ?: keyLabelColor() else keyLabelColor()
+        fill.color = background
+        rect.set(left, y, left + popupWidth, y + popupHeight)
+        canvas.drawRoundRect(rect, dp(12f), dp(12f), fill)
+        fill.color = selected
+        rect.set(left + padding + itemWidth, y + padding,
+            left + padding + itemWidth * 2, y + popupHeight - padding)
+        canvas.drawRoundRect(rect, dp(7f), dp(7f), fill)
+        listOf("S", "!", "s").forEachIndexed { index, value ->
+            drawLabel(canvas, value, left + padding + itemWidth * (index + 0.5f),
+                y + popupHeight / 2, dp(23f), color = label)
+        }
+        val bubbleLeft = left + popupWidth + dp(20f)
+        fill.color = background
+        rect.set(bubbleLeft, y, bubbleLeft + popupHeight, y + popupHeight)
+        canvas.drawRoundRect(rect, dp(12f), dp(12f), fill)
+        drawLabel(canvas, "S", bubbleLeft + popupHeight / 2, y + popupHeight / 2, dp(23f), color = label)
     }
 
     private fun drawPanelTitle(canvas: Canvas, w: Float, top: Float, title: String) {

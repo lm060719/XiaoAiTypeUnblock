@@ -25,7 +25,13 @@ internal object FeatureCatalog {
         ),
         "剪贴板" to listOf(
             Feature(ConfigManager.KEY_CLIPBOARD_SENSITIVE, "剪贴板敏感标记忽略绕过", "敏感内容也能记录与联想"),
-            Feature(ConfigManager.KEY_CLIPBOARD_PERMANENT, "剪贴板永久保存", "不限条数、时长与文字长度")
+            Feature(ConfigManager.KEY_CLIPBOARD_PERMANENT, "剪贴板永久保存", "不限条数、时长与文字长度"),
+            Feature(ConfigManager.KEY_SCREENSHOT_CLIPBOARD, "截图自动复制", "截图保存后自动写入剪贴板", Detail(
+                "开启后，系统截图工具新保存的图片会自动复制，供粘贴及小爱剪贴板历史收录。每次截图会替换当前剪贴板内容。",
+                notes = listOf("默认关闭，不补录旧截图，不收录普通照片和下载图片。",
+                    "需在 LSPosed 中启用系统界面作用域；首次安装或更新模块后重启手机。之后切换此开关即时生效。",
+                    "适用于支持媒体库截图识别的小米系统。锁屏时跳过；图片文件被删除或清理后可能无法再粘贴。")
+            ))
         ),
         "隐私" to listOf(
             Feature(ConfigManager.KEY_TELEMETRY_BLOCK, "遥测与埋点拦截", "关闭小米统计与广告监控上报")
