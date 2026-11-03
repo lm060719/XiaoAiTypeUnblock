@@ -14,6 +14,7 @@ import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.KeyboardChoice
 import io.mo.xatype.keyboard.KeyboardShortcutActions
 import io.mo.xatype.keyboard.KeyboardShortcuts
+import io.mo.xatype.keyboard18.Keyboard18CompositionStore
 import io.mo.xatype.keyboard18.Keyboard18Dictionary
 import io.mo.xatype.keyboard18.Keyboard18Engine
 import io.mo.xatype.keyboard18.Keyboard18HostAppearance
@@ -37,6 +38,7 @@ object Keyboard18Hook {
     @Volatile private var installFailure: Throwable? = null
     @Volatile private var layoutReported = false
     @Volatile private var applicationContext: Context? = null
+    @Volatile private var activeEngine: Keyboard18Engine? = null
 
     fun install(module: XposedInterface, loader: ClassLoader) {
         // Package hooks install before Application exists. Keep this observer independent
@@ -156,6 +158,7 @@ object Keyboard18Hook {
             val context = contextField.get(chain.thisObject) as InputMethodService
             service = context
             chineseReady = false
+            activeEngine = null
             if (chain.getArg(0) !== bridge.pinyin || KeyboardSelectionHook.selected(context) != KeyboardChoice.KEYBOARD18)
                 chain.proceed() else {
                 val config = runCatching { load(context) }.onFailure {
@@ -164,13 +167,19 @@ object Keyboard18Hook {
                 }.getOrNull()
                 val dictionary = config?.dictionary
                 if (dictionary == null) chain.proceed() else runCatching {
-                    val sp = context.createDeviceProtectedStorageContext().getSharedPreferences("keyboard18_frequency", Context.MODE_PRIVATE)
+                    val device = context.createDeviceProtectedStorageContext()
+                    val sp = device.getSharedPreferences("keyboard18_frequency", Context.MODE_PRIVATE)
+                    val compositions = Keyboard18CompositionStore(
+                        device.getSharedPreferences("keyboard18_compositions", Context.MODE_PRIVATE))
                     val engine = Keyboard18Engine(dictionary,
                         frequency = { text -> sp.getInt(text, 0) },
                         learn = { text ->
                             if (sp.contains(text) || sp.all.size < 2048) sp.edit()
                                 .putInt(text, (sp.getInt(text, 0) + 1).coerceAtMost(10_000)).apply()
-                        })
+                        },
+                        compositionCandidates = compositions::candidates,
+                        recordComposition = compositions::record)
+                    activeEngine = engine
                     val first = AtomicBoolean(false)
                     report(context, config.settings, "18键离线引擎已接入，等待输入")
                     bridge.create(engine, context) {
@@ -219,6 +228,12 @@ object Keyboard18Hook {
         }
         XposedUtils.log(module, "18-key keyboard hooks installed (opt-in, resolved ABI)")
     }
+
+    /** Clear the 18-key composing buffer when a swipe clears the editor field. */
+    fun clearCompositionOnSwipe() { activeEngine?.clear() }
+
+    /** True while the 18-key engine still holds unselected pinyin. */
+    fun hasComposition(): Boolean = activeEngine?.raw?.isNotEmpty() == true
 
     @Synchronized
     private fun load(context: Context): Loaded {

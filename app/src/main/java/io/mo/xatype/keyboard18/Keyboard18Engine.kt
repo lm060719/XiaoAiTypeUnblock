@@ -1,16 +1,23 @@
 package io.mo.xatype.keyboard18
 
-data class Pinyin18Candidate(val text: String, val spelling: String, val consumed: Int, val score: Double)
+
+data class Pinyin18Candidate(val text: String, val spelling: String, val consumed: Int, val score: Double,
+    val complete: Boolean = false, val suggestion: Boolean = false, val synthetic: Boolean = false)
 data class Pinyin18Result(val consumed: Boolean, val raw: String, val display: String,
     val candidates: List<Pinyin18Candidate>, val commit: String? = null)
 
 /** Bounded word lattice with sentence composition, prefix selection and exact-letter constraints. */
 class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
-    private val frequency: (String) -> Int = { 0 }, private val learn: (String) -> Unit = {}) {
+    private val frequency: (String) -> Int = { 0 }, private val learn: (String) -> Unit = {},
+    private val compositionCandidates: (String) -> List<Keyboard18CompositionStore.Learned> = { emptyList() },
+    private val recordComposition: (String, List<String>, List<String>) -> Unit = { _, _, _ -> }) {
     var raw: String = ""
         private set
     var candidates: List<Pinyin18Candidate> = emptyList()
         private set
+    private val composedParts = ArrayList<String>()
+    private val composedSpellings = ArrayList<String>()
+    private var compositionStartRaw = ""
     val display: String get() = pinyinDisplay()
     /** Candidate bar shows the real pinyin of the leading candidate, not group tags. */
     private fun pinyinDisplay(): String {
@@ -23,14 +30,20 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
     val scheme get() = dictionary.scheme
     fun snapshot(consumed: Boolean = true, commit: String? = null) =
         Pinyin18Result(consumed, raw, display, candidates, commit)
-    fun clear() { raw = ""; candidates = emptyList() }
+    fun clear() {
+        raw = ""; candidates = emptyList()
+        composedParts.clear(); composedSpellings.clear(); compositionStartRaw = ""
+    }
     fun restore(value: String): Pinyin18Result {
+        composedParts.clear(); composedSpellings.clear(); compositionStartRaw = ""
         if (value.length > MAX_INPUT || value.any { !dictionary.valid(it) }) return snapshot(false)
         raw = value; refresh(); return snapshot()
     }
     fun backspace(): Pinyin18Result {
         if (raw.isEmpty()) return snapshot(false)
-        raw = raw.dropLast(1); refresh(); return snapshot()
+        raw = raw.dropLast(1)
+        if (raw.isEmpty()) { composedParts.clear(); composedSpellings.clear(); compositionStartRaw = "" }
+        refresh(); return snapshot()
     }
     /** Distinct pinyin readings for the current input, shown in the expanded candidate page. */
     fun pinyinVariants(): List<String> = candidates
@@ -41,8 +54,23 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
 
     fun select(index: Int): String? {
         val candidate = candidates.getOrNull(index) ?: return null
+        if (composedParts.isEmpty()) compositionStartRaw = raw
+        val rawBefore = raw
         raw = raw.drop(candidate.consumed).trimStart('\'')
         learn(candidate.text)
+        composedParts.add(candidate.text)
+        composedSpellings.add(candidate.spelling.substringBefore(" · "))
+        if (raw.isEmpty()) {
+            // Only a phrase built from two or more taps is a composition worth fixing;
+            // three identical repeats turn it into a single candidate next time.
+            if (composedParts.size >= 2) {
+                recordComposition(rawKey(compositionStartRaw.ifEmpty { rawBefore }), composedParts, composedSpellings)
+                // The composed phrase itself joins the frequency memory, so after three
+                // repetitions it is also solidified as a first-class candidate.
+                learn(composedParts.joinToString(""))
+            }
+            composedParts.clear(); composedSpellings.clear(); compositionStartRaw = ""
+        }
         refresh()
         return candidate.text
     }
@@ -68,7 +96,9 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             if (token == '\'' && (raw.isEmpty() || raw.last() == '\'')) return snapshot()
             var commit: String? = null
             if (raw.length == MAX_INPUT) commit = commitAll()
-            raw += token; refresh(); return snapshot(commit = commit)
+            raw += token
+            if (composedParts.isNotEmpty()) compositionStartRaw += token
+            refresh(); return snapshot(commit = commit)
         }
         if (raw.isEmpty()) return snapshot(false)
         val text = commitAll().orEmpty() + token
@@ -86,13 +116,19 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
 
     private data class Word(val end: Int, val entry: Pinyin18Entry, val abbreviated: Boolean)
     private data class Path(val text: String, val spelling: String, val score: Double,
-        val segments: Int = 0, val minimumWeight: Int = Int.MAX_VALUE)
+        val segments: Int = 0, val minimumWeight: Int = Int.MAX_VALUE,
+        val literal: Boolean = true, val latin: Boolean = false)
     private fun words(start: Int) = dictionary.words(raw, start).map { (end, entry) -> Word(end, entry, false) } +
         dictionary.abbreviations(raw, start).map { (end, entry) -> Word(end, entry, true) }
     private fun score(word: Word) = word.entry.score - dictionary.maxScore + learning(word.entry.text) -
         if (word.abbreviated) INITIAL_PENALTY * word.entry.syllableCount else 0.0
+    private fun rawKey(value: String): String = value.map { if (it == '\'') '|' else Keyboard18Keys.projected(it) }.joinToString("")
     private fun refresh() {
         if (raw.isEmpty()) { candidates = emptyList(); return }
+        val rawKey = rawKey(raw)
+        val learned = compositionCandidates(rawKey).map {
+            Pinyin18Candidate(it.text, it.spelling, raw.length, LEARNED_COMPOSITION_SCORE, complete = true)
+        }
         val paths = Array(raw.length + 1) { mutableListOf<Path>() }
         paths[0].add(Path("", "", 0.0))
         val direct = words(0)
@@ -111,7 +147,8 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
                     paths[end].add(Path(path.text + entry.text,
                         (path.spelling + " " + entry.spelling).trim(),
                         path.score + wordScore - if (repeated) REPETITION_PENALTY else 0.0,
-                        path.segments + 1, minOf(path.minimumWeight, entry.weight)))
+                        path.segments + 1, minOf(path.minimumWeight, entry.weight),
+                        path.literal && entry.literal, path.latin || entry.literal))
                 }
                 prune(paths[end])
             }
@@ -120,21 +157,62 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         // low-frequency multiword sentences such as e + e + m for grouped WE/WE/M input.
         val whole = paths[raw.length].filter { it.segments == 1 || it.minimumWeight >= MIN_COMPOSITION_WEIGHT }
             .map { Pinyin18Candidate(it.text, it.spelling, raw.length,
-                it.score + if (it.segments > 1) learning(it.text) else 0.0) }
+                it.score + if (it.segments > 1) learning(it.text) else 0.0, complete = true,
+                synthetic = it.segments > 1 && it.latin) }
         val lexical = direct.map { word -> Pinyin18Candidate(word.entry.text,
             word.entry.spelling + if (word.abbreviated) " · 简拼" else "", word.end,
-            score(word) + if (word.end == raw.length) COMPLETE_WORD_BONUS else 0.0) }
+            score(word) + if (word.end == raw.length) COMPLETE_WORD_BONUS else 0.0,
+            complete = word.end == raw.length) }
         val completion = dictionary.completions(raw, 0).map { entry ->
             Pinyin18Candidate(entry.text, entry.spelling + " · 补全", raw.length,
-                entry.score - dictionary.maxScore - 3.0 + learning(entry.text)) }
+                entry.score - dictionary.maxScore - 3.0 + learning(entry.text), suggestion = true) }
+        // A candidate whose full spelling equals the typed sequence is a better fit than
+        // alternative decodings from the same 18-key groups. Do not pin the raw letters
+        // themselves: uuru should surface words, not a Latin "uuru" candidate.
+        val typed = raw.filter { it != '\'' }
+            .map { token -> Keyboard18Keys.group(token.code)?.first() ?: token }
+            .joinToString("")
+        fun spelledAsTyped(candidate: Pinyin18Candidate) = typed.length > 1 &&
+            candidate.spelling.substringBefore(" · ").replace(" ", "").replace("'", "") == typed
         // Rank corpus words, valid sentences and partial selections together. A fabricated
         // complete path no longer beats every real word merely because it consumes all taps.
-        candidates = (lexical + whole + completion).sortedWith(
-            // A learned prefix must not outrank an unlearned word covering the entire
-            // input. Keep the original prefix penalty and only pin complete selections.
-            compareByDescending<Pinyin18Candidate> {
-                it.consumed == raw.length && frequency(it.text) >= LEARNED_THRESHOLD
+        candidates = (learned + lexical + whole + completion)
+            .filterNot { it.synthetic }
+            // Drop Latin letter strings that only echo the typed pinyin: they are neither
+            // English nor Chinese words. Real English entries such as "ok" stay.
+            .filterNot { candidate ->
+                candidate.text.all { it in 'a'..'z' || it in 'A'..'Z' } &&
+                    !dictionary.hasText(candidate.text)
             }
+            // A single Latin letter is not a word either.
+            .filterNot { candidate ->
+                candidate.text.length == 1 && candidate.text[0] in 'a'..'z' &&
+                    candidate.text !in setOf("a", "i")
+            }
+            // English-table rows that are exactly a Chinese pinyin code or a bare
+            // pinyin final (ai, ui, ...) are the pinyin itself, not a candidate word.
+            .filterNot { candidate ->
+                candidate.text.length == 2 && candidate.text.all { it in 'a'..'z' || it in 'A'..'Z' } &&
+                    candidate.text.lowercase() !in COMMON_TWO_LETTER_WORDS &&
+                    dictionary.literalWeight(candidate.text) < TWO_LETTER_WORD_MIN_WEIGHT
+            }
+            .sortedWith(
+            // Real candidates covering the entire input come first so one tap commits the
+            // whole sentence instead of leaving the user to pick word by word. Prefix
+            // completions are not "complete": they add characters the user did not type.
+            // A learned composition for these exact taps always wins.
+            // Typed-letter fallback and learned compositions lead.
+            compareByDescending<Pinyin18Candidate> { it.score >= LEARNED_COMPOSITION_SCORE }
+                // Associative completions always come after candidates for the typed input.
+                .thenBy { it.suggestion }
+                // Words covering the whole typed sequence beat shorter prefix words,
+                // even when a single character was picked repeatedly before.
+                .thenByDescending { it.consumed == raw.length }
+                .thenByDescending { spelledAsTyped(it) }
+                .thenByDescending { it.complete }
+                // Within the same coverage, repeated picks solidify.
+                .thenByDescending { frequency(it.text) >= LEARNED_THRESHOLD }
+                .thenByDescending { c -> frequency(c.text).let { if (it >= LEARNED_THRESHOLD) it else 0 } }
                 .thenByDescending { it.score - PREFIX_PENALTY * (raw.length - it.consumed) }
         ).distinctBy { it.text to it.consumed }.take(MAX_CANDIDATES)
     }
@@ -147,12 +225,20 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         paths.clear(); paths.addAll(top)
     }
     companion object {
-        private const val MAX_INPUT = 64
+        private const val LEARNED_COMPOSITION_SCORE = 1_000_000.0
+const val MAX_INPUT = 64
         private const val BEAM = 8
         private const val WORD_PENALTY = 0.7
         private const val INITIAL_PENALTY = 1.2
         private const val COMPLETE_WORD_BONUS = 4.0
         private const val PREFIX_PENALTY = 1.5
+        /** Two-letter key abbreviations and pinyin fragments sit below real English words. */
+        private const val TWO_LETTER_WORD_MIN_WEIGHT = 10_000
+        private val COMMON_TWO_LETTER_WORDS = setOf(
+            "ai", "ui", "pc", "vr", "ar", "tv", "cd", "id", "ip", "hp", "pm", "uk", "us", "la",
+            "ok", "am", "an", "as", "at", "be", "by", "do", "go", "he", "hi", "if", "in", "is",
+            "it", "me", "my", "no", "of", "on", "or", "so", "to", "up", "we", "qq", "wx", "vx"
+        )
         private const val REPETITION_PENALTY = 6.0
         private const val MIN_COMPOSITION_WEIGHT = 32
         private const val MAX_CANDIDATES = 160

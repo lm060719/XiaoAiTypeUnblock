@@ -1,5 +1,6 @@
 package io.mo.xatype.hooks
 
+import android.content.res.Configuration
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -10,15 +11,21 @@ import io.mo.xatype.compat.abiField
 import io.mo.xatype.compat.abiMethod
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.KeyboardShortcutLayout
+import io.mo.xatype.keyboard.KeyboardShortcuts
 import io.mo.xatype.keyboard.ShortcutSwipeGesture
 import io.mo.xatype.keyboard.ShortcutSwipeHostBridge
 import io.mo.xatype.util.XposedUtils
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
+import kotlin.math.abs
 import kotlin.math.min
 
 /** Bind to actual Compose key coordinates; cancel native input only once a downward drag wins. */
-class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layout: () -> KeyboardShortcutLayout?) {
+class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layout: () -> KeyboardShortcutLayout?,
+                            private val clearInput: () -> Unit = {}, private val restoreInput: () -> Unit = {},
+                            private val fieldLength: () -> Int = { -1 },
+                            private val hasComposition: () -> Boolean = { false },
+                            private val hasSelection: () -> Boolean = { false }) {
     private class Key(val owner: WeakReference<View>, var source: Any, val action: String,
                       var callback: Any, val state: Any, val layout: KeyboardShortcutLayout,
                       val showsLabel: Boolean) {
@@ -35,6 +42,10 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                         val gesture: ShortcutSwipeGesture = ShortcutSwipeGesture()) {
         var nativeCancelled = false
         var haptic = false
+        var upArmed = false
+        var downArmed = false
+        var repeatRunnable: Runnable? = null
+        var repeatStarted = false
     }
     private val keys = WeakHashMap<View, MutableMap<String, Key>>()
     private val rendering = ThreadLocal<Key?>()
@@ -63,15 +74,18 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
         }
         val dispatch = abi.type("d2.w").abiMethod(abi, "dispatchTouchEvent", MotionEvent::class.java)
         module.hook(renderer).intercept { chain ->
-            if (drawFailureReported || !enabled()) return@intercept chain.proceed()
+            if (drawFailureReported) return@intercept chain.proceed()
             val source = chain.getArg(0)!!
             val currentLayout = layout() ?: return@intercept chain.proceed()
-            val action = bridge.action(source, currentLayout) ?: return@intercept chain.proceed()
+            // The delete swipe works even when text shortcuts are disabled.
+            val shortcut = if (enabled()) bridge.action(source, currentLayout) else null
+            val deleteKey = shortcut == null && currentLayout == KeyboardShortcutLayout.KEYBOARD18 && bridge.isDelete(source)
+            val action = shortcut ?: if (deleteKey) KeyboardShortcuts.CLEAR_INPUT else return@intercept chain.proceed()
             val owner = bridge.view(chain.getArg(composerIndex)!!)
             val code = source.javaClass.abiField(abi, "a").getInt(source)
             val id = "${currentLayout}:${code}:${bridge.label(source)}"
             // Only grouped/9-key shortcuts get labels; native 26-key letters stay clean.
-            val showsLabel = code.toChar().lowercaseChar() !in 'a'..'z'
+            val showsLabel = shortcut != null && code.toChar().lowercaseChar() !in 'a'..'z'
             val key = keys.getOrPut(owner) { LinkedHashMap() }.getOrPut(id) {
                 Key(WeakReference(owner), source, action, bridge.unwrap(chain.getArg(callbackIndex)!!), bridge.progressState(), currentLayout, showsLabel)
             }
@@ -89,7 +103,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                 // Geometry/parent modifiers change on resize and layout switches.
                 key.labelModifier = null
             }
-            args[MODIFIER_INDEX] = if (ConfigManager.isShortcutLabelsEnabled() && key.showsLabel) {
+            args[MODIFIER_INDEX] = if (ConfigManager.isShortcutLabelsEnabled() && key.showsLabel && key.owner.get()?.resources?.configuration?.orientation == Configuration.ORIENTATION_PORTRAIT) {
                 if (key.labelModifier == null) key.labelModifier = bridge.drawing(key.decoratedModifier!!) { scope ->
                     try {
                         val dm = key.owner.get()?.resources?.displayMetrics
@@ -145,11 +159,31 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             chain.proceed(args)
         }
         module.deoptimize(text)
+        // The host touch is swallowed for delete, so reproduce its long-press repeat here.
+        fun scheduleDeleteRepeat(view: View, current: Touch) {
+            val key = current.key
+            val runnable = object : Runnable {
+                override fun run() {
+                    if (touch !== current || current.upArmed || current.downArmed) return
+                    current.repeatStarted = true
+                    // Native delete vibrates for every repeated character.
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    if (fieldLength() == 0) return
+                    runCatching { bridge.dispatch(key.callback, key.source) }
+                        .onFailure { XposedUtils.logError(module, "Delete repeat failed", it) }
+                    view.postDelayed(this, REPEAT_INTERVAL)
+                }
+            }
+            current.repeatRunnable = runnable
+            view.postDelayed(runnable, REPEAT_DELAY)
+        }
+
         module.hook(dispatch).intercept { chain ->
             val view = chain.thisObject as View
             val event = chain.getArg(0) as MotionEvent
             fun reset() {
                 touch?.let { current ->
+                    current.repeatRunnable?.let { current.key.owner.get()?.removeCallbacks(it) }
                     bridge.progress(current.key.state, 0f)
                     // Let pending native cancellation callbacks drain before accepting a fresh callback.
                     current.key.owner.get()?.post { current.key.blockNative = false }
@@ -158,7 +192,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             }
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 reset()
-                if (!drawFailureReported && enabled() && event.pointerCount == 1) {
+                if (!drawFailureReported && event.pointerCount == 1) {
                     val currentLayout = layout()
                     // Compose can reuse attached coordinates when case/layout changes. A
                     // cached key from the old case can still share those bounds; guard the
@@ -169,23 +203,80 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                         } == true
                     }?.maxByOrNull { it.lastRendered }
                     if (key != null) {
-                        key.blockNative = false
-                        touch = Touch(key, event.getPointerId(0), event.rawX, event.rawY,
+                        // Delete owns the whole gesture: block its native press until release.
+                        key.blockNative = key.action == KeyboardShortcuts.CLEAR_INPUT
+                        val newTouch = Touch(key, event.getPointerId(0), event.rawX, event.rawY,
                             view.resources.displayMetrics.density)
+                        touch = newTouch
+                        if (key.action == KeyboardShortcuts.CLEAR_INPUT) {
+                            // The delete key owns the whole gesture. Letting the host see any
+                            // of it can trigger its own swipe/hide handling.
+                            scheduleDeleteRepeat(view, newTouch)
+                            return@intercept true
+                        }
                     }
                 }
                 return@intercept chain.proceed()
             }
             val current = touch?.takeIf { it.key.owner.get() === view } ?: return@intercept chain.proceed()
             val nativeWasCancelled = current.nativeCancelled
-            if (drawFailureReported || !enabled() || current.key.layout != layout() || event.pointerCount != 1 ||
+            if (drawFailureReported || current.key.layout != layout() || event.pointerCount != 1 ||
                 event.actionMasked == MotionEvent.ACTION_CANCEL || event.findPointerIndex(current.pointer) < 0) {
                 current.gesture.cancel()
                 bridge.progress(current.key.state, 0f)
                 if (event.actionMasked == MotionEvent.ACTION_CANCEL || event.actionMasked == MotionEvent.ACTION_UP) reset()
-                return@intercept if (nativeWasCancelled) true else chain.proceed()
+                return@intercept if (nativeWasCancelled || current.key.action == KeyboardShortcuts.CLEAR_INPUT) true else chain.proceed()
             }
             if (event.actionMasked == MotionEvent.ACTION_MOVE || event.actionMasked == MotionEvent.ACTION_UP) {
+                if (current.key.action == KeyboardShortcuts.CLEAR_INPUT) {
+                    val dx = (event.rawX - current.x) / current.density
+                    val dy = (event.rawY - current.y) / current.density
+                    if (!current.upArmed && !current.downArmed &&
+                        (dy <= -UP_SLOP || dy >= UP_SLOP) && abs(dy) > abs(dx)) {
+                        if (dy <= -UP_ACTIVATE) current.upArmed = true
+                        if (dy >= UP_ACTIVATE) current.downArmed = true
+                        if (current.upArmed || current.downArmed) {
+                            current.repeatRunnable?.let { view.removeCallbacks(it) }
+                            if (!current.haptic) {
+                                current.haptic = true
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            }
+                        }
+                    }
+                    if (event.actionMasked == MotionEvent.ACTION_UP) {
+                        val dy = (event.rawY - current.y) / current.density
+                        val up = current.upArmed || dy <= -UP_ACTIVATE
+                        val down = current.downArmed || dy >= UP_ACTIVATE
+                        val repeated = current.repeatStarted
+                        reset()
+                        if (up) runCatching { clearInput() }
+                            .onFailure { XposedUtils.logError(module, "Swipe clear failed", it) }
+                        if (down) runCatching { restoreInput() }
+                            .onFailure { XposedUtils.logError(module, "Swipe restore failed", it) }
+                        if (!up && !down && !repeated) {
+                            // Plain tap: replay exactly one native delete, including its haptic.
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            val key = current.key
+                            val composingAtTap = hasComposition()
+                            val selectionAtTap = hasSelection()
+                            val before = fieldLength()
+                            fun sendDelete() {
+                                runCatching { bridge.dispatch(key.callback, key.source) }
+                                    .onFailure { XposedUtils.logError(module, "Delete replay failed", it) }
+                            }
+                            // The first callback right after a restore can be consumed by the
+                            // host's pending state; if the field did not shrink, replay once more.
+                            view.postDelayed({
+                                sendDelete()
+                                if (!composingAtTap && !selectionAtTap && before >= 0) view.postDelayed({
+                                    if (fieldLength() == before) sendDelete()
+                                }, 120L)
+                            }, 30L)
+                        }
+                        return@intercept true
+                    }
+                    return@intercept true
+                }
                 current.gesture.move((event.rawX - current.x) / current.density, (event.rawY - current.y) / current.density)
                 if (current.gesture.dragging && !current.nativeCancelled) {
                     val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
@@ -219,6 +310,12 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
         const val MODIFIER_INDEX = 2
         /** Text's Modifier is its second parameter. */
         const val TEXT_MODIFIER_SHIFT = 1 + 3 * 1
+        /** Upward swipe on the delete key clears the field. */
+        const val UP_SLOP = 8f
+        const val UP_ACTIVATE = 28f
+        /** Delete long-press repeat, matching the host's delete key. */
+        const val REPEAT_DELAY = 420L
+        const val REPEAT_INTERVAL = 55L
 
         /**
          * Compose only calls changed(), which consumes a slot, for parameters the caller left uncertain.

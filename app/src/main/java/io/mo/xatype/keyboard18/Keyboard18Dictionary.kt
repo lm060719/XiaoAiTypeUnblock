@@ -5,7 +5,7 @@ import java.util.zip.GZIPInputStream
 import io.mo.xatype.keyboard.ShuangpinScheme
 import kotlin.math.ln
 
-data class Pinyin18Entry(val text: String, val spelling: String, val weight: Int, val inputSpelling: String = spelling) {
+data class Pinyin18Entry(val text: String, val spelling: String, val weight: Int, val inputSpelling: String = spelling, val literal: Boolean = false) {
     val code = inputSpelling.replace(" ", "")
     val initials = inputSpelling.split(' ').joinToString("") { it.first().toString() }
     val syllableCount = initials.length
@@ -28,6 +28,17 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
     private val initialRoot = Node()
     val maxLength = entries.maxOf { it.code.length }
     val maxScore = entries.maxOf { it.score }
+    private val texts = entries.mapTo(HashSet(entries.size)) { it.text }
+    private val literalWeights = HashMap<String, Int>()
+    init {
+        entries.forEach { entry ->
+            if (entry.literal) literalWeights[entry.text] = maxOf(literalWeights[entry.text] ?: 0, entry.weight)
+        }
+    }
+    /** True when [text] is a real dictionary entry, not a synthesized Latin path. */
+    fun hasText(text: String): Boolean = text in texts
+    /** Highest corpus weight of a literal (English/tech) entry for [text], or 0. */
+    fun literalWeight(text: String): Int = literalWeights[text] ?: 0
 
     init {
         // Input rows are ordered by descending corpus frequency.
@@ -40,7 +51,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
             node.words.add(entry)
             // Index each syllable's first letter separately from the literal full spelling.
             // A grouped tap still has to contain that initial: WE is never an alias for S.
-            if (scheme == null && entry.initials != entry.code) {
+            if (scheme == null && entry.initials != entry.code && !entry.literal) {
                 var initialNode = initialRoot
                 entry.initials.forEach { letter ->
                     initialNode = initialNode.children.getOrPut(Keyboard18Keys.representative(letter)) { Node() }
@@ -111,18 +122,24 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
             val encoded = HashMap<String, String?>()
             GZIPInputStream(input).bufferedReader(Charsets.UTF_8).useLines { lines ->
                 lines.forEach { line ->
+                    // A malformed or supplementary row must not take the whole keyboard down;
+                    // skip it and keep the rest of the corpus usable.
                     val parts = line.split('\t')
-                    require(parts.size == 3 && parts[0].isNotEmpty()) { "拼音词库格式错误" }
+                    if (parts.size != 3 || parts[0].isEmpty()) return@forEach
+                    val weight = parts[2].toIntOrNull() ?: return@forEach
+                    val literal = parts[0].any { it in 'a'..'z' || it in 'A'..'Z' }
                     val code = parts[1].replace(" ", "")
-                    require(code.isNotEmpty() && code.length <= 48 && code.all { it in 'a'..'z' })
-                    val inputSpelling = if (scheme == null) parts[1] else {
+                    if (code.isEmpty() || code.length > 48 || !code.all { it in 'a'..'z' }) return@forEach
+                    // English/mixed rows stay as literal latin codes in every scheme so the
+                    // user can type them directly; only pure pinyin rows are re-encoded.
+                    val inputSpelling = if (scheme == null || literal) parts[1] else {
                         val syllables = parts[1].split(' ').map { syllable ->
                             encoded.getOrPut(syllable) { scheme.encodeSyllable(syllable) }
+                                ?: return@forEach
                         }
-                        if (syllables.any { it == null }) return@forEach
-                        syllables.joinToString(" ") { checkNotNull(it) }
+                        syllables.joinToString(" ")
                     }
-                    rows.add(Pinyin18Entry(parts[0], parts[1], parts[2].toInt().coerceAtLeast(0), inputSpelling))
+                    rows.add(Pinyin18Entry(parts[0], parts[1], weight.coerceAtLeast(0), inputSpelling, literal))
                 }
             }
             require(rows.isNotEmpty() && rows.size <= 300_000) { "拼音词库为空或过大" }

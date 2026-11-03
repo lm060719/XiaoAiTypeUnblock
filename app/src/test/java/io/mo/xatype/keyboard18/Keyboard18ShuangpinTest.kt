@@ -60,6 +60,17 @@ class Keyboard18ShuangpinTest {
         assertFalse(engine.candidates.any { it.text == "为什么" })
     }
 
+    @Test fun `two syllable shuangpin prefers the complete word over a learned prefix`() {
+        val engine = Keyboard18Engine(dictionary(ShuangpinScheme.XIAOHE))
+        repeat(3) {
+            engine.inputText("ni")
+            engine.select(engine.candidates.indexOfFirst { it.text == "你" })
+            engine.clear()
+        }
+        engine.inputText("nihc")
+        assertEquals("你好", engine.candidates.first().text)
+    }
+
     @Test fun `partial selection keeps the suffix and supports deletion restore and delimiters`() {
         val engine = Keyboard18Engine(dictionary(ShuangpinScheme.XIAOHE))
         engine.inputText("vsgo")
