@@ -145,6 +145,27 @@ class Keyboard18EngineTest {
         assertEquals("你好", engine.candidates.first().text)
     }
 
+    @Test fun `pinyin key-letter echoes never enter candidates`() {
+        val engine = Keyboard18Engine(mergedDictionary)
+        for (groups in listOf(
+            arrayOf("q", "y"), arrayOf("q", "we"), arrayOf("we", "q"),
+            arrayOf("we", "sd"), arrayOf("rt", "io"), arrayOf("a", "m"),
+            arrayOf("u", "io"), arrayOf("sd", "m"), arrayOf("m", "sd")
+        )) {
+            engine.clear()
+            engine.inputText(grouped(*groups))
+            val echo = groups.joinToString("") { group -> Keyboard18Keys.group(Keyboard18Keys.code(group))!! }
+            val bad = engine.candidates.filter { candidate ->
+                candidate.text.all { it in 'a'..'z' || it in 'A'..'Z' } &&
+                    candidate.text.lowercase() !in setOf("ai", "ok", "qq", "app", "api", "wx", "vx")
+            }
+            assertTrue("$echo bad=" + bad.joinToString { "${it.text}/${it.spelling}" }, bad.isEmpty())
+        }
+        engine.clear()
+        engine.inputText("ai")
+        assertTrue(engine.candidates.any { it.text == "ai" })
+    }
+
     @Test fun `expanded corpus covers modern practical terms`() {
         val engine = Keyboard18Engine(mergedDictionary)
         val terms = mapOf(

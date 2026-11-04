@@ -163,7 +163,9 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             word.entry.spelling + if (word.abbreviated) " · 简拼" else "", word.end,
             score(word) + if (word.end == raw.length) COMPLETE_WORD_BONUS else 0.0,
             complete = word.end == raw.length) }
-        val completion = dictionary.completions(raw, 0).map { entry ->
+        // English completions are noise in Chinese mode: the ambiguous 18-key groups
+        // can surface e.g. "equal" from WE+Q, which is neither the typed pinyin nor useful.
+        val completion = dictionary.completions(raw, 0).filterNot { it.literal }.map { entry ->
             Pinyin18Candidate(entry.text, entry.spelling + " · 补全", raw.length,
                 entry.score - dictionary.maxScore - 3.0 + learning(entry.text), suggestion = true) }
         // A candidate whose full spelling equals the typed sequence is a better fit than
@@ -174,6 +176,33 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             .joinToString("")
         fun spelledAsTyped(candidate: Pinyin18Candidate) = typed.length > 1 &&
             candidate.spelling.substringBefore(" · ").replace(" ", "").replace("'", "") == typed
+        // A candidate made only of the letters the user just tapped is the pinyin echo,
+        // not a word. This covers single+single, single+double, double+single and
+        // double+double key combinations. A few genuine terms are exempted.
+        fun keyLetterEcho(candidate: Pinyin18Candidate): Boolean {
+            if (candidate.text.any { it !in 'a'..'z' && it !in 'A'..'Z' }) return false
+            val lower = candidate.text.lowercase()
+            if (lower in KEEP_LATIN) return false
+            if (lower in Keyboard18Keys.groups) return true
+            val tokens = raw.filter { it != '\'' }
+            if (tokens.isEmpty()) return false
+            // Each tap contributes one to three letters from its key group. A candidate
+            // that can be partitioned this way is the pinyin echo of the keys, not a word.
+            fun match(tokenIndex: Int, charIndex: Int): Boolean {
+                // Prefix candidates are allowed to consume only the leading taps.
+                if (charIndex == candidate.text.length) return tokenIndex > 0
+                if (tokenIndex == tokens.length) return false
+                val token = tokens[tokenIndex]
+                val allowed = Keyboard18Keys.group(token.code) ?: token.toString()
+                for (width in 1..allowed.length) {
+                    if (charIndex + width > candidate.text.length) break
+                    if (candidate.text.substring(charIndex, charIndex + width).all { it in allowed } &&
+                        match(tokenIndex + 1, charIndex + width)) return true
+                }
+                return false
+            }
+            return match(0, 0)
+        }
         // Rank corpus words, valid sentences and partial selections together. A fabricated
         // complete path no longer beats every real word merely because it consumes all taps.
         candidates = (learned + lexical + whole + completion)
@@ -193,9 +222,10 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             // pinyin final (ai, ui, ...) are the pinyin itself, not a candidate word.
             .filterNot { candidate ->
                 candidate.text.length == 2 && candidate.text.all { it in 'a'..'z' || it in 'A'..'Z' } &&
-                    candidate.text.lowercase() !in COMMON_TWO_LETTER_WORDS &&
+                    candidate.text.lowercase() !in KEEP_LATIN &&
                     dictionary.literalWeight(candidate.text) < TWO_LETTER_WORD_MIN_WEIGHT
             }
+            .filterNot(::keyLetterEcho)
             .sortedWith(
             // Real candidates covering the entire input come first so one tap commits the
             // whole sentence instead of leaving the user to pick word by word. Prefix
@@ -234,11 +264,7 @@ const val MAX_INPUT = 64
         private const val PREFIX_PENALTY = 1.5
         /** Two-letter key abbreviations and pinyin fragments sit below real English words. */
         private const val TWO_LETTER_WORD_MIN_WEIGHT = 10_000
-        private val COMMON_TWO_LETTER_WORDS = setOf(
-            "ai", "ui", "pc", "vr", "ar", "tv", "cd", "id", "ip", "hp", "pm", "uk", "us", "la",
-            "ok", "am", "an", "as", "at", "be", "by", "do", "go", "he", "hi", "if", "in", "is",
-            "it", "me", "my", "no", "of", "on", "or", "so", "to", "up", "we", "qq", "wx", "vx"
-        )
+        private val KEEP_LATIN = setOf("ai", "ok", "qq", "app", "api", "wx", "vx")
         private const val REPETITION_PENALTY = 6.0
         private const val MIN_COMPOSITION_WEIGHT = 32
         private const val MAX_CANDIDATES = 160
