@@ -464,6 +464,9 @@ class MainActivity : AppCompatActivity() {
             },
             kit.navRow("18 键键盘", null, R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, Keyboard18Activity::class.java))
+            },
+            kit.navRow("在线词库", "雾凇拼音 / 万象拼音，二选一", R.drawable.ic_shape_import) {
+                startActivity(Intent(this, OnlineDictActivity::class.java))
             }
         ))
     }

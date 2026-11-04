@@ -20,6 +20,7 @@ import io.mo.xatype.hooks.KeyboardHeightUnblockHook
 import io.mo.xatype.hooks.KeyboardSelectionHook
 import io.mo.xatype.hooks.KeyboardShortcutsHook
 import io.mo.xatype.hooks.KeyboardStyleHook
+import io.mo.xatype.hooks.OnlineDictImportHook
 import io.mo.xatype.hooks.ShapeInputHook
 import io.mo.xatype.hooks.SystemUiNavigationGuardHook
 import io.mo.xatype.hooks.ScreenshotClipboardHook
@@ -144,6 +145,12 @@ class XiaoAiTypeModule : XposedModule() {
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_EMOJI, t)
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_PREDICTION, t)
             XposedUtils.logError(this, "Native candidate enhancements unavailable for this host ABI", t)
+        }
+
+        try {
+            OnlineDictImportHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Online word list unavailable for this host", t)
         }
 
         if (BuildConfig.INPUT_DIAGNOSTICS) {

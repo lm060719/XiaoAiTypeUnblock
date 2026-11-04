@@ -11,6 +11,9 @@
         android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         tools:node="remove" />
 
+    <!-- Downloads the online word list from GitHub Releases, only when the user asks. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <queries>
         <package android:name="com.xiaomi.type" />
         <package android:name="com.miui.phrase" />
@@ -55,6 +58,7 @@
 
         <activity android:name=".ui.ShapeInputActivity" android:exported="false" />
         <activity android:name=".ui.Keyboard18Activity" android:exported="false" />
+        <activity android:name=".ui.OnlineDictActivity" android:exported="false" />
         <!-- Root runs the capture, so no foreground service or permission is needed. -->
         <activity android:name=".diagnostics.DiagnosticsActivity" android:exported="false" />
 
@@ -89,6 +93,12 @@
         <provider
             android:name=".provider.ShapeContentProvider"
             android:authorities="io.mo.xatype.shapeprovider"
+            android:directBootAware="true"
+            android:exported="true" />
+
+        <provider
+            android:name=".provider.OnlineDictContentProvider"
+            android:authorities="io.mo.xatype.dictprovider"
             android:directBootAware="true"
             android:exported="true" />
 

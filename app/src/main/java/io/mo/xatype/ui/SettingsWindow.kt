@@ -68,6 +68,8 @@ internal object SettingsWindow {
         root.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 
+    private fun isToolbar(view: View) = view is androidx.appcompat.widget.Toolbar || view is android.widget.Toolbar
+
     /** Insets are always relative to the original padding and height, never to the last dispatch. */
     private class InitialBounds(view: View) {
         val left = view.paddingLeft
@@ -79,7 +81,10 @@ internal object SettingsWindow {
 
         fun inset(view: View, top: Int = 0, bottom: Int = 0) {
             view.setPadding(left, this.top + top, right, this.bottom + bottom)
-            view.minimumHeight = minimumHeight + top + bottom
+            // Toolbar centres its navigation button in a box of minimumHeight below the top padding;
+            // growing that box by the inset pushed the back arrow below the title.
+            view.minimumHeight = if (isToolbar(view) && height != null && height > 0) height
+                else minimumHeight + top + bottom
             // Fixed-height toolbars and tab bars must grow, otherwise padding squeezes their controls.
             if (height != null && height >= 0) {
                 val targetHeight = height + top + bottom
