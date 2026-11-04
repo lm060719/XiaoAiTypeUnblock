@@ -20,9 +20,10 @@ data class Pinyin18Entry(val text: String, val spelling: String, val weight: Int
 class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>, val scheme: ShuangpinScheme?) {
     fun valid(token: Char) = Keyboard18Keys.valid(token) || (scheme?.usesSemicolon == true && token == ';')
     private class Node {
-        val children = HashMap<Char, Node>()
-        val words = ArrayList<Pinyin18Entry>()
-        val completions = ArrayList<Pinyin18Entry>()
+        // Most trie nodes are leaves or pass-through; allocate collections only when needed.
+        var children: HashMap<Char, Node>? = null
+        var words: MutableList<Pinyin18Entry>? = null
+        var completions: MutableList<Pinyin18Entry>? = null
     }
     private val root = Node()
     private val initialRoot = Node()
@@ -45,18 +46,21 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
         entries.forEach { entry ->
             var node = root
             entry.code.forEach { letter ->
-                node = node.children.getOrPut(Keyboard18Keys.representative(letter)) { Node() }
-                if (node.completions.size < COMPLETIONS) node.completions.add(entry)
+                val children = node.children ?: HashMap<Char, Node>().also { node.children = it }
+                node = children.getOrPut(Keyboard18Keys.representative(letter)) { Node() }
+                val completions = node.completions ?: ArrayList<Pinyin18Entry>().also { node.completions = it }
+                if (completions.size < COMPLETIONS) completions.add(entry)
             }
-            node.words.add(entry)
+            (node.words ?: ArrayList<Pinyin18Entry>().also { node.words = it }).add(entry)
             // Index each syllable's first letter separately from the literal full spelling.
             // A grouped tap still has to contain that initial: WE is never an alias for S.
             if (scheme == null && entry.initials != entry.code && !entry.literal) {
                 var initialNode = initialRoot
                 entry.initials.forEach { letter ->
-                    initialNode = initialNode.children.getOrPut(Keyboard18Keys.representative(letter)) { Node() }
+                    val children = initialNode.children ?: HashMap<Char, Node>().also { initialNode.children = it }
+                    initialNode = children.getOrPut(Keyboard18Keys.representative(letter)) { Node() }
                 }
-                initialNode.words.add(entry)
+                (initialNode.words ?: ArrayList<Pinyin18Entry>().also { initialNode.words = it }).add(entry)
             }
         }
     }
@@ -89,9 +93,9 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
             val token = raw[position]
             if (token == '\'') continue
             if (++count > maxLength) break
-            node = node.children[Keyboard18Keys.projected(token)] ?: break
+            node = node.children?.get(Keyboard18Keys.projected(token)) ?: break
             var retained = 0
-            for (entry in node.words) {
+            for (entry in node.words.orEmpty()) {
                 if (compatible(entry, raw, start, position + 1, abbreviated)) {
                     result.add(position + 1 to entry)
                     if (++retained == WORDS_PER_CODE) break
@@ -107,10 +111,10 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
         for (position in start until raw.length) {
             if (raw[position] == '\'') continue
             count++
-            node = node.children[Keyboard18Keys.projected(raw[position])] ?: return emptyList()
+            node = node.children?.get(Keyboard18Keys.projected(raw[position])) ?: return emptyList()
         }
         if (count == 0) return emptyList()
-        return node.completions.filter { it.code.length > count && it.code.length - count <= 6 &&
+        return node.completions.orEmpty().filter { it.code.length > count && it.code.length - count <= 6 &&
             compatible(it, raw, start, raw.length) }.take(COMPLETIONS)
     }
 

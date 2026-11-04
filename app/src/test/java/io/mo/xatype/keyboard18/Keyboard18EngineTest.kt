@@ -145,6 +145,20 @@ class Keyboard18EngineTest {
         assertEquals("你好", engine.candidates.first().text)
     }
 
+    @Test fun `expanded corpus covers modern practical terms`() {
+        val engine = Keyboard18Engine(mergedDictionary)
+        val terms = mapOf(
+            "大模型" to "damoxing", "提示词" to "tishici", "知识图谱" to "zhishitupu",
+            "微服务" to "weifuwu", "直播带货" to "zhibodaihuo", "跨境电商" to "kuajingdianshang",
+            "核酸检测" to "hesuanjiance", "扫地机器人" to "saodijiqiren", "螺蛳粉" to "luosifen"
+        )
+        for ((word, code) in terms) {
+            engine.clear()
+            engine.inputText(code)
+            assertTrue("$word / $code", engine.candidates.any { it.text == word })
+        }
+    }
+
     @Test fun `shipped corpus contains the english and mixed entries`() {
         assertTrue(mergedDictionary.entries.any { it.text == "ok" && it.literal })
         assertTrue(mergedDictionary.entries.any { it.text == "qq飞车" })

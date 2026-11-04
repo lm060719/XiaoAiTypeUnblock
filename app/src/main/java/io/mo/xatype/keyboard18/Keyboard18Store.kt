@@ -43,7 +43,7 @@ object Keyboard18Store {
         putString(STATUS, sp.getString(STATUS, "尚未接入输入法"))
         putLong(STATUS_TIME, sp.getLong(STATUS_TIME, 0))
     } }
-    private const val DICTIONARY_REVISION = 5
+    private const val DICTIONARY_REVISION = 6
 
     @Synchronized
     fun dictionaryFile(context: Context): File {
