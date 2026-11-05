@@ -17,6 +17,12 @@ import io.mo.xatype.util.XposedUtils
 
 /** Native nine/26-key integration; does not load or require either experimental decoder. */
 object KeyboardShortcutsHook {
+    /**
+     * Keyboards whose visible keys come from the native layouts. The shape (虎码/五笔) keyboard
+     * replaces only the PINYIN engine and keeps the native 26-key layout and candidate callbacks.
+     */
+    private val shortcutKeyboards = setOf(KeyboardChoice.PINYIN, KeyboardChoice.KEYBOARD18, KeyboardChoice.SHAPE)
+
     @Volatile private var service: InputMethodService? = null
     @Volatile private var supported: Boolean? = null
     @Volatile private var layoutMode = "PINYIN"
@@ -87,7 +93,7 @@ object KeyboardShortcutsHook {
             // finish native composition here before dispatching any editor action.
             if (selectedKeyboard == KeyboardChoice.KEYBOARD18 && currentMode != "ENGLISH")
                 return@intercept chain.proceed()
-            if (supported != true || selectedKeyboard !in setOf(KeyboardChoice.PINYIN, KeyboardChoice.KEYBOARD18) ||
+            if (supported != true || selectedKeyboard !in shortcutKeyboards ||
                 KeyboardShortcutLayout.fromHost(currentMode,
                     layoutId.invoke(target) as? String, keyboard18 = false) == null) return@intercept null
             // Consume stale popup actions after disabling as well, never insert their labels.
@@ -101,9 +107,7 @@ object KeyboardShortcutsHook {
         module.deoptimize(handler)
         ShortcutSwipeHostHook(enabled = {
             supported == true && ConfigManager.isKeyboardShortcutsEnabled() &&
-                service?.let {
-                    KeyboardSelectionHook.selected(it) in setOf(KeyboardChoice.PINYIN, KeyboardChoice.KEYBOARD18)
-                } == true
+                service?.let { KeyboardSelectionHook.selected(it) in shortcutKeyboards } == true
         }, layout = { KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,
             keyboard18 = service?.let { KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18 } == true) })
             .install(module, loader)

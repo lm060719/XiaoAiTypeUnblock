@@ -41,14 +41,14 @@ internal object FeatureCatalog {
     val keyboardShortcuts = Feature(ConfigManager.KEY_KEYBOARD_SHORTCUTS, "按键下滑快捷操作",
         "按住按键下滑，快速段首、复制、粘贴、剪切、全选", Detail(
             "按住对应按键向下滑，字母会随距离渐变为功能图标；轻震后松手执行，往回滑可取消。",
-            notes = listOf("适用于拼音九键、18 键与拼音/英文 26 键。18 键切到英文后使用 26 键快捷操作。",
+            notes = listOf("适用于拼音九键、18 键、拼音/英文 26 键与虎码/五笔。18 键切到英文、虎码/五笔均使用 26 键快捷操作。",
                 "复制、剪切优先处理已选文字；没有选区时先全选。剪切使用系统编辑操作。"),
             extra = ::shortcutTable
         ))
 
     /** Hint text drawn on the same keys that carry the swipe action. */
     val shortcutLabels = Feature(ConfigManager.KEY_SHORTCUT_LABELS, "在按键上显示操作文字",
-        "在九键、18键、26键标出段首、复制、粘贴、全选等文字，大小与位置可调")
+        "在九键、18键、26键及虎码/五笔标出段首、复制、粘贴、全选等文字，大小与位置可调")
 
     val keyboardHeight = Feature(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, "解除键盘高度上限",
         "可继续向上拉伸")
@@ -67,12 +67,12 @@ internal object FeatureCatalog {
 
     val keyboardFeatures get() = listOf(keyboardShortcuts, shortcutLabels, emojiCandidates, keyboardHeight, bottomSpacing, t9Shuangpin)
 
-    /** Rows of action, nine-key, 26-key and 18-key triggers. */
+    /** Rows of action, nine-key, 26-key (also shape input) and 18-key triggers. */
     private val shortcutKeys = listOf(
         listOf("段首", "—", "—", "Z"),
         listOf("复制", "8", "C", "XC"),
         listOf("粘贴", "9", "V", "V"),
-        listOf("剪切", "4", "B", "—"),
+        listOf("剪切", "4", "X", "—"),
         listOf("全选", "7", "Z", "BN"),
         listOf("段尾", "6", "M", "M")
     )

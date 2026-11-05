@@ -1,8 +1,9 @@
 package io.mo.xatype.keyboard
 
-/** Shared release actions for the native nine/26-key and custom 18-key layouts. */
+/** Shared release actions for the native nine/26-key (including shape input) and custom 18-key layouts. */
 object KeyboardShortcuts {
-    val letters = mapOf('z' to "全选", 'c' to "复制", 'v' to "粘贴", 'b' to "剪切", 'm' to "段尾")
+    /** Native 26-key letters, shared by pinyin, English and the shape (虎码/五笔) keyboard. */
+    val letters = mapOf('z' to "全选", 'x' to "剪切", 'c' to "复制", 'v' to "粘贴", 'm' to "段尾")
     val groups18 = mapOf("z" to "段首", "xc" to "复制", "v" to "粘贴", "bn" to "全选", "m" to "段尾")
     val groups9 = mapOf("pqrs" to "全选", "tuv" to "复制", "wxyz" to "粘贴", "ghi" to "剪切", "mno" to "段尾")
     val t9Letters = mapOf('2' to "abc", '3' to "def", '4' to "ghi", '5' to "jkl",

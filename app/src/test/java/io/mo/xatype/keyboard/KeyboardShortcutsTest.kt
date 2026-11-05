@@ -68,7 +68,7 @@ class KeyboardShortcutsTest {
 
     @Test fun `18 key switches to native English layout and all five shortcuts survive shift and split`() {
         val builder = Keyboard18HostLayout(loader, abi)
-        val expected = mapOf('z' to "全选", 'c' to "复制", 'v' to "粘贴", 'b' to "剪切", 'm' to "段尾")
+        val expected = mapOf('z' to "全选", 'x' to "剪切", 'c' to "复制", 'v' to "粘贴", 'm' to "段尾")
         for (shift in listOf(false, true)) for (split in listOf(false, true)) {
             val original = layout(true, shift, split)
             assertSame(original, builder.rebuild(original, english = true))
@@ -92,6 +92,9 @@ class KeyboardShortcutsTest {
 
     @Test fun `unrelated labels symbols controls and non shortcut letters are not gestures`() {
         assertNull(adapter.action(key('a'.code, "A"), QWERTY))
+        // Cut moved from B to X on the native 26-key layout (pinyin, English, shape input).
+        assertNull(adapter.action(key('b'.code, "B"), QWERTY))
+        assertEquals("剪切", adapter.action(key('x'.code, "X"), QWERTY))
         assertNull(adapter.action(key('c'.code, "XC"), QWERTY))
         assertNull(adapter.action(key('c'.code, "复制"), QWERTY))
         assertNull(adapter.action(key('1'.code, "1"), QWERTY))
