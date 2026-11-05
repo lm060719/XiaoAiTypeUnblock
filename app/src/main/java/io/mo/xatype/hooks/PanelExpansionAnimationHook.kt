@@ -4,6 +4,7 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import io.github.libxposed.api.XposedModule
+import io.mo.xatype.compat.HostCoroutines
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
@@ -55,13 +56,15 @@ object PanelExpansionAnimationHook {
         }
         val expansion = body.declaringClass
         val animatable = snapTo.declaringClass
-        val continuation = animateTo.parameterTypes[4]
+        // animateTo$default through 0.2.1246, the four-parameter animateTo from 0.2.1358.
+        val defaults = animateTo.parameterCount == 6
+        val continuation = animateTo.parameterTypes[if (defaults) 4 else 3]
         val fields = expansion.declaredFields.filter { !Modifier.isStatic(it.modifiers) }
             .onEach { it.isAccessible = true }
         val label = fields.single { it.type == Int::class.javaPrimitiveType }
         val captured = fields.single { it.type == animatable }
         // 0.2.1246 passes the continuation first; earlier builds pass the target first.
-        val ownerIndex = snapTo.parameterTypes.indexOf(continuation)
+        val ownerIndex = snapTo.parameterTypes.indexOfFirst { it != Any::class.java && continuation.isAssignableFrom(it) }
         val valueIndex = 1 - ownerIndex
         check(ownerIndex in 0..1 && snapTo.parameterTypes[valueIndex] == Any::class.java)
         check(animateTo.parameterTypes[0] == animatable &&
@@ -80,7 +83,8 @@ object PanelExpansionAnimationHook {
             ) {
                 XposedUtils.logDebug(module) { "PanelExpansionAnimationHook: spring label=${label.getInt(owner)}" }
                 // animateTo$default: initialVelocity and the per-frame block keep their defaults.
-                animateTo.invoke(null, chain.thisObject, chain.getArg(valueIndex), spring, null, owner, 12)
+                if (defaults) animateTo.invoke(null, chain.thisObject, chain.getArg(valueIndex), spring, null, owner, 12)
+                else animateTo.invoke(null, chain.thisObject, chain.getArg(valueIndex), spring, owner)
             } else {
                 chain.proceed()
             }
@@ -109,7 +113,12 @@ object PanelExpansionAnimationHook {
         }
         val serviceType = managerGetter.declaringClass
         val managerType = managerGetter.returnType
-        check(close.returnType == Void.TYPE && close.parameterTypes.contentEquals(arrayOf(serviceType)))
+        // 0.2.1358 made the close handler a suspend function: (service, continuation) -> Object.
+        val coroutines = if (close.parameterCount == 2) HostCoroutines(serviceType.classLoader!!) else null
+        check(close.parameterTypes[0] == serviceType && if (coroutines == null)
+            close.returnType == Void.TYPE && close.parameterCount == 1
+        else close.returnType == Any::class.java && coroutines.continuationType.isAssignableFrom(close.parameterTypes[1]))
+        val scope = if (coroutines != null) serviceType.getMethod("getServiceScope\$app_iflytekFullRelease") else null
         check(modeGetter.declaringClass.isAssignableFrom(managerType) && modeGetter.returnType == replyMode.type)
         check(closingGetter.returnType == Boolean::class.javaPrimitiveType &&
             floatingGetter.returnType == Boolean::class.javaPrimitiveType)
@@ -127,7 +136,14 @@ object PanelExpansionAnimationHook {
             setClosing.invoke(closingState.get(manager), false)
             completingClose.set(true)
             try {
-                close.invoke(null, service)
+                if (coroutines == null) close.invoke(null, service)
+                // The handler's first segment runs synchronously, inside this guard.
+                else coroutines.start(coroutines.scopeContext(scope!!.invoke(service)!!),
+                    { close.invoke(null, service, it) }) { result ->
+                    result.exceptionOrNull()?.let {
+                        XposedUtils.logError(module, "PanelExpansionAnimationHook: reply panel close failed", it)
+                    }
+                }
             } finally {
                 completingClose.remove()
             }
@@ -150,7 +166,7 @@ object PanelExpansionAnimationHook {
                     // Covers a detached composition that cannot deliver its effect.
                     handler.postDelayed(timeout, 650L)
                 }
-                null
+                coroutines?.unit
             } else {
                 chain.proceed()
             }

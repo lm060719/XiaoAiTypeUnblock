@@ -1,4 +1,8 @@
-"""Declare the reference IDs used by keyboard bridges (IDs are never runtime fallbacks)."""
+"""Declare the reference IDs used by keyboard bridges (IDs are never runtime fallbacks).
+
+After update-keyboard-abi-reference.ps1 on the 0.2.1053 APK, run
+keyboard-abi-1053-settings-owner.py on its output.
+"""
 import json
 import sys
 
@@ -11,7 +15,7 @@ def group(name, classes, methods=None, fields=None):
 
 group("keyboard.engine", "z8.g z8.q z8.p z8.r z8.u z8.b z8.t z8.a z8.s z8.e y8.b nc.f ab.x0 ab.f1 ab.s0 ab.b1 ka.c ka.f",
       {"z8.q": "a b clear d destroy e f g i j k o q s t u", "z8.p": "c h l m n p r v",
-       "ab.x0": "b", "ab.f1": "c", "ab.s0": "l", "ab.b1": "u o K y"}, {"ka.c": "a f"})
+       "ab.x0": "b", "ab.f1": "c", "ab.s0": "l", "ab.b1": "u o K y h"}, {"ka.c": "a f"})
 group("keyboard.layout", "ka.c ka.f ka.e ka.g ab.p1 z8.g la.a ab.b1 ab.f1",
       {"ab.p1": "e H G", "ab.b1": "m A u o K y", "ab.f1": "c"},
       {"ka.c": "a b c d e f g h i j k l m n o p q r", "ka.e": "a b c", "ka.g": "a b c d e f g h i"})

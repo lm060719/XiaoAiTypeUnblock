@@ -442,15 +442,19 @@ object KeyboardStyleV209Hook
         )
         val textType = abi.type("p0.n")
         val long = Long::class.javaPrimitiveType
-        // Text(String) and Text(AnnotatedString): color is parameter 2 in both.
+        // Text(String) and Text(AnnotatedString): color is parameter 2 in both. The first
+        // $changed int follows the Composer, the last non-int parameter (0.2.1358 added three
+        // parameters to the AnnotatedString overload).
+        fun changedIndex(method: java.lang.reflect.Method) =
+            method.parameterTypes.indexOfLast { it != Int::class.javaPrimitiveType } + 1
         val texts = listOf(
             abi.namedMethods(textType, "a").single {
                 it.parameterCount == 19 && it.parameterTypes[0] == String::class.java && it.parameterTypes[2] == long
-            } to 16,
+            },
             abi.namedMethods(textType, "b").single {
-                it.parameterCount == 14 && it.parameterTypes[2] == long
-            } to 13
-        )
+                it.parameterCount >= 14 && it.parameterTypes[0] != String::class.java && it.parameterTypes[2] == long
+            }
+        ).map { it to changedIndex(it) }
 
         scopes.forEach { method ->
             module.hook(method).intercept { chain ->

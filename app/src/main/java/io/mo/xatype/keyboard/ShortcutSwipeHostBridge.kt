@@ -43,10 +43,11 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
     private val canvasGetter = context.returnType.abiMethod(abi, "s")
     private val nativeCanvas = type("l1.b").abiField(abi, "a").apply { isAccessible = true }
     private val argb = type("l1.h0").abiMethod(abi, "v", Long::class.javaPrimitiveType)
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Created on first draw: typefaces are unavailable outside an app process (binding probes).
+    private val labelPaint by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    }
+    } }
 
     fun label(instance: Any) = keys.label(instance)
     fun action(instance: Any, layout: KeyboardShortcutLayout) = keys.action(instance, layout)
@@ -117,13 +118,27 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
      * Draw the action text after the key's own content. [offsetX] is measured from the
      * horizontal centre and [bottomInset] from the key's bottom edge, both in pixels.
      */
-    fun drawLabel(scope: Any, text: String, color: Int, textSizePx: Float, offsetX: Float, bottomInset: Float) {
+    /** The drawn key's height in pixels. */
+    fun keyHeight(scope: Any): Float = Float.fromBits((drawSize.invoke(scope) as Long).toInt())
+
+    /**
+     * Draw [text] near the key's bottom edge. With a [referenceHeight], a shorter key (the floating
+     * keyboard) scales the text and its offsets down in proportion, so it keeps clear of the letter.
+     */
+    fun drawLabel(scope: Any, text: String, color: Int, textSizePx: Float, offsetX: Float, bottomInset: Float,
+                  referenceHeight: Float = 0f) {
         content.invoke(scope)
         if (text.isEmpty() || textSizePx <= 0f) return
         val size = drawSize.invoke(scope) as Long
         val width = Float.fromBits((size shr 32).toInt())
         val height = Float.fromBits(size.toInt())
         if (width <= 0f || height <= 0f) return
+        val scale = if (referenceHeight > 0f) (height / referenceHeight).coerceIn(MIN_LABEL_SCALE, 1f) else 1f
+        drawScaledLabel(scope, text, color, textSizePx * scale, offsetX * scale, bottomInset * scale, width, height)
+    }
+
+    private fun drawScaledLabel(scope: Any, text: String, color: Int, textSizePx: Float, offsetX: Float,
+                                bottomInset: Float, width: Float, height: Float) {
         val canvas = nativeCanvas.get(canvasGetter.invoke(context.invoke(scope))) as Canvas
         labelPaint.textSize = textSizePx
         val measured = labelPaint.measureText(text)
@@ -137,5 +152,10 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
         val minBaseline = minOf(-metrics.ascent + 1f, height - 1f)
         val baseline = (height - bottomInset).coerceIn(minBaseline, height - 1f)
         canvas.drawText(text, x, baseline, labelPaint)
+    }
+
+    private companion object {
+        /** Floating keys are about two thirds of the docked height; never shrink below half. */
+        const val MIN_LABEL_SCALE = 0.5f
     }
 }

@@ -6,10 +6,11 @@ import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.BuildConfig
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
-import io.mo.xatype.compat.abiMethod
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.EmojiCandidates
 import io.mo.xatype.keyboard.EmojiHostBridge
+import io.mo.xatype.keyboard.HostEngine
+import io.mo.xatype.keyboard.HostEngineFactory
 import io.mo.xatype.keyboard.PredictionMode
 import io.mo.xatype.keyboard.ShuangpinScheme
 import io.mo.xatype.util.XposedUtils
@@ -19,12 +20,11 @@ object EmojiCandidateHook {
     fun install(module: XposedInterface, loader: ClassLoader) {
         val abi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_ENGINE)
         val bridge = EmojiHostBridge(loader, abi)
-        val manager = abi.type("ab.x0")
-        val serviceField = manager.declaredFields.single {
+        val engines = HostEngineFactory(abi, HostEngine(abi))
+        val serviceField = engines.manager.declaredFields.single {
             it.type == abi.type("com.mi.ime.MiInputMethodService")
         }.apply { isAccessible = true }
-        val factory = manager.abiMethod(abi, "b", bridge.engineType)
-        require(factory.returnType == bridge.baseInterface)
+        val factory = engines.method
         // These existing fingerprints resolve the same preferences used by both native layouts.
         val nativeBoolean = HostSymbols.method(HostSymbols.T9_SHUANGPIN_BOOLEAN)
         val nativeString = HostSymbols.method(HostSymbols.T9_SHUANGPIN_STRING)
@@ -39,12 +39,12 @@ object EmojiCandidateHook {
         }
         module.hook(factory).intercept { chain ->
             val original = chain.proceed() ?: return@intercept null
-            val kind = (chain.getArg(0) as? Enum<*>)?.name
+            val kind = (engines.engineType(chain) as? Enum<*>)?.name
             if (BuildConfig.DEBUG) XposedUtils.log(module,
                 "[Emoji] factory mode=$kind engine=${original.javaClass.name} supported=${bridge.supports(original)}")
             if (kind !in setOf("PINYIN", "T9", "SHUANGPIN") || !bridge.supports(original)) return@intercept original
             runCatching {
-                val service = serviceField.get(chain.thisObject) as InputMethodService
+                val service = serviceField.get(engines.manager(chain)) as InputMethodService
                 // Disabled users keep the unwrapped native engine; enabling takes effect after an IME restart.
                 ConfigManager.syncFromProvider(service)
                 if (!ConfigManager.isEmojiCandidatesEnabled() && ConfigManager.getPredictionMode() == PredictionMode.KEEP)

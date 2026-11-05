@@ -31,6 +31,8 @@ object AdaptationStatus {
         HostSymbols.KEYBOARD_LETTER_APPEARANCE to "18键字母排版",
         HostSymbols.KEYBOARD_SURFACE_TEXT to "候选栏与剪贴板条字色",
         HostSymbols.KEYBOARD_KEY_PREVIEW to "单点字母提示框配色",
+        HostSymbols.KEYBOARD_KEY_PREVIEW_FILL to "单点字母提示框配色",
+        HostSymbols.KOTLIN_COROUTINES to "虎码/五笔与18键引擎",
         HostSymbols.KEYBOARD_KEY_POPUP to "长按选择框配色",
         HostSymbols.CLOUD_BLACKLIST to "云端黑名单词库下发拦截",
         HostSymbols.PANEL_EXPANSION to "AI 面板展开收起动画",

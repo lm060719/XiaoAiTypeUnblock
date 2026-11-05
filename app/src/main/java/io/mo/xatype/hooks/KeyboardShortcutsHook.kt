@@ -2,6 +2,7 @@ package io.mo.xatype.hooks
 
 import android.inputmethodservice.InputMethodService
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.compat.HostCoroutines
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.abiField
@@ -39,7 +40,14 @@ object KeyboardShortcutsHook {
         val engineType = abi.type("z8.g")
         val factory = KeyboardAbi.qwertyFactory(abi)
         val callbacks = abi.type("ab.b1")
-        val handler = abi.type("ab.f1").abiMethod(abi, "c", layouts.key, callbacks)
+        val handler = abi.namedMethods(abi.type("ab.f1"), "c").single {
+            it.parameterCount >= 2 && it.parameterTypes[0] == layouts.key && it.parameterTypes[1] == callbacks
+        }
+        // From 0.2.1358 the handler is a suspend function: (key, callbacks, continuation) -> Object.
+        val coroutines = if (handler.parameterCount == 3) HostCoroutines(loader) else null
+        require((coroutines == null) == !actions.suspending)
+        val mainCallbacks = if (coroutines != null)
+            hostService.getMethod("getKeyHandlerCallbacks\$app_iflytekFullRelease") else null
         val label = layouts.key.abiField(abi, "b").apply { isAccessible = true }
         val kind = layouts.key.abiField(abi, "f").apply { isAccessible = true }
         val popup = layouts.key.abiField(abi, "i").apply { isAccessible = true }
@@ -50,7 +58,7 @@ object KeyboardShortcutsHook {
         val setLayout = manager.declaredMethods.single {
             it.returnType == Void.TYPE && it.parameterTypes.contentEquals(arrayOf(layouts.layout))
         }.apply { isAccessible = true }
-        require(factory.returnType == layouts.layout && handler.returnType == Void.TYPE)
+        require(factory.returnType == layouts.layout && (handler.returnType == Void.TYPE || coroutines != null))
 
         fun captureManager(instance: Any) {
             service = context.get(instance) as InputMethodService
@@ -80,7 +88,8 @@ object KeyboardShortcutsHook {
         }
         module.deoptimize(setLayout)
         module.hook(handler).intercept { chain ->
-            val key = chain.getArg(0)!!
+            // A null key resumes the native handler's own state machine.
+            val key = chain.args[0] ?: return@intercept chain.proceed()
             val action = label.get(key) as String
             if (action !in KeyboardShortcuts.actions || (kind.get(key) as Enum<*>).name != "CHAR" ||
                 (popup.get(key) as? List<*>)?.contains(action) != true)
@@ -95,17 +104,42 @@ object KeyboardShortcutsHook {
                 return@intercept chain.proceed()
             if (supported != true || selectedKeyboard !in shortcutKeyboards ||
                 KeyboardShortcutLayout.fromHost(currentMode,
-                    layoutId.invoke(target) as? String, keyboard18 = false) == null) return@intercept null
+                    layoutId.invoke(target) as? String, keyboard18 = false) == null) return@intercept coroutines?.unit
             // Consume stale popup actions after disabling as well, never insert their labels.
-            if (ConfigManager.isKeyboardShortcutsEnabled()) runCatching {
-                val connection = ime.currentInputConnection ?: return@runCatching
-                actions.finishInput(target)
-                KeyboardShortcutActions.perform(connection, action)
+            if (!ConfigManager.isKeyboardShortcutsEnabled()) return@intercept coroutines?.unit
+            if (coroutines == null) {
+                runCatching {
+                    val connection = ime.currentInputConnection ?: return@runCatching
+                    actions.finishInput(target)
+                    KeyboardShortcutActions.perform(connection, action)
+                }.onFailure { XposedUtils.logError(module, "Key shortcut failed: $action", it) }
+                return@intercept null
+            }
+            fun act() = runCatching {
+                ime.currentInputConnection?.let { KeyboardShortcutActions.perform(it, action) }
             }.onFailure { XposedUtils.logError(module, "Key shortcut failed: $action", it) }
-            null
+            val caller = chain.args[2]!!
+            coroutines.suspendHook(caller, { XposedUtils.logError(module, "Key shortcut failed: $action", it) }) { finish ->
+                // Selecting candidates is the main input's pipeline; reply/translation boxes act directly.
+                if (mainCallbacks?.invoke(ime) !== target) {
+                    act()
+                    finish(Result.success(null))
+                } else actions.finishInput(coroutines, coroutines.context(caller), ime, target) { result ->
+                    if (result.isSuccess) act()
+                    finish(result)
+                }
+            }
         }
         module.deoptimize(handler)
-        ShortcutSwipeHostHook(enabled = {
+        // The floating keyboard shrinks its keys; labels follow (see ShortcutSwipeHostHook).
+        val uiManager = HostSymbols.method(HostSymbols.UI_MANAGER)
+        val uiFloating = HostSymbols.method(HostSymbols.UI_FLOATING)
+        fun floating(): Boolean {
+            val ime = service ?: return false
+            if (uiManager == null || uiFloating == null) return false
+            return runCatching { uiManager.invoke(ime)?.let(uiFloating::invoke) == true }.getOrDefault(false)
+        }
+        ShortcutSwipeHostHook(floating = ::floating, enabled = {
             supported == true && ConfigManager.isKeyboardShortcutsEnabled() &&
                 service?.let { KeyboardSelectionHook.selected(it) in shortcutKeyboards } == true
         }, layout = { KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,

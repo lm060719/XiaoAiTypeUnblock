@@ -18,33 +18,19 @@ class EmojiHostBridge(
     private val checked = ShapeHostBridge(loader, abi)
     val engineType = checked.engineType
     val baseInterface = checked.baseInterface
-    private val extended = abi.type("z8.p")
-    private val composing = abi.type("z8.s")
-    private val source = abi.type("z8.b").enumConstants.single { (it as Enum<*>).name == "SYSTEM" }
-    private val candidateConstructor = abi.type("z8.a").getConstructor(String::class.java,
-        String::class.java, Int::class.javaPrimitiveType, abi.type("z8.b"), String::class.java)
-    private val pairConstructor = abi.type("nc.f").getConstructor(Any::class.java, Any::class.java)
-    private val resultType = abi.type("z8.r")
-    private val resultConstructor = resultType.getConstructor(Boolean::class.javaPrimitiveType,
-        String::class.java, List::class.java, String::class.java, Int::class.javaPrimitiveType,
-        List::class.java, String::class.java)
+    private val host = checked.host
+    private val extended = host.extendedInterface
+    private val resultType = host.resultType
     private val getState = baseInterface.abiMethod(abi, "f")
     private val getMode = baseInterface.abiMethod(abi, "a")
     private val predicting = baseInterface.abiMethod(abi, "e")
     private val clear = baseInterface.abiMethod(abi, "clear")
     private val page = extended.abiMethod(abi, "m", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-    private val textField = fieldWithValue(candidateConstructor.newInstance(
-        "emoji-probe-text", "emoji-probe-note", 1, source, "emoji-probe-display"), "emoji-probe-text")
-    private val rawField = fieldWithValue(composing.getConstructor(Int::class.javaPrimitiveType,
-        String::class.java, String::class.java, List::class.java).newInstance(
-        0, "emoji-probe-raw", "emoji-probe-display", emptyList<Any>()), "emoji-probe-raw")
-    private val pairProbe = pairConstructor.newInstance("selection-probe", true)
+    private val textField = fieldWithValue(host.candidate(
+        "emoji-probe-text", "emoji-probe-note", 1, "emoji-probe-display"), "emoji-probe-text")
+    private val pairProbe = host.pair("selection-probe", true)
     private val commitField = fieldWithValue(pairProbe, "selection-probe")
     private val acceptedField = fieldWithValue(pairProbe, true)
-    private val resultProbeValues = arrayOf(true, "composing-probe", listOf("candidates-probe"),
-        "commit-probe", 17, listOf("errors-probe"), "accepted-probe")
-    private val resultProbe = resultConstructor.newInstance(*resultProbeValues)
-    private val resultFields = resultProbeValues.map { fieldWithValue(resultProbe, it) }
 
     private fun fieldWithValue(instance: Any, value: Any) = instance.javaClass.declaredFields
         .filterNot { Modifier.isStatic(it.modifiers) }.onEach { it.isAccessible = true }
@@ -89,10 +75,7 @@ class EmojiHostBridge(
             nativeSize = 0; head = emptyList(); indices = emptyList(); composition = ""
         }
 
-        private fun raw(): String {
-            val state = getState.invoke(engine)
-            return if (composing.isInstance(state)) rawField.get(state) as String else ""
-        }
+        private fun raw(): String = host.rawOf(getState.invoke(engine))
 
         private fun <T> predictionOr(fallback: T, block: () -> T): T {
             if (predictionUnavailable) return fallback
@@ -124,16 +107,14 @@ class EmojiHostBridge(
                 predictionOr(result) {
                     val committed = when {
                         result is String -> result.isNotEmpty()
-                        resultType.isInstance(result) -> (resultFields[3].get(result) as? String).orEmpty().isNotEmpty()
+                        resultType.isInstance(result) -> host.commitOf(result).orEmpty().isNotEmpty()
                         result != null -> acceptedField.get(result) == true &&
                             (commitField.get(result) as? String).orEmpty().isNotEmpty()
                         else -> false
                     }
                     if (committed && discardPrediction() && resultType.isInstance(result)) {
                         // The key callback's snapshot predates clear(); preserve its commit and metadata.
-                        resultConstructor.newInstance(*resultFields.mapIndexed { index, field ->
-                            if (index == 2) emptyList<Any>() else field.get(result)
-                        }.toTypedArray())
+                        host.withCandidates(result, emptyList())
                     } else result
                 }
             } else result
@@ -173,7 +154,7 @@ class EmojiHostBridge(
                             original.forEachIndexed { index, candidate ->
                                 merged.add(candidate); mapping.add(index)
                                 additions.filter { it.after == index }.forEach { addition ->
-                                    merged.add(candidateConstructor.newInstance(addition.text, null, 0, source, addition.text))
+                                    merged.add(host.candidate(addition.text, null, 0, addition.text))
                                     mapping.add(null)
                                 }
                             }
@@ -204,20 +185,21 @@ class EmojiHostBridge(
                             // an unreadable state counts as changed rather than escaping into the host.
                             if (runCatching { raw() }.getOrNull() != composition) {
                                 trace("selection ignored: composition changed")
-                                return if (arguments.size == 1) "" else pairConstructor.newInstance("", false)
+                                return if (arguments.size == 1) "" else host.pair("", false)
                             }
                             val emoji = textField.get(head[index]) as String
                             clear.invoke(engine)
                             reset()
                             trace("emoji selected: native composition cleared, returning commit")
-                            if (arguments.size == 1) emoji else pairConstructor.newInstance(emoji, true)
+                            if (arguments.size == 1) emoji else host.pair(emoji, true)
                         } else {
                             val forwarded = arguments.copyOf().mapIndexed { i, arg -> if (i == 0) nativeIndex else arg }.toTypedArray()
                             reset()
                             selectNative(method, forwarded)
                         }
                     }
-                    "a", "e", "f", "j", "v", "singleCharFilterSupported" -> method.invoke(engine, *arguments)
+                    "a", "e", "f", "j", "v", "singleCharFilterSupported", "cursorEditing", "engineName",
+                    "segmentState" -> method.invoke(engine, *arguments)
                     else -> {
                         reset()
                         // Space/enter may commit through a key callback instead of candidate selection.

@@ -59,7 +59,9 @@ internal object KeyPopupColorHook {
             val method = checkNotNull(HostSymbols.method(HostSymbols.KEYBOARD_KEY_PREVIEW))
             val paints = method.declaringClass.declaredFields.filter { it.type == Paint::class.java }
                 .onEach { it.isAccessible = true }
-            check(paints.size == 2)
+            // 0.2.1358 fills from a bitmap cached by this color; the only Paint is the label's.
+            val fill = HostSymbols.field(HostSymbols.KEYBOARD_KEY_PREVIEW_FILL)
+            check(if (fill == null) paints.size == 2 else paints.size == 1 && fill.type == Int::class.javaPrimitiveType)
             module.hook(method).intercept { chain ->
                 if (!ConfigManager.isStyleEnabled()) return@intercept chain.proceed()
                 val background = argb(ConfigManager.getKeyPopupBackground())
@@ -68,15 +70,27 @@ internal object KeyPopupColorHook {
                 val values = paints.map { it.get(chain.thisObject) as Paint }
                 val label = values.singleOrNull { it.textAlign == Paint.Align.CENTER }
                     ?: return@intercept chain.proceed()
-                val fill = values.single { it !== label }
-                val oldFill = fill.color
                 val oldText = label.color
+                if (fill != null) {
+                    val view = chain.thisObject
+                    val oldFill = fill.getInt(view)
+                    try {
+                        background?.let { fill.setInt(view, it) }
+                        text?.let { label.color = it }
+                        return@intercept chain.proceed()
+                    } finally {
+                        fill.setInt(view, oldFill)
+                        label.color = oldText
+                    }
+                }
+                val paint = values.single { it !== label }
+                val oldFill = paint.color
                 try {
-                    background?.let { fill.color = it }
+                    background?.let { paint.color = it }
                     text?.let { label.color = it }
                     chain.proceed()
                 } finally {
-                    fill.color = oldFill
+                    paint.color = oldFill
                     label.color = oldText
                 }
             }

@@ -1,7 +1,10 @@
 package io.mo.xatype.hooks
 
 import android.content.Context
+import android.graphics.drawable.Drawable
+import android.util.TypedValue
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.compat.HostCoroutines
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.abiField
@@ -130,6 +133,10 @@ object KeyboardSelectionHook {
         val value = single.abiField(abi, "n0").apply { isAccessible = true }
         val add = group.abiMethod(abi, "L", preference)
         val icon = preference.abiField(abi, "j").apply { isAccessible = true }
+        // The loaded icon; the page tints its own rows' icons after loading them.
+        val iconDrawable = preference.declaredFields.single {
+            it.type == Drawable::class.java && !java.lang.reflect.Modifier.isStatic(it.modifiers)
+        }.apply { isAccessible = true }
         val bind = abi.method("qh.y", "y", base, String::class.java,
             Map::class.java, String::class.java, callback)
         val invoke = callback.abiMethod(abi, "g", Any::class.java)
@@ -137,7 +144,10 @@ object KeyboardSelectionHook {
         val instance = service.abiField(abi, "instance").apply { isAccessible = true }
         val engineReady = service.abiMethod(abi, "isEngineManagerReady\$app_iflytekFullRelease")
         val engineType = abi.type("z8.g")
-        val switch = service.abiMethod(abi, "switchEngine\$app_iflytekFullRelease", engineType)
+        // 0.2.1358 made switchEngine a suspend function; it then runs in the service scope.
+        val switch = abi.namedMethods(service, "switchEngine\$app_iflytekFullRelease").single()
+        val coroutines = if (switch.parameterCount == 2) HostCoroutines(loader) else null
+        val scope = if (coroutines != null) service.getMethod("getServiceScope\$app_iflytekFullRelease") else null
         module.hook(bind).intercept { chain ->
             val page = chain.getArg(0)!!
             if (!fragment.isInstance(page) || chain.getArg(1) != "keyboard_type_group") chain.proceed() else {
@@ -155,7 +165,13 @@ object KeyboardSelectionHook {
                             setKey.invoke(row, choice.id)
                             setTitle.invoke(row, label)
                             value.set(row, choice.id)
-                            if (native != null) icon.setInt(row, icon.getInt(native))
+                            if (native != null) {
+                                val resource = icon.getInt(native)
+                                icon.setInt(row, resource)
+                                // Without the page's tint the icon draws untinted, invisible on the card.
+                                if (resource != 0) runCatching { iconDrawable.set(row, tintedIcon(ctx, resource)) }
+                                    .onFailure { XposedUtils.logError(module, "Keyboard type icon unavailable", it) }
+                            }
                             check(add.invoke(category, row) == true)
                         }
                         mapping[choice.id] = choice.id
@@ -171,7 +187,13 @@ object KeyboardSelectionHook {
                             val running = instance.get(null)
                             if (running != null && engineReady.invoke(running) == true) {
                                 val type = engineType.enumConstants.single { (it as Enum<*>).name == id }
-                                switch.invoke(running, type)
+                                if (coroutines == null) switch.invoke(running, type)
+                                else coroutines.start(coroutines.scopeContext(scope!!.invoke(running)!!),
+                                    { switch.invoke(running, type, it) }) { result ->
+                                    result.exceptionOrNull()?.let {
+                                        XposedUtils.logError(module, "Unable to refresh keyboard from native settings", it)
+                                    }
+                                }
                             }
                         }.onFailure { XposedUtils.logError(module, "Unable to refresh keyboard from native settings", it) }
                         result
@@ -186,6 +208,14 @@ object KeyboardSelectionHook {
         }
         module.deoptimize(bind)
         module.deoptimize(fragment.abiMethod(abi, "h", String::class.java))
+    }
+
+    /** As the host's keyboard type page does: the icon tinted with the theme's primary text color. */
+    private fun tintedIcon(context: Context, resource: Int): Drawable? {
+        val value = TypedValue()
+        context.theme.resolveAttribute(android.R.attr.textColorPrimary, value, true)
+        val color = if (value.resourceId != 0) context.getColor(value.resourceId) else value.data
+        return context.getDrawable(resource)?.mutate()?.apply { setTint(color) }
     }
 
     private class SelectionCallback(val context: Context, val original: Any,

@@ -27,6 +27,8 @@ OVERRIDES = {
     "m:c2.f0#c()J": "Lc2/f0;->g()J",
     "c:qh.c": "Lvh/b;",
     "c:" + SETTINGS_OWNER: "Lo5/s;",
+    # Releases a one-shot shift after an uppercase commit.
+    "m:ab.b1#h()V": "Ljb/t0;->h()V",
 }
 
 # IDs whose signature changed: ID (or (group, ID)) -> (new label ID, target).

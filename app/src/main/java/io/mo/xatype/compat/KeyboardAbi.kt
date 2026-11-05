@@ -25,6 +25,9 @@ class KeyboardAbi private constructor(private val loader: ClassLoader, private v
         }
     }
 
+    /** True when the resolved profile names [id], e.g. members added by a later host build. */
+    fun hasType(id: String): Boolean = symbols.containsKey("c:$id")
+
     private fun alias(type: Class<*>): String = aliases.getOrPut(type) {
         symbols.entries.singleOrNull {
             it.key.startsWith("c:") && DexClass(it.value).typeName == type.name

@@ -14,6 +14,8 @@ import java.util.Arrays;
  * HostSymbolsProbe <HostSymbols|PhraseSymbols> <libDir> <workDir> <target.apk>...
  */
 public final class HostSymbolsProbe {
+    private static ClassLoader currentTarget;
+
     public static void main(String[] args) {
         try { run(args); } catch (Throwable failure) { failure.printStackTrace(System.out); System.exit(1); }
     }
@@ -45,6 +47,7 @@ public final class HostSymbolsProbe {
             File cache = new File(work, "symbols.json");
             cache.delete();
             ClassLoader target = new DexClassLoader(apk, work.getAbsolutePath(), null, boot);
+            currentTarget = target;
             System.out.println("== " + new File(apk).getName());
             System.out.println("scan:  " + init.invoke(instance, target, apk, cache, "probe", noNative));
             System.out.println("cache: " + init.invoke(instance, target, apk, cache, "probe", noNative));
@@ -87,7 +90,19 @@ public final class HostSymbolsProbe {
         List<?> raw = (List<?>) symbols.getMethod("strings", String.class).invoke(instance, key);
         // Entries such as "palette.isDark=Y" are data rather than descriptors.
         if (raw != null && !raw.isEmpty() && String.valueOf(raw.get(0)).contains("=")) return true;
-        if (key.equals("manager.runnables") && raw != null && raw.isEmpty()) return true;
+        // Keys whose empty value is a valid result for some builds.
+        if ((key.equals("manager.runnables") || key.equals("panel.close") || key.equals("keyboard.keyPreviewFill")) &&
+                raw != null && raw.isEmpty()) return true;
+        // Keys listing several classes (kotlin.coroutines) load each one.
+        boolean classes = raw != null && raw.size() > 1;
+        if (raw != null) for (Object entry : raw) if (String.valueOf(entry).contains("->")) classes = false;
+        if (classes) {
+            for (Object descriptor : raw) {
+                String name = String.valueOf(descriptor);
+                Class.forName(name.substring(1, name.length() - 1).replace('/', '.'), false, currentTarget);
+            }
+            return true;
+        }
         List<?> methods = (List<?>) symbols.getMethod("methods", String.class).invoke(instance, key);
         return !methods.isEmpty() ||
                 symbols.getMethod("clazz", String.class).invoke(instance, key) != null ||

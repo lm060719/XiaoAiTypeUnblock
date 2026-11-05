@@ -18,7 +18,10 @@ import java.util.WeakHashMap
 import kotlin.math.min
 
 /** Bind to actual Compose key coordinates; cancel native input only once a downward drag wins. */
-class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layout: () -> KeyboardShortcutLayout?) {
+class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layout: () -> KeyboardShortcutLayout?,
+                            private val floating: () -> Boolean = { false }) {
+    /** The last docked key height, the reference for labels on the smaller floating keyboard. */
+    @Volatile private var dockedKeyHeight = 0f
     private class Key(val owner: WeakReference<View>, var source: Any, val action: String,
                       var callback: Any, val state: Any, val layout: KeyboardShortcutLayout) {
         var coordinates: WeakReference<Any>? = null
@@ -92,10 +95,14 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                     try {
                         val dm = key.owner.get()?.resources?.displayMetrics
                         if (dm == null) { bridge.drawContent(scope); return@drawing }
+                        val reference = if (floating()) dockedKeyHeight.takeIf { it > 0f }
+                            ?: REFERENCE_KEY_HEIGHT_DP * dm.density
+                        else 0f.also { bridge.keyHeight(scope).takeIf { it > 0f }?.let { dockedKeyHeight = it } }
                         bridge.drawLabel(scope, key.action, key.labelColor,
                             ConfigManager.getShortcutLabelSize() * dm.scaledDensity,
                             offsetX = ConfigManager.getShortcutLabelX() * dm.density,
-                            bottomInset = (4f - ConfigManager.getShortcutLabelY()) * dm.density)
+                            bottomInset = (4f - ConfigManager.getShortcutLabelY()) * dm.density,
+                            referenceHeight = reference)
                     } catch (failure: Throwable) {
                         if (!labelFailureReported) {
                             labelFailureReported = true
@@ -215,6 +222,8 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
     private companion object {
         /** The key's Modifier, unmoved in every verified renderer. */
         const val MODIFIER_INDEX = 2
+        /** A typical docked letter key, used until one has been drawn docked. */
+        const val REFERENCE_KEY_HEIGHT_DP = 56f
         /** Text's Modifier is its second parameter. */
         const val TEXT_MODIFIER_SHIFT = 1 + 3 * 1
 

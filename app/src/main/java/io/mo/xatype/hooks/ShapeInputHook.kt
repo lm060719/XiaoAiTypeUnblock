@@ -5,8 +5,9 @@ import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
-import io.mo.xatype.compat.abiMethod
+import io.mo.xatype.keyboard.HostEngineFactory
 import io.mo.xatype.keyboard.KeyboardChoice
+import io.mo.xatype.keyboard.installMacroGuard
 import io.mo.xatype.provider.ShapeContentProvider
 import io.mo.xatype.shape.ShapeDictionary
 import io.mo.xatype.shape.ShapeDictionaryCodec
@@ -28,32 +29,23 @@ object ShapeInputHook {
         val abi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_ENGINE)
         // A missing/mismatched class leaves the original factory untouched.
         val bridge = ShapeHostBridge(loader, abi)
-        val manager = abi.type("ab.x0")
+        val engines = HostEngineFactory(abi, bridge.host)
         val service = abi.type("com.mi.ime.MiInputMethodService")
-        val contextField = manager.declaredFields.single { it.type == service }.apply { isAccessible = true }
-        val factory = manager.abiMethod(abi, "b", bridge.engineType)
-        require(factory.returnType == bridge.baseInterface)
+        val contextField = engines.manager.declaredFields.single { it.type == service }.apply { isAccessible = true }
+        val factory = engines.method
         val keys = ShapeHostKeyAdapter(loader, bridge, abi)
-        val keyHandler = abi.type("ab.f1").abiMethod(abi, "c", keys.keyClass, keys.callbacksClass)
-        val macros = abi.type("ab.s0").abiMethod(abi, "l", bridge.baseInterface)
-        require(keyHandler.returnType == Void.TYPE && macros.returnType == Void.TYPE)
 
         // Bypass phonetic touch correction only for our own session and supported keys.
         // Other engines and keyboard controls continue through the original handler.
-        module.hook(keyHandler).intercept { chain ->
-            if (keys.handle(chain.getArg(0)!!, chain.getArg(1)!!)) null else chain.proceed()
-        }
-        module.deoptimize(keyHandler)
+        module.hook(keys.path.handler).intercept { chain -> keys.intercept(module, chain) }
+        module.deoptimize(keys.path.handler)
 
         // Pinyin time/date/calculator expansions must not add or displace shape candidates.
-        module.hook(macros).intercept { chain ->
-            if (bridge.session(chain.getArg(0)) != null) null else chain.proceed()
-        }
-        module.deoptimize(macros)
+        installMacroGuard(module, abi, bridge.host) { bridge.session(it) != null }
 
         module.hook(factory).intercept { chain ->
-            if (chain.getArg(0) !== bridge.pinyin) chain.proceed() else {
-                val context = contextField.get(chain.thisObject) as Context
+            if (engines.engineType(chain) !== bridge.pinyin) chain.proceed() else {
+                val context = contextField.get(engines.manager(chain)) as Context
                 if (KeyboardSelectionHook.selected(context) != KeyboardChoice.SHAPE) return@intercept chain.proceed()
                 val config = runCatching { load(context) }.onFailure {
                     XposedUtils.logError(module, "Shape dictionary unavailable; keeping original engine", it)

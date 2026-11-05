@@ -1,8 +1,12 @@
 package io.mo.xatype.compat
 
 /** Members of the input method (com.xiaomi.type), located by [HostFingerprints]. */
-object HostSymbols : SymbolTable(10, HostFingerprints::resolve) {
+object HostSymbols : SymbolTable(11, HostFingerprints::resolve) {
     const val KEYBOARD_KEY_PREVIEW = "keyboard.keyPreview"
+    /** The bubble's background color field where it draws from a cached bitmap (0.2.1358); empty before. */
+    const val KEYBOARD_KEY_PREVIEW_FILL = "keyboard.keyPreviewFill"
+    /** Kotlin's suspend-function coroutine wrapper and Unit, to call host suspend functions. */
+    const val KOTLIN_COROUTINES = "kotlin.coroutines"
     /** Status only: the long-press selector binds through the keyboard ABI. */
     const val KEYBOARD_KEY_POPUP = "keyboard.keyPopup"
     const val CLOUD_BLACKLIST = "cloud.blacklistAttach"
@@ -51,7 +55,8 @@ object HostSymbols : SymbolTable(10, HostFingerprints::resolve) {
     const val BOTTOM_SPACING_CALLERS = "keyboard.bottomSpacingCallers"
 
     override val keys = listOf(
-        KEYBOARD_KEY_PREVIEW, AI_SAFETY_PARSERS, VOICE_MODERATION, ASR_ERROR_MAPPER, ASR_ERROR_CALLBACK,
+        KEYBOARD_KEY_PREVIEW, KEYBOARD_KEY_PREVIEW_FILL, KOTLIN_COROUTINES,
+        AI_SAFETY_PARSERS, VOICE_MODERATION, ASR_ERROR_MAPPER, ASR_ERROR_CALLBACK,
         OS_VERSION_GATE, HEIGHT_RECT, HEIGHT_CLAMP, HEIGHT_RECT_GETTER, HEIGHT_LAYOUT,
         HEIGHT_DRAG, HEIGHT_DRAG_KIND, MODERN_KEYBOARD,
         BOTTOM_SPACING, BOTTOM_SPACING_CONSUME, BOTTOM_SPACING_CALLERS,
@@ -73,7 +78,9 @@ object HostSymbols : SymbolTable(10, HostFingerprints::resolve) {
         }.getOrDefault(false)
         key == AI_SAFETY_PARSERS -> values.size >= 2 && super.validateValues(key, values)
         key == BOTTOM_SPACING_CALLERS -> super.validateValues(key, values)
-        key == PANEL_CLOSE -> values.isEmpty() || (values.size == 1 && super.validateValues(key, values))
+        key == PANEL_CLOSE || key == KEYBOARD_KEY_PREVIEW_FILL ->
+            values.isEmpty() || (values.size == 1 && super.validateValues(key, values))
+        key == KOTLIN_COROUTINES -> values.size == 3 && super.validateValues(key, values)
         else -> values.size == 1 && super.validateValues(key, values)
     }
 }

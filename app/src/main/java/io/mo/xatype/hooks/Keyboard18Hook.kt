@@ -11,7 +11,12 @@ import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.abiField
 import io.mo.xatype.compat.abiMethod
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.keyboard.HostEngine
+import io.mo.xatype.keyboard.HostEngineFactory
+import io.mo.xatype.keyboard.HostKeyPath
+import io.mo.xatype.keyboard.KeyOp
 import io.mo.xatype.keyboard.KeyboardChoice
+import io.mo.xatype.keyboard.installMacroGuard
 import io.mo.xatype.keyboard.KeyboardShortcutActions
 import io.mo.xatype.keyboard.KeyboardShortcuts
 import io.mo.xatype.keyboard18.Keyboard18CompositionStore
@@ -22,6 +27,7 @@ import io.mo.xatype.keyboard18.Keyboard18HostBridge
 import io.mo.xatype.keyboard18.Keyboard18HostLayout
 import io.mo.xatype.keyboard18.Keyboard18Keys
 import io.mo.xatype.keyboard18.Keyboard18Store
+import io.mo.xatype.keyboard18.Pinyin18Result
 import io.mo.xatype.provider.Keyboard18ContentProvider
 import io.mo.xatype.util.XposedUtils
 import java.util.concurrent.Executors
@@ -67,17 +73,12 @@ object Keyboard18Hook {
         val abi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_ENGINE)
         val bridge = Keyboard18HostBridge(loader, abi)
         val layouts = Keyboard18HostLayout(loader, abi)
-        val manager = abi.type("ab.x0")
+        val engines = HostEngineFactory(abi, bridge.host)
         val hostService = abi.type("com.mi.ime.MiInputMethodService")
-        val contextField = manager.declaredFields.single { it.type == hostService }.apply { isAccessible = true }
-        val factory = manager.abiMethod(abi, "b", bridge.engineType)
-        val callbackClass = abi.type("ab.b1")
-        val keyClass = abi.type("ka.c")
-        val keyHandler = abi.type("ab.f1").abiMethod(abi, "c", keyClass, callbackClass)
-        val current = callbackClass.abiMethod(abi, "u")
-        val uppercase = callbackClass.abiMethod(abi, "o")
-        val commit = callbackClass.abiMethod(abi, "K", String::class.java)
-        val refresh = callbackClass.abiMethod(abi, "y", abi.type("z8.r"))
+        val contextField = engines.manager.declaredFields.single { it.type == hostService }.apply { isAccessible = true }
+        val factory = engines.method
+        val keys = HostKeyPath(loader, abi, bridge.host)
+        val keyClass = keys.keyClass
         val codeField = keyClass.abiField(abi, "a").apply { isAccessible = true }
         val labelField = keyClass.abiField(abi, "b").apply { isAccessible = true }
         val kindField = keyClass.abiField(abi, "f").apply { isAccessible = true }
@@ -85,8 +86,7 @@ object Keyboard18Hook {
         // ab.p1.a is declared as MiInputMethodService, not its Context superclass.
         val layoutContext = layoutFactory.declaringClass.declaredFields.single { hostService.isAssignableFrom(it.type) }
             .apply { isAccessible = true }
-        val macros = abi.type("ab.s0").abiMethod(abi, "l", bridge.baseInterface)
-        require(factory.returnType == bridge.baseInterface && layoutFactory.returnType == layouts.layout)
+        require(layoutFactory.returnType == layouts.layout)
 
         // Both editor-action refresh and mode changes rebuild QWERTY, including SHUANGPIN.
         // Only replace the selected PINYIN/ENGLISH layout, never other QWERTY-based engines.
@@ -105,59 +105,61 @@ object Keyboard18Hook {
         }
         module.deoptimize(editorChange)
 
-        module.hook(keyHandler).intercept { chain ->
-            val key = chain.getArg(0)!!
-            val callbacks = chain.getArg(1)!!
-            val session = bridge.session(current.invoke(callbacks))
+        module.hook(keys.handler).intercept { chain ->
+            if (keys.resuming(chain)) return@intercept chain.proceed()
+            val key = chain.args[0]!!
+            val callbacks = chain.args[1]!!
+            val session = bridge.session(keys.engine(callbacks))
             val label = labelField.get(key) as String
             val code = codeField.getInt(key)
             val kind = (kindField.get(key) as Enum<*>).name
-            fun deliver(result: io.mo.xatype.keyboard18.Pinyin18Result) {
-                result.commit?.takeIf { it.isNotEmpty() }?.let { commit.invoke(callbacks, it) }
-                refresh.invoke(callbacks, bridge.result(result))
+            val host = bridge.host
+            // Engine operations run directly through 0.2.1246 and as session commands after.
+            fun engineOp(direct: () -> Pinyin18Result, command: () -> Any) =
+                KeyOp.Engine({ bridge.result(synchronized(session!!.engine, direct)) }, command)
+            fun flush(): KeyOp = engineOp({ session!!.engine.let { it.snapshot(commit = it.commitAll()) } }) {
+                host.replaceRaw(HostEngine.FLUSH)
             }
-            fun flush() { session?.engine?.let { engine -> deliver(engine.snapshot(commit = engine.commitAll())) } }
+            fun perform(ops: List<KeyOp>, thenNative: Boolean = false) = keys.perform(module, chain, ops, thenNative) {
+                XposedUtils.logError(module, "18-key input delivery failed", it)
+            }
             val enabled = loaded?.dictionary != null && service?.let {
                 KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18
             } == true
             if (enabled && session != null && label in KeyboardShortcuts.actions) {
-                if (ConfigManager.isKeyboardShortcutsEnabled()) runCatching {
-                    flush()
-                    session.service.currentInputConnection?.let { KeyboardShortcutActions.perform(it, label) }
-                }.onFailure { XposedUtils.logError(module, "18-key shortcut failed: $label", it) }
-                null
+                if (!ConfigManager.isKeyboardShortcutsEnabled()) keys.consumed() else perform(listOf(flush(), KeyOp.Action {
+                    runCatching {
+                        session.service.currentInputConnection?.let { KeyboardShortcutActions.perform(it, label) }
+                    }.onFailure { XposedUtils.logError(module, "18-key shortcut failed: $label", it) }
+                }))
             } else if (session == null) chain.proceed()
             else if (kind == "BACKSPACE" && session.engine.raw.isNotEmpty()) {
-                deliver(session.engine.backspace()); null
+                perform(listOf(engineOp({ session.engine.backspace() }) { host.backspace!! }))
             } else if (kind == "SPACE" && session.engine.raw.isNotEmpty()) {
-                deliver(session.engine.input(' ')); null
+                perform(listOf(engineOp({ session.engine.input(' ') }) { host.key(' '.code) }))
             } else if (kind == "CHAR") {
                 val group = Keyboard18Keys.group(code)
                 val letter = code.toChar()
                 session.onInput()
-                if ((group != null && uppercase.invoke(callbacks) == true) || letter in 'A'..'Z') {
-                    flush()
-                    commit.invoke(callbacks, (group?.first()?.uppercaseChar() ?: letter).toString())
-                    null
+                if ((group != null && keys.uppercase(callbacks)) || letter in 'A'..'Z') {
+                    // Native keys release a one-shot shift after the uppercase letter; caps lock stays.
+                    perform(listOf(flush(), KeyOp.Commit((group?.first()?.uppercaseChar() ?: letter).toString()),
+                        KeyOp.Action { keys.releaseShift(callbacks) }))
                 } else if (group != null || letter in 'a'..'z' || session.engine.raw.isNotEmpty()) {
-                    deliver(session.engine.input(letter)); null
+                    perform(listOf(engineOp({ session.engine.input(letter) }) { host.key(code) }))
                 } else chain.proceed()
-            } else {
-                if (code < 0 && kind != "BACKSPACE") flush()
-                chain.proceed()
-            }
+            } else if (code < 0 && kind != "BACKSPACE" && session.engine.raw.isNotEmpty()) {
+                perform(listOf(flush()), thenNative = true)
+            } else chain.proceed()
         }
-        module.deoptimize(keyHandler)
-        module.hook(macros).intercept { chain ->
-            if (bridge.session(chain.getArg(0)) != null) null else chain.proceed()
-        }
-        module.deoptimize(macros)
+        module.deoptimize(keys.handler)
+        installMacroGuard(module, abi, bridge.host) { bridge.session(it) != null }
 
         module.hook(factory).intercept { chain ->
-            val context = contextField.get(chain.thisObject) as InputMethodService
+            val context = contextField.get(engines.manager(chain)) as InputMethodService
             service = context
             chineseReady = false
-            if (chain.getArg(0) !== bridge.pinyin || KeyboardSelectionHook.selected(context) != KeyboardChoice.KEYBOARD18)
+            if (engines.engineType(chain) !== bridge.pinyin || KeyboardSelectionHook.selected(context) != KeyboardChoice.KEYBOARD18)
                 chain.proceed() else {
                 val config = runCatching { load(context) }.onFailure {
                     XposedUtils.logError(module, "18-key dictionary unavailable; retaining native input", it)

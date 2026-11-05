@@ -12,7 +12,7 @@ import org.luckypray.dexkit.wrap.DexMethod
 
 /**
  * Fingerprints anchored on strings, constants and non-obfuscated types that
- * stayed stable across host builds 0.2.701 to 0.2.1246. Each one must match
+ * stayed stable across host builds 0.2.701 to 0.2.1358. Each one must match
  * exactly one member; ambiguity is treated as a miss rather than a guess.
  */
 internal object HostFingerprints {
@@ -21,7 +21,10 @@ internal object HostFingerprints {
 
     fun resolve(bridge: DexKitBridge, loader: ClassLoader): FingerprintResult {
         val collector = FingerprintCollector()
-        collector.put(HostSymbols.KEYBOARD_KEY_PREVIEW) { listOf(listOf(keyPreview(bridge, loader))) }
+        collector.put(HostSymbols.KEYBOARD_KEY_PREVIEW, HostSymbols.KEYBOARD_KEY_PREVIEW_FILL) {
+            keyPreview(bridge, loader)
+        }
+        collector.put(HostSymbols.KOTLIN_COROUTINES) { listOf(coroutines(bridge, loader)) }
         collector.put(HostSymbols.AI_SAFETY_PARSERS) { listOf(aiSafetyParsers(bridge, loader)) }
         collector.put(HostSymbols.VOICE_MODERATION) { listOf(listOf(voiceModeration(bridge))) }
         collector.put(HostSymbols.ASR_ERROR_MAPPER) { listOf(listOf(asrErrorMapper(bridge, loader))) }
@@ -60,24 +63,64 @@ internal object HostFingerprints {
         return collector.result()
     }
 
-    private fun keyPreview(bridge: DexKitBridge, loader: ClassLoader): String = single(
-        bridge.findMethod {
-            matcher {
-                name("onDraw")
-                paramTypes("android.graphics.Canvas")
-                returnType("void")
-                usingEqStrings("canvas")
-            }
-        }.filter { method ->
-            val calls = method.invokes.filter { it.className == "android.graphics.Canvas" }.map { it.name }
-            if ("drawRoundRect" !in calls || "drawText" !in calls) return@filter false
-            val owner = method.getMethodInstance(loader).declaringClass
-            val fields = owner.declaredFields.filter { !Modifier.isStatic(it.modifiers) }
-            owner.superclass == android.view.View::class.java &&
-                fields.count { it.type == android.graphics.Paint::class.java } == 2 &&
-                fields.count { it.type == String::class.java } == 1 &&
-                fields.any { it.type == android.graphics.RectF::class.java }
-        }, "key preview bubble drawing").descriptor
+    /**
+     * The tap preview bubble's onDraw. Through 0.2.1246 it fills with a second Paint; 0.2.1358
+     * draws the fill from a cached bitmap keyed by an int color field, returned second (or empty).
+     */
+    private fun keyPreview(bridge: DexKitBridge, loader: ClassLoader): List<List<String>> {
+        val draw = single(
+            bridge.findMethod {
+                matcher {
+                    name("onDraw")
+                    paramTypes("android.graphics.Canvas")
+                    returnType("void")
+                    usingEqStrings("canvas")
+                }
+            }.filter { method ->
+                val calls = method.invokes.filter { it.className == "android.graphics.Canvas" }.map { it.name }
+                if ("drawText" !in calls) return@filter false
+                val owner = method.getMethodInstance(loader).declaringClass
+                val fields = owner.declaredFields.filter { !Modifier.isStatic(it.modifiers) }
+                val paints = fields.count { it.type == android.graphics.Paint::class.java }
+                // The cached fill is a bitmap drawn before the label.
+                val cached = paints == 1 && "drawBitmap" in calls
+                owner.superclass == android.view.View::class.java &&
+                    (paints == 2 && "drawRoundRect" in calls || cached) &&
+                    fields.count { it.type == String::class.java } == 1 &&
+                    fields.any { it.type == android.graphics.RectF::class.java }
+            }, "key preview bubble drawing")
+        val owner = draw.getMethodInstance(loader).declaringClass
+        if (owner.declaredFields.count { it.type == android.graphics.Paint::class.java } == 2) {
+            return listOf(listOf(draw.descriptor), emptyList())
+        }
+        // The fill color is the first mutable int the drawing reads; the inset before it is final.
+        val fill = draw.usingFields.map { it.field }.firstOrNull { field ->
+            field.className == owner.name && field.typeName == "int" &&
+                field.getFieldInstance(loader).modifiers.let { !Modifier.isStatic(it) && !Modifier.isFinal(it) }
+        } ?: throw FingerprintMiss("key preview fill color")
+        return listOf(listOf(draw.descriptor), listOf(fill.descriptor))
+    }
+
+    /** Kotlin's createCoroutineFromSuspendFunction wrapper (a ContinuationImpl), Unit and CoroutineSingletons. */
+    private fun coroutines(bridge: DexKitBridge, loader: ClassLoader): List<String> {
+        val wrapper = single(bridge.findClass {
+            matcher { usingEqStrings("This coroutine had already completed") }
+        }.map { it.getInstance(loader) }.filter { type ->
+            // (completion, context, Function2 block, receiver)
+            val parameters = type.declaredConstructors.singleOrNull()?.parameterTypes
+            parameters != null && parameters.size == 4 && parameters[0].isInterface &&
+                parameters[0] == parameters[3] && parameters[1].isInterface && parameters[2].isInterface
+        }, "suspend function wrapper")
+        val unit = single(bridge.findClass {
+            matcher { usingEqStrings("kotlin.Unit") }
+        }.map { it.getInstance(loader) }.filter { type ->
+            type.declaredFields.any { Modifier.isStatic(it.modifiers) && it.type == type }
+        }, "kotlin.Unit")
+        val singletons = single(bridge.findClass {
+            matcher { usingEqStrings("COROUTINE_SUSPENDED", "UNDECIDED", "RESUMED") }
+        }.map { it.getInstance(loader) }.filter { it.isEnum }, "CoroutineSingletons")
+        return listOf(DexClass(wrapper).toString(), DexClass(unit).toString(), DexClass(singletons).toString())
+    }
 
     /** T9 already passes digit groups to the native decoder's ShuangPin implementation. */
     private fun t9Shuangpin(bridge: DexKitBridge, loader: ClassLoader): List<List<String>> {
@@ -321,15 +364,22 @@ internal object HostFingerprints {
                 usingEqStrings(RESUME_BEFORE_INVOKE)
             }
         }, "panel expansion body")
-        // 0.2.1246 swapped snapTo's parameters; the Continuation still identifies the owner.
+        // 0.2.1246 swapped snapTo's parameters; the continuation still identifies the owner.
+        // 0.2.1358 narrowed it to the coroutine's own base class.
+        val continuationType = Class.forName(continuation, false, loader)
+        fun isContinuation(name: String) = name != "java.lang.Object" &&
+            runCatching { continuationType.isAssignableFrom(Class.forName(name, false, loader)) }.getOrDefault(false)
         val snap = single(body.invokes.filter {
             it.className == animatable && it.paramCount == 2 && it.returnTypeName == "java.lang.Object" &&
-                continuation in it.paramTypeNames
+                it.paramTypeNames.any(::isContinuation)
         }.distinctBy { it.descriptor }, "Animatable.snapTo")
+        // animateTo$default(animatable, target, spec, velocity, continuation, mask) through
+        // 0.2.1246; 0.2.1358 keeps only animateTo(animatable, target, spec, continuation).
         val animate = single(checkNotNull(bridge.getClassData(animatable)) { "Animatable class data" }.methods.filter {
             val p = it.paramTypeNames
-            Modifier.isStatic(it.modifiers) && it.returnTypeName == "java.lang.Object" && p.size == 6 &&
-                p[0] == animatable && p[4] == continuation && p[5] == "int"
+            Modifier.isStatic(it.modifiers) && it.returnTypeName == "java.lang.Object" && p.firstOrNull() == animatable &&
+                (p.size == 6 && p[4] == continuation && p[5] == "int" ||
+                    p.size == 4 && p[1] == "java.lang.Object" && p[3] == continuation && '.' in p[2])
         }, "Animatable.animateTo")
         val spec = animate.getMethodInstance(loader).parameterTypes[2]
         if (!spec.isAssignableFrom(spring.getMethodInstance(loader).returnType)) {
@@ -349,13 +399,16 @@ internal object HostFingerprints {
     )
 
     private fun panelCloseAnchor(bridge: DexKitBridge, loader: ClassLoader): PanelCloseAnchor {
+        // 0.2.1358 made the handler a suspend function: (service, continuation) -> Object.
         val close = single(bridge.findMethod {
             matcher {
                 modifiers(Modifier.STATIC)
-                paramTypes(SERVICE)
-                returnType("void")
                 addInvoke { name = "getSmartReplyInputHost\$app_iflytekFullRelease" }
             }
+        }.filter { method ->
+            val parameters = method.paramTypeNames
+            parameters.firstOrNull() == SERVICE && (parameters.size == 1 && method.returnTypeName == "void" ||
+                parameters.size == 2 && method.returnTypeName == "java.lang.Object" && '.' in parameters[1])
         }.filter { method ->
             method.invokes.filter { it.className == SERVICE }.map { it.name }.containsAll(listOf(
                 "getSmartReplyReplace\$app_iflytekFullRelease", "getFloatingKeyboardManager\$app_iflytekFullRelease"

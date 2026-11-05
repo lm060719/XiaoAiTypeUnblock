@@ -11,4 +11,5 @@ interface b1 {
     fun b(index: Int) {}
     fun F() {}
     fun J() {}
+    fun h() {}
 }
