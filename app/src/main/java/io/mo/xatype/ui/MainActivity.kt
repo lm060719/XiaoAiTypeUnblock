@@ -595,7 +595,7 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_Y, y).apply()
         }
         controls.forEach { container.addView(it) }
-        val note = kit.label("文字显示在九键和18键的按键底部居中，26键不显示；与按键下滑快捷操作同时开启，重启输入法后生效。",
+        val note = kit.label("文字显示在九键、18键及拼音/英文26键快捷键的底部居中；与按键下滑快捷操作同时开启，重启输入法后生效。",
             12f, R.color.text_secondary)
         val pad = kit.dimen(R.dimen.settings_row_padding)
         note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))

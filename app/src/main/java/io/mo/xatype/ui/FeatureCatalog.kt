@@ -48,7 +48,7 @@ internal object FeatureCatalog {
 
     /** Hint text drawn on the same keys that carry the swipe action. */
     val shortcutLabels = Feature(ConfigManager.KEY_SHORTCUT_LABELS, "在按键上显示操作文字",
-        "在九键、18键标出段首、复制、粘贴、全选等文字，大小与位置可调")
+        "在九键、18键、26键标出段首、复制、粘贴、全选等文字，大小与位置可调")
 
     val keyboardHeight = Feature(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, "解除键盘高度上限",
         "可继续向上拉伸")

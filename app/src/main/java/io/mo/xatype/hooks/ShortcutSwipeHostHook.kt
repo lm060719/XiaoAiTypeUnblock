@@ -20,8 +20,7 @@ import kotlin.math.min
 /** Bind to actual Compose key coordinates; cancel native input only once a downward drag wins. */
 class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layout: () -> KeyboardShortcutLayout?) {
     private class Key(val owner: WeakReference<View>, var source: Any, val action: String,
-                      var callback: Any, val state: Any, val layout: KeyboardShortcutLayout,
-                      val showsLabel: Boolean) {
+                      var callback: Any, val state: Any, val layout: KeyboardShortcutLayout) {
         var coordinates: WeakReference<Any>? = null
         var originalModifier: Any? = null
         var decoratedModifier: Any? = null
@@ -70,10 +69,8 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             val owner = bridge.view(chain.getArg(composerIndex)!!)
             val code = source.javaClass.abiField(abi, "a").getInt(source)
             val id = "${currentLayout}:${code}:${bridge.label(source)}"
-            // Only grouped/9-key shortcuts get labels; native 26-key letters stay clean.
-            val showsLabel = code.toChar().lowercaseChar() !in 'a'..'z'
             val key = keys.getOrPut(owner) { LinkedHashMap() }.getOrPut(id) {
-                Key(WeakReference(owner), source, action, bridge.unwrap(chain.getArg(callbackIndex)!!), bridge.progressState(), currentLayout, showsLabel)
+                Key(WeakReference(owner), source, action, bridge.unwrap(chain.getArg(callbackIndex)!!), bridge.progressState(), currentLayout)
             }
             key.source = source
             key.callback = bridge.unwrap(chain.getArg(callbackIndex)!!)
@@ -89,7 +86,8 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                 // Geometry/parent modifiers change on resize and layout switches.
                 key.labelModifier = null
             }
-            args[MODIFIER_INDEX] = if (ConfigManager.isShortcutLabelsEnabled() && key.showsLabel) {
+            // Every key that carries a swipe action (nine-key, 18-key, Chinese/English 26-key) can show its label.
+            args[MODIFIER_INDEX] = if (ConfigManager.isShortcutLabelsEnabled()) {
                 if (key.labelModifier == null) key.labelModifier = bridge.drawing(key.decoratedModifier!!) { scope ->
                     try {
                         val dm = key.owner.get()?.resources?.displayMetrics
