@@ -21,7 +21,6 @@ class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardA
         Boolean::class.javaPrimitiveType, Integer::class.java,
         *fields.drop(18).map { it.type }.toTypedArray())
     fun label(instance: Any) = fields[1].get(instance) as String
-    fun isDelete(instance: Any) = (fields[5].get(instance) as Enum<*>).name == "BACKSPACE"
     fun action(instance: Any, layout: KeyboardShortcutLayout): String? {
         if ((fields[5].get(instance) as Enum<*>).name != "CHAR") return null
         val code = fields[0].getInt(instance)

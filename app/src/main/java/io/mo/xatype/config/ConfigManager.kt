@@ -23,8 +23,6 @@ object ConfigManager {
     const val KEY_TELEMETRY_BLOCK = "pref_telemetry_block"
     const val KEY_KEYBOARD_HEIGHT_UNBLOCK = "pref_keyboard_height_unblock"
     const val KEY_KEYBOARD_SHORTCUTS = "pref_keyboard_shortcuts"
-    // 18-key delete key: swipe up clears the text before the caret, swipe down restores it.
-    const val KEY_DELETE_SWIPE = "pref_delete_swipe"
     const val KEY_T9_SHUANGPIN = "pref_t9_shuangpin"
     const val KEY_EMOJI_CANDIDATES = "pref_emoji_candidates"
     const val KEY_PREDICTION_MODE = "pref_prediction_mode"
@@ -85,7 +83,6 @@ object ConfigManager {
     @Volatile private var cachedTelemetryBlock = false
     @Volatile private var cachedKeyboardHeightUnblock = false
     @Volatile private var cachedKeyboardShortcuts = false
-    @Volatile private var cachedDeleteSwipe = false
     @Volatile private var cachedT9Shuangpin = false
     @Volatile private var cachedEmojiCandidates = false
     @Volatile private var cachedPredictionMode = PredictionMode.KEEP.name
@@ -155,7 +152,6 @@ object ConfigManager {
                 cachedTelemetryBlock = bundle.getBoolean(KEY_TELEMETRY_BLOCK, false)
                 cachedKeyboardHeightUnblock = bundle.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
                 cachedKeyboardShortcuts = bundle.getBoolean(KEY_KEYBOARD_SHORTCUTS, false)
-                cachedDeleteSwipe = bundle.getBoolean(KEY_DELETE_SWIPE, false)
                 cachedT9Shuangpin = bundle.getBoolean(KEY_T9_SHUANGPIN, false)
                 cachedEmojiCandidates = bundle.getBoolean(KEY_EMOJI_CANDIDATES, false)
                 cachedPredictionMode = bundle.getString(KEY_PREDICTION_MODE, PredictionMode.KEEP.name) ?: PredictionMode.KEEP.name
@@ -261,11 +257,6 @@ object ConfigManager {
     fun isKeyboardShortcutsEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedKeyboardShortcuts
         return remotePrefs?.getBoolean(KEY_KEYBOARD_SHORTCUTS, false) ?: cachedKeyboardShortcuts
-    }
-
-    fun isDeleteSwipeEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedDeleteSwipe
-        return remotePrefs?.getBoolean(KEY_DELETE_SWIPE, false) ?: cachedDeleteSwipe
     }
 
     fun isT9ShuangpinEnabled(): Boolean {
