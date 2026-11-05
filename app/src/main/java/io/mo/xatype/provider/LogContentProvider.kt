@@ -92,6 +92,7 @@ class LogContentProvider : ContentProvider() {
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_SCRIM_ENABLED, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_SCRIM_ENABLED, true))
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_SCRIM_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_SCRIM_COLOR, "") ?: "")
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_SCRIM_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_SCRIM_OPACITY, io.mo.xatype.config.ConfigManager.DEFAULT_SCRIM_OPACITY).coerceIn(0, 100))
+                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_RIM_HIGHLIGHT, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100))
                     result.putLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, sp.getLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, 0L))
                 }
             }

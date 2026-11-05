@@ -41,6 +41,7 @@ import io.mo.xatype.config.AppearancePresetStore
 import io.mo.xatype.config.AppearanceProfiles
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.hooks.BackgroundOpacity
+import io.mo.xatype.hooks.GlassRim
 import io.mo.xatype.ui.KeyboardPreviewView.Focus
 
 /**
@@ -212,6 +213,10 @@ class AppearancePage(
                     stylePrefs().edit().putInt(ConfigManager.KEY_CORNER_RADIUS, it).apply()
                 }
             },
+            Option("边缘高光", "", Focus.RIM, {
+                val level = stylePrefs().getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0)
+                Summary(if (level > 0) "$level%" else "关闭")
+            }, ::buildRimPanel),
             Option("背景类型", "", Focus.BACKGROUND, {
                 val p = stylePrefs()
                 if (p.getInt(ConfigManager.KEY_BG_TYPE, 0) == 1) {
@@ -553,6 +558,23 @@ class AppearancePage(
         }
     }
 
+    /** One value per profile: 0 is off, otherwise the highlight strength. */
+    private fun buildRimPanel(panel: LinearLayout) {
+        val saved = stylePrefs().getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100)
+        var level = if (saved > 0) saved.coerceAtLeast(RIM_MIN) else GlassRim.DEFAULT_INTENSITY
+        val config = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        switchRow(panel, "启用边缘高光", "", saved > 0) { checked ->
+            config.visibility = if (checked) View.VISIBLE else View.GONE
+            stylePrefs().edit().putInt(ConfigManager.KEY_RIM_HIGHLIGHT, if (checked) level else 0).apply()
+        }
+        panel.addView(config)
+        config.visibility = if (saved > 0) View.VISIBLE else View.GONE
+        slider(config, "高光强度", RIM_MIN, 100, level, { "$it%" }) {
+            level = it
+            stylePrefs().edit().putInt(ConfigManager.KEY_RIM_HIGHLIGHT, it).apply()
+        }
+    }
+
     private fun buildScrimPanel(panel: LinearLayout) {
         val p = stylePrefs()
         val config = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -802,7 +824,8 @@ class AppearancePage(
             clipboardOpacity = p.getInt(ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, 100),
             keyPopupBackground = color(ConfigManager.KEY_KEY_POPUP_BACKGROUND),
             keyPopupSelected = color(ConfigManager.KEY_KEY_POPUP_SELECTED),
-            keyPopupText = color(ConfigManager.KEY_KEY_POPUP_TEXT)
+            keyPopupText = color(ConfigManager.KEY_KEY_POPUP_TEXT),
+            rimHighlight = p.getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100)
         )
     }
 
@@ -1075,6 +1098,7 @@ class AppearancePage(
         private const val UI_PREFS = "ui_state"
         /** Below this overall opacity, keys may be hard to read. */
         private const val LOW_OPACITY = 40
+        private const val RIM_MIN = 10
         private const val KEY_PREVIEW_LARGE = "floating_preview_large"
         private const val KEY_PREVIEW_COLLAPSED = "floating_preview_collapsed"
         private const val PREVIEW_ASPECT = 0.6f

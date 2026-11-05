@@ -46,17 +46,17 @@ internal object ReadabilityScrim {
         val percent = ConfigManager.getScrimOpacity()
         if (percent == 0) return null
         val custom = parse(ConfigManager.getScrimColor())
-        val rgb = custom ?: run {
-            val surfaceDark = if (ConfigManager.getBgType() == 1) {
-                // Matches the automatic label contrast used for solid backgrounds.
-                parse(ConfigManager.getBgColor())?.let { luma(it) < 150 } ?: true
-            } else {
-                (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                    Configuration.UI_MODE_NIGHT_YES
-            }
-            autoColor(parse(ConfigManager.getTextColor()), surfaceDark)
-        }
+        val rgb = custom ?: autoColor(parse(ConfigManager.getTextColor()), surfaceDark(context))
         return BackgroundOpacity.argb(rgb or (0xff shl 24), percent)
+    }
+
+    /** Whether the keyboard background reads as dark. */
+    fun surfaceDark(context: Context): Boolean = if (ConfigManager.getBgType() == 1) {
+        // Matches the automatic label contrast used for solid backgrounds.
+        parse(ConfigManager.getBgColor())?.let { luma(it) < 150 } ?: true
+    } else {
+        (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
     }
 
     fun apply(context: Context, base: Int): Int =
@@ -67,15 +67,24 @@ internal object ReadabilityScrim {
         current(context)?.let { LayerDrawable(arrayOf(ColorDrawable(it), drawable)) } ?: drawable
 
     /**
-     * Dynamic glass: Xiaomi's material apply clears the material background
-     * about 20 ms later, so the scrim lives in its foreground instead. The
-     * material sits below the key layer, so labels still draw above it.
+     * The keyboard material's foreground. Dynamic glass: Xiaomi's material
+     * apply clears the material background about 20 ms later, so the scrim
+     * lives here instead. The edge highlight ([GlassRim]) joins it for every
+     * background type. The material sits below the key layer, so labels still
+     * draw above both.
      */
-    fun overlayGlass(material: View) {
+    fun overlay(material: View, roundBottom: Boolean = false) {
         fun apply() {
-            material.foreground = if (ConfigManager.getBgType() == 0) {
-                current(material.context)?.let { ColorDrawable(it) }
-            } else null
+            val scrim = if (ConfigManager.getBgType() == 0) current(material.context) else null
+            val rim = GlassRim.spec(material, roundBottom)
+            val existing = material.foreground
+            material.foreground = when {
+                rim != null -> if (existing is GlassRim.Overlay && existing.matches(scrim, rim)) {
+                    existing
+                } else GlassRim.Overlay(scrim, rim)
+                scrim != null -> ColorDrawable(scrim)
+                else -> null
+            }
         }
         apply()
         material.postDelayed(::apply, 48L)

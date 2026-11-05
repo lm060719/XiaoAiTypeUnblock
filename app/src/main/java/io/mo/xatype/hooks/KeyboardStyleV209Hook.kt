@@ -244,7 +244,8 @@ object KeyboardStyleV209Hook
                         android.inputmethodservice.InputMethodService
                     if (service != null) useCompositorGlass(module, service, helper, material)
                     if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
-                        ReadabilityScrim.overlayGlass(material)
+                        ReadabilityScrim.overlay(material,
+                            roundBottom = service != null && isPopupMaterial(service, material))
                     }
                 }
                 result
@@ -1946,12 +1947,16 @@ object KeyboardStyleV209Hook
             material.translationZ = 0f
             material.visibility = View.VISIBLE
 
+            val floating = isPopupMaterial(service, material)
             applyTopCornerOutline(
                 material,
                 ConfigManager.getCornerRadius().coerceAtLeast(0) *
                     material.resources.displayMetrics.density,
-                roundBottom = isPopupMaterial(service, material)
+                roundBottom = floating
             )
+            // Glass scrim (dynamic glass only) and edge highlight. Also clears
+            // a glass scrim left behind after switching to a solid or image background.
+            ReadabilityScrim.overlay(material, roundBottom = floating)
 
             XposedUtils.logDebug(module) {
                 "KeyboardStyleV209Hook: material refreshed, type=" +

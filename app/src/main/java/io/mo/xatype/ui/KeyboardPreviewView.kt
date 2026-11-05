@@ -17,6 +17,7 @@ import android.os.Build
 import android.util.AttributeSet
 import android.view.View
 import io.mo.xatype.hooks.BackgroundOpacity
+import io.mo.xatype.hooks.GlassRim
 import io.mo.xatype.hooks.KeyboardContrast
 import io.mo.xatype.hooks.ReadabilityScrim
 
@@ -52,10 +53,11 @@ class KeyboardPreviewView @JvmOverloads constructor(
         val clipboardOpacity: Int = 100,
         val keyPopupBackground: Int? = null,
         val keyPopupSelected: Int? = null,
-        val keyPopupText: Int? = null
+        val keyPopupText: Int? = null,
+        val rimHighlight: Int = 0
     )
 
-    enum class Focus { NONE, CORNER, BACKGROUND, TEXT, SCRIM, LETTER_KEY, FUNCTION_KEY, MENU_CARD, CLIPBOARD_CARD, KEY_POPUP }
+    enum class Focus { NONE, CORNER, RIM, BACKGROUND, TEXT, SCRIM, LETTER_KEY, FUNCTION_KEY, MENU_CARD, CLIPBOARD_CARD, KEY_POPUP }
 
     var style = Style()
         set(value) { field = value; invalidate() }
@@ -69,6 +71,7 @@ class KeyboardPreviewView @JvmOverloads constructor(
     private val rect = RectF()
     private val path = Path()
     private val grayFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+    private val rimPainter = GlassRim.Painter()
     private val accent = 0xff0066ff.toInt()
 
     init {
@@ -78,7 +81,8 @@ class KeyboardPreviewView @JvmOverloads constructor(
 
     private fun dp(value: Float) = value * resources.displayMetrics.density
 
-    private fun lit(vararg regions: Focus) = focus == Focus.NONE || focus in regions
+    // The rim depends on everything behind it, so editing it keeps the whole preview in color.
+    private fun lit(vararg regions: Focus) = focus == Focus.NONE || focus == Focus.RIM || focus in regions
 
     /** Unfocused parts become a flat neutral gray, so the backdrop no longer shows through. */
     private fun shade(color: Int, vararg regions: Focus): Int {
@@ -155,6 +159,11 @@ class KeyboardPreviewView @JvmOverloads constructor(
         val glass = !custom || style.bgType == 0
         if (glass) drawBackdrop(canvas, w, h, blurred = true)
         drawSurface(canvas, w, h, top, glass)
+        // Like the keyboard material's foreground: above the surface, below the keys.
+        if (custom && style.rimHighlight > 0) {
+            rimPainter.draw(canvas, 0f, top, w, h, GlassRim.Spec(style.rimHighlight, radius,
+                roundBottom = false, surfaceDark = surfaceDark, density = resources.displayMetrics.density))
+        }
         when (focus) {
             Focus.MENU_CARD -> drawMenu(canvas, w, h, top)
             Focus.CLIPBOARD_CARD -> drawClipboard(canvas, w, h, top)

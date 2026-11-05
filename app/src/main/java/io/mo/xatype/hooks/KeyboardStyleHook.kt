@@ -368,7 +368,7 @@ object KeyboardStyleHook {
                     (chain.getArg(0) as? View)?.let { material ->
                         if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0 &&
                             material === XposedUtils.getObjectField(chain.thisObject, "h")) {
-                            ReadabilityScrim.overlayGlass(material)
+                            ReadabilityScrim.overlay(material)
                         }
                     }
                     if (isToolbarTransitionGuardActive()) {
@@ -2232,7 +2232,8 @@ object KeyboardStyleHook {
                 }
             }
         }
-        materialView.foreground = null
+        // No glass scrim here; keeps the edge highlight when it is on.
+        ReadabilityScrim.overlay(materialView)
         materialView.elevation = 0f
         materialView.translationZ = 0f
         materialView.visibility = View.VISIBLE
@@ -2355,7 +2356,7 @@ object KeyboardStyleHook {
                             false
                         }
 
-                        ReadabilityScrim.overlayGlass(f3500h)
+                        ReadabilityScrim.overlay(f3500h)
                         val guarded = hideMaterialDuringBottomTransition &&
                             SystemClock.uptimeMillis() < bottomTransitionGuardUntil &&
                             opacity < 100

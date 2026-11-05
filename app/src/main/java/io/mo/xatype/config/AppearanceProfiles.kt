@@ -29,6 +29,7 @@ object AppearanceProfiles {
         ConfigManager.KEY_LETTER_KEYCAP_OPACITY to 100,
         ConfigManager.KEY_SCRIM_COLOR to "",
         ConfigManager.KEY_SCRIM_OPACITY to ConfigManager.DEFAULT_SCRIM_OPACITY,
+        ConfigManager.KEY_RIM_HIGHLIGHT to 0,
         ConfigManager.KEY_BG_IMAGE_VERSION to 0L
     )
 

@@ -64,6 +64,8 @@ object ConfigManager {
     const val KEY_SCRIM_COLOR = "pref_scrim_color" // Empty: contrast with the label color
     const val KEY_SCRIM_OPACITY = "pref_scrim_opacity" // 0 to 100
     const val DEFAULT_SCRIM_OPACITY = 35
+    // Specular rim along the keyboard card edge, per profile. 0 turns it off.
+    const val KEY_RIM_HIGHLIGHT = "pref_rim_highlight" // 0 to 100
 
     private var remotePrefs: SharedPreferences? = null
     @Volatile private var remoteStylePrefs: SharedPreferences? = null
@@ -113,6 +115,7 @@ object ConfigManager {
     @Volatile private var cachedScrimEnabled = true
     @Volatile private var cachedScrimColor = ""
     @Volatile private var cachedScrimOpacity = DEFAULT_SCRIM_OPACITY
+    @Volatile private var cachedRimHighlight = 0
     @Volatile private var hasSyncedFromProvider = false
 
     fun initRemote(module: XposedInterface) {
@@ -186,6 +189,7 @@ object ConfigManager {
                 cachedScrimEnabled = bundle.getBoolean(KEY_SCRIM_ENABLED, true)
                 cachedScrimColor = bundle.getString(KEY_SCRIM_COLOR, "") ?: ""
                 cachedScrimOpacity = bundle.getInt(KEY_SCRIM_OPACITY, DEFAULT_SCRIM_OPACITY).coerceIn(0, 100)
+                cachedRimHighlight = bundle.getInt(KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100)
                 hasSyncedFromProvider = true
             }
         } catch (_: Throwable) {
@@ -420,6 +424,11 @@ object ConfigManager {
     fun getScrimOpacity(): Int {
         if (hasSyncedFromProvider) return cachedScrimOpacity
         return (remoteStylePrefs?.getInt(KEY_SCRIM_OPACITY, cachedScrimOpacity) ?: cachedScrimOpacity).coerceIn(0, 100)
+    }
+
+    fun getRimHighlight(): Int {
+        if (hasSyncedFromProvider) return cachedRimHighlight
+        return (remoteStylePrefs?.getInt(KEY_RIM_HIGHLIGHT, cachedRimHighlight) ?: cachedRimHighlight).coerceIn(0, 100)
     }
 
     fun isVerboseLogEnabled(): Boolean {

@@ -44,7 +44,8 @@ object AppearancePresetStore
             ConfigManager.KEY_MENU_CARD_COLOR to "#E7F1FF",
             ConfigManager.KEY_MENU_CARD_OPACITY to 66,
             ConfigManager.KEY_CLIPBOARD_CARD_COLOR to "#DDEEFF",
-            ConfigManager.KEY_CLIPBOARD_CARD_OPACITY to 70
+            ConfigManager.KEY_CLIPBOARD_CARD_OPACITY to 70,
+            ConfigManager.KEY_RIM_HIGHLIGHT to 70
         )),
         Preset("midnight", "极夜黑金", "", mapOf(
             ConfigManager.KEY_CORNER_RADIUS to 22,
