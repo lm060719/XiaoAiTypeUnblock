@@ -43,7 +43,7 @@ object Keyboard18Store {
         putString(STATUS, sp.getString(STATUS, "尚未接入输入法"))
         putLong(STATUS_TIME, sp.getLong(STATUS_TIME, 0))
     } }
-    private const val DICTIONARY_REVISION = 2
+    private const val DICTIONARY_REVISION = 6
 
     @Synchronized
     fun dictionaryFile(context: Context): File {
@@ -56,7 +56,7 @@ object Keyboard18Store {
             try {
                 // Merge the base corpus with the module supplement, keeping the higher weight.
                 val merged = LinkedHashMap<String, Int>()
-                for (asset in listOf("keyboard18/pinyin.table", "keyboard18/extra.table")) {
+                for (asset in listOf("keyboard18/pinyin.table", "keyboard18/extra.table", "keyboard18/english.table")) {
                     context.assets.open(asset).use { input ->
                         GZIPInputStream(input).bufferedReader(Charsets.UTF_8).forEachLine { line ->
                             val parts = line.split('\t')

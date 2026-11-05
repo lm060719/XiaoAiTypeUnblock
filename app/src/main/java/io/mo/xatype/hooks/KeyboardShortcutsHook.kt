@@ -109,7 +109,23 @@ object KeyboardShortcutsHook {
             supported == true && ConfigManager.isKeyboardShortcutsEnabled() &&
                 service?.let { KeyboardSelectionHook.selected(it) in shortcutKeyboards } == true
         }, layout = { KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,
-            keyboard18 = service?.let { KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18 } == true) })
+            keyboard18 = service?.let { KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18 } == true) },
+            clearInput = {
+                service?.let { ime ->
+                    ime.currentInputConnection?.let(KeyboardShortcutActions::clearInput)
+                    Keyboard18Hook.clearCompositionOnSwipe()
+                }
+            },
+            restoreInput = {
+                service?.currentInputConnection?.let(KeyboardShortcutActions::restoreInput)
+            },
+            fieldLength = {
+                service?.currentInputConnection?.getTextBeforeCursor(100_000, 0)?.length ?: -1
+            },
+            hasComposition = { Keyboard18Hook.hasComposition() },
+            hasSelection = {
+                service?.currentInputConnection?.getSelectedText(0)?.isNotEmpty() == true
+            })
             .install(module, loader)
         XposedUtils.log(module, "Independent downward swipe shortcut hooks installed (resolved ABI)")
     }

@@ -2,6 +2,8 @@ package io.mo.xatype.keyboard
 
 /** Shared release actions for the native nine/26-key (including shape input) and custom 18-key layouts. */
 object KeyboardShortcuts {
+    /** Swipe-up on the delete key clears the input field immediately. */
+    const val CLEAR_INPUT = "清空输入"
     /** Native 26-key letters, shared by pinyin, English and the shape (虎码/五笔) keyboard. */
     val letters = mapOf('z' to "全选", 'x' to "剪切", 'c' to "复制", 'v' to "粘贴", 'm' to "段尾")
     val groups18 = mapOf("z" to "段首", "xc" to "复制", "v" to "粘贴", "bn" to "全选", "m" to "段尾")

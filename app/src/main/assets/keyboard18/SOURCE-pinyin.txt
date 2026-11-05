@@ -3,7 +3,18 @@ Revision: 0c6861ef7420ee780270ca6d993d18d4101049d0
 Source file: pinyin_simp.dict.yaml
 Source SHA256: e341598343a0f0f2035bb1aafc34a7f3bb7887deeecb3f60796262aaa2983e6b
 License: Apache-2.0 (see LICENSE-pinyin.txt)
-Entries: 65125
+Base entries: 65125
 Derived from the Android Open Source Project PinyinIME dictionary.
-Modified for this prototype: extract data rows; deduplicate text/spelling pairs; sort by weight and retain original spaced pinyin; UTF-8 TSV, deterministic gzip.
-This application uses its own Kotlin decoder; it does not bundle the Rime engine.
+
+Expanded with (GPL-3.0; this project is also GPL-3.0):
+Source: https://github.com/iDvel/rime-ice
+Revision: 99662ba01e3affa6a0f009174ca530b887bac3b6
+- cn_dicts/base.dict.yaml SHA256 551cad93c2e74c7325599e0d23afbf71c2d2e57df9af3f8f6fa16d87e60290a3
+- cn_dicts/8105.dict.yaml SHA256 1f9a42b91dea6982baee2551981780271aeffd78876662b9c9f324e56b37b120
+- en_dicts/en.dict.yaml SHA256 1049164da983c1c5a933d6401df9a8e5f8a378b0c67b102e0f75f0a65226ec44
+Only dictionary data rows are used; no Rime engine code is bundled.
+
+Modified for this prototype: extract data rows; validate pinyin against the base syllable set; keep practical
+base entries with weight >= 10000; add missing 8105 characters with capped weights; merge curated modern
+Chinese/tech/life terms and common English words; deduplicate text/spelling pairs; sort by weight and retain
+spaced pinyin; UTF-8 TSV, deterministic gzip.
