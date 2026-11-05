@@ -24,6 +24,7 @@ import io.mo.xatype.keyboard18.Keyboard18Keys
 import io.mo.xatype.keyboard18.Keyboard18Store
 import io.mo.xatype.provider.Keyboard18ContentProvider
 import io.mo.xatype.util.XposedUtils
+import java.lang.ref.WeakReference
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -38,7 +39,10 @@ object Keyboard18Hook {
     @Volatile private var installFailure: Throwable? = null
     @Volatile private var layoutReported = false
     @Volatile private var applicationContext: Context? = null
-    @Volatile private var activeEngine: Keyboard18Engine? = null
+    /** Host callbacks of the latest 18-key keystroke, so a swipe can clear and redraw the candidate bar. */
+    @Volatile private var lastCallbacks: WeakReference<Any>? = null
+    @Volatile private var sessionOf: ((Any) -> Keyboard18HostBridge.Session?)? = null
+    @Volatile private var redraw: ((Any, io.mo.xatype.keyboard18.Pinyin18Result) -> Unit)? = null
 
     fun install(module: XposedInterface, loader: ClassLoader) {
         // Package hooks install before Application exists. Keep this observer independent
@@ -79,6 +83,8 @@ object Keyboard18Hook {
         val uppercase = callbackClass.abiMethod(abi, "o")
         val commit = callbackClass.abiMethod(abi, "K", String::class.java)
         val refresh = callbackClass.abiMethod(abi, "y", abi.type("z8.r"))
+        sessionOf = { callbacks -> bridge.session(current.invoke(callbacks)) }
+        redraw = { callbacks, result -> refresh.invoke(callbacks, bridge.result(result)) }
         val codeField = keyClass.abiField(abi, "a").apply { isAccessible = true }
         val labelField = keyClass.abiField(abi, "b").apply { isAccessible = true }
         val kindField = keyClass.abiField(abi, "f").apply { isAccessible = true }
@@ -110,6 +116,7 @@ object Keyboard18Hook {
             val key = chain.getArg(0)!!
             val callbacks = chain.getArg(1)!!
             val session = bridge.session(current.invoke(callbacks))
+            if (session != null && lastCallbacks?.get() !== callbacks) lastCallbacks = WeakReference(callbacks)
             val label = labelField.get(key) as String
             val code = codeField.getInt(key)
             val kind = (kindField.get(key) as Enum<*>).name
@@ -158,7 +165,6 @@ object Keyboard18Hook {
             val context = contextField.get(chain.thisObject) as InputMethodService
             service = context
             chineseReady = false
-            activeEngine = null
             if (chain.getArg(0) !== bridge.pinyin || KeyboardSelectionHook.selected(context) != KeyboardChoice.KEYBOARD18)
                 chain.proceed() else {
                 val config = runCatching { load(context) }.onFailure {
@@ -179,7 +185,6 @@ object Keyboard18Hook {
                         },
                         compositionCandidates = compositions::candidates,
                         recordComposition = compositions::record)
-                    activeEngine = engine
                     val first = AtomicBoolean(false)
                     report(context, config.settings, "18键离线引擎已接入，等待输入")
                     bridge.create(engine, context) {
@@ -229,11 +234,22 @@ object Keyboard18Hook {
         XposedUtils.log(module, "18-key keyboard hooks installed (opt-in, resolved ABI)")
     }
 
-    /** Clear the 18-key composing buffer when a swipe clears the editor field. */
-    fun clearCompositionOnSwipe() { activeEngine?.clear() }
+    private fun composingSession(): Pair<Any, Keyboard18HostBridge.Session>? {
+        val callbacks = lastCallbacks?.get() ?: return null
+        val session = runCatching { sessionOf?.invoke(callbacks) }.getOrNull() ?: return null
+        return callbacks to session
+    }
+
+    /** Clear the 18-key composing buffer and its candidate bar when a swipe clears the field. */
+    fun clearCompositionOnSwipe() {
+        val (callbacks, session) = composingSession() ?: return
+        if (session.engine.raw.isEmpty()) return
+        session.engine.clear()
+        redraw?.invoke(callbacks, session.engine.snapshot())
+    }
 
     /** True while the 18-key engine still holds unselected pinyin. */
-    fun hasComposition(): Boolean = activeEngine?.raw?.isNotEmpty() == true
+    fun hasComposition(): Boolean = composingSession()?.second?.engine?.raw?.isNotEmpty() == true
 
     @Synchronized
     private fun load(context: Context): Loaded {

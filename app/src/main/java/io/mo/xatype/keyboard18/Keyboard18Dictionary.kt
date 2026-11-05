@@ -29,15 +29,15 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
     private val initialRoot = Node()
     val maxLength = entries.maxOf { it.code.length }
     val maxScore = entries.maxOf { it.score }
-    private val texts = entries.mapTo(HashSet(entries.size)) { it.text }
+    /** Only rows containing Latin letters; a full text set would cost a 100k-entry HashSet. */
     private val literalWeights = HashMap<String, Int>()
     init {
         entries.forEach { entry ->
             if (entry.literal) literalWeights[entry.text] = maxOf(literalWeights[entry.text] ?: 0, entry.weight)
         }
     }
-    /** True when [text] is a real dictionary entry, not a synthesized Latin path. */
-    fun hasText(text: String): Boolean = text in texts
+    /** True when [text] is a real English/mixed dictionary row, not a synthesized Latin path. */
+    fun isLiteral(text: String): Boolean = text in literalWeights
     /** Highest corpus weight of a literal (English/tech) entry for [text], or 0. */
     fun literalWeight(text: String): Int = literalWeights[text] ?: 0
 
@@ -134,14 +134,18 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
                     val literal = parts[0].any { it in 'a'..'z' || it in 'A'..'Z' }
                     val code = parts[1].replace(" ", "")
                     if (code.isEmpty() || code.length > 48 || !code.all { it in 'a'..'z' }) return@forEach
-                    // English/mixed rows stay as literal latin codes in every scheme so the
-                    // user can type them directly; only pure pinyin rows are re-encoded.
-                    val inputSpelling = if (scheme == null || literal) parts[1] else {
-                        val syllables = parts[1].split(' ').map { syllable ->
+                    val inputSpelling = when {
+                        scheme == null -> parts[1]
+                        // Pure English rows are typed letter by letter in every scheme.
+                        literal && parts[0].all { it in 'a'..'z' || it in 'A'..'Z' } -> parts[1]
+                        // Mixed rows (qq飞车, B站): encode the pinyin syllables, keep Latin pieces.
+                        literal -> parts[1].split(' ').joinToString(" ") { syllable ->
+                            encoded.getOrPut(syllable) { scheme.encodeSyllable(syllable) } ?: syllable
+                        }
+                        else -> parts[1].split(' ').map { syllable ->
                             encoded.getOrPut(syllable) { scheme.encodeSyllable(syllable) }
                                 ?: return@forEach
-                        }
-                        syllables.joinToString(" ")
+                        }.joinToString(" ")
                     }
                     rows.add(Pinyin18Entry(parts[0], parts[1], weight.coerceAtLeast(0), inputSpelling, literal))
                 }

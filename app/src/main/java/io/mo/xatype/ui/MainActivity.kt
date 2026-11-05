@@ -446,6 +446,7 @@ class MainActivity : AppCompatActivity() {
         // Key shortcuts are independent of experimental keyboards and appearance.
         kit.group(root, "输入增强", listOf(
             featureSwitch(FeatureCatalog.keyboardShortcuts).view,
+            featureSwitch(FeatureCatalog.deleteSwipe).view,
             featureSwitch(FeatureCatalog.emojiCandidates).view,
             predictionModeRow(),
             shortcutLabelRow()

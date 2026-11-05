@@ -1,8 +1,14 @@
 package io.mo.xatype.keyboard18
 
+import io.mo.xatype.keyboard.ShuangpinScheme
 
+/**
+ * [suggestion] marks associative completions that add letters the user has not typed;
+ * [synthetic] marks stitched sentences containing Latin pieces; [learned] marks a phrase the
+ * user composed word by word three times for exactly these taps.
+ */
 data class Pinyin18Candidate(val text: String, val spelling: String, val consumed: Int, val score: Double,
-    val complete: Boolean = false, val suggestion: Boolean = false, val synthetic: Boolean = false)
+    val suggestion: Boolean = false, val synthetic: Boolean = false, val learned: Boolean = false)
 data class Pinyin18Result(val consumed: Boolean, val raw: String, val display: String,
     val candidates: List<Pinyin18Candidate>, val commit: String? = null)
 
@@ -15,9 +21,11 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         private set
     var candidates: List<Pinyin18Candidate> = emptyList()
         private set
+    /** Words picked one by one for the current tap sequence. */
     private val composedParts = ArrayList<String>()
     private val composedSpellings = ArrayList<String>()
-    private var compositionStartRaw = ""
+    /** Taps already consumed by [composedParts]; together with [raw] they form the whole sequence. */
+    private val composedRaw = StringBuilder()
     val display: String get() = pinyinDisplay()
     /** Candidate bar shows the real pinyin of the leading candidate, not group tags. */
     private fun pinyinDisplay(): String {
@@ -30,19 +38,18 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
     val scheme get() = dictionary.scheme
     fun snapshot(consumed: Boolean = true, commit: String? = null) =
         Pinyin18Result(consumed, raw, display, candidates, commit)
-    fun clear() {
-        raw = ""; candidates = emptyList()
-        composedParts.clear(); composedSpellings.clear(); compositionStartRaw = ""
-    }
+    private fun resetComposition() { composedParts.clear(); composedSpellings.clear(); composedRaw.setLength(0) }
+    fun clear() { raw = ""; candidates = emptyList(); resetComposition() }
     fun restore(value: String): Pinyin18Result {
-        composedParts.clear(); composedSpellings.clear(); compositionStartRaw = ""
+        resetComposition()
         if (value.length > MAX_INPUT || value.any { !dictionary.valid(it) }) return snapshot(false)
         raw = value; refresh(); return snapshot()
     }
     fun backspace(): Pinyin18Result {
         if (raw.isEmpty()) return snapshot(false)
+        // Backspace only edits the unconsumed taps; picked words are already in the editor.
         raw = raw.dropLast(1)
-        if (raw.isEmpty()) { composedParts.clear(); composedSpellings.clear(); compositionStartRaw = "" }
+        if (raw.isEmpty()) resetComposition()
         refresh(); return snapshot()
     }
     /** Distinct pinyin readings for the current input, shown in the expanded candidate page. */
@@ -54,22 +61,22 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
 
     fun select(index: Int): String? {
         val candidate = candidates.getOrNull(index) ?: return null
-        if (composedParts.isEmpty()) compositionStartRaw = raw
         val rawBefore = raw
         raw = raw.drop(candidate.consumed).trimStart('\'')
         learn(candidate.text)
         composedParts.add(candidate.text)
         composedSpellings.add(candidate.spelling.substringBefore(" · "))
+        composedRaw.append(rawBefore, 0, rawBefore.length - raw.length)
         if (raw.isEmpty()) {
-            // Only a phrase built from two or more taps is a composition worth fixing;
+            // Only a phrase built from two or more picks is a composition worth fixing;
             // three identical repeats turn it into a single candidate next time.
             if (composedParts.size >= 2) {
-                recordComposition(rawKey(compositionStartRaw.ifEmpty { rawBefore }), composedParts, composedSpellings)
-                // The composed phrase itself joins the frequency memory, so after three
-                // repetitions it is also solidified as a first-class candidate.
+                recordComposition(compositionKey(scheme, composedRaw.toString()),
+                    composedParts.toList(), composedSpellings.toList())
+                // The composed phrase itself joins the frequency memory as well.
                 learn(composedParts.joinToString(""))
             }
-            composedParts.clear(); composedSpellings.clear(); compositionStartRaw = ""
+            resetComposition()
         }
         refresh()
         return candidate.text
@@ -96,9 +103,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             if (token == '\'' && (raw.isEmpty() || raw.last() == '\'')) return snapshot()
             var commit: String? = null
             if (raw.length == MAX_INPUT) commit = commitAll()
-            raw += token
-            if (composedParts.isNotEmpty()) compositionStartRaw += token
-            refresh(); return snapshot(commit = commit)
+            raw += token; refresh(); return snapshot(commit = commit)
         }
         if (raw.isEmpty()) return snapshot(false)
         val text = commitAll().orEmpty() + token
@@ -116,18 +121,15 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
 
     private data class Word(val end: Int, val entry: Pinyin18Entry, val abbreviated: Boolean)
     private data class Path(val text: String, val spelling: String, val score: Double,
-        val segments: Int = 0, val minimumWeight: Int = Int.MAX_VALUE,
-        val literal: Boolean = true, val latin: Boolean = false)
+        val segments: Int = 0, val minimumWeight: Int = Int.MAX_VALUE, val latin: Boolean = false)
     private fun words(start: Int) = dictionary.words(raw, start).map { (end, entry) -> Word(end, entry, false) } +
         dictionary.abbreviations(raw, start).map { (end, entry) -> Word(end, entry, true) }
     private fun score(word: Word) = word.entry.score - dictionary.maxScore + learning(word.entry.text) -
         if (word.abbreviated) INITIAL_PENALTY * word.entry.syllableCount else 0.0
-    private fun rawKey(value: String): String = value.map { if (it == '\'') '|' else Keyboard18Keys.projected(it) }.joinToString("")
     private fun refresh() {
         if (raw.isEmpty()) { candidates = emptyList(); return }
-        val rawKey = rawKey(raw)
-        val learned = compositionCandidates(rawKey).map {
-            Pinyin18Candidate(it.text, it.spelling, raw.length, LEARNED_COMPOSITION_SCORE, complete = true)
+        val learned = compositionCandidates(compositionKey(scheme, raw)).map {
+            Pinyin18Candidate(it.text, it.spelling, raw.length, 0.0, learned = true)
         }
         val paths = Array(raw.length + 1) { mutableListOf<Path>() }
         paths[0].add(Path("", "", 0.0))
@@ -147,8 +149,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
                     paths[end].add(Path(path.text + entry.text,
                         (path.spelling + " " + entry.spelling).trim(),
                         path.score + wordScore - if (repeated) REPETITION_PENALTY else 0.0,
-                        path.segments + 1, minOf(path.minimumWeight, entry.weight),
-                        path.literal && entry.literal, path.latin || entry.literal))
+                        path.segments + 1, minOf(path.minimumWeight, entry.weight), path.latin || entry.literal))
                 }
                 prune(paths[end])
             }
@@ -157,94 +158,71 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         // low-frequency multiword sentences such as e + e + m for grouped WE/WE/M input.
         val whole = paths[raw.length].filter { it.segments == 1 || it.minimumWeight >= MIN_COMPOSITION_WEIGHT }
             .map { Pinyin18Candidate(it.text, it.spelling, raw.length,
-                it.score + if (it.segments > 1) learning(it.text) else 0.0, complete = true,
+                it.score + if (it.segments > 1) learning(it.text) else 0.0,
                 synthetic = it.segments > 1 && it.latin) }
         val lexical = direct.map { word -> Pinyin18Candidate(word.entry.text,
             word.entry.spelling + if (word.abbreviated) " · 简拼" else "", word.end,
-            score(word) + if (word.end == raw.length) COMPLETE_WORD_BONUS else 0.0,
-            complete = word.end == raw.length) }
+            score(word) + if (word.end == raw.length) COMPLETE_WORD_BONUS else 0.0) }
         // English completions are noise in Chinese mode: the ambiguous 18-key groups
         // can surface e.g. "equal" from WE+Q, which is neither the typed pinyin nor useful.
         val completion = dictionary.completions(raw, 0).filterNot { it.literal }.map { entry ->
             Pinyin18Candidate(entry.text, entry.spelling + " · 补全", raw.length,
                 entry.score - dictionary.maxScore - 3.0 + learning(entry.text), suggestion = true) }
-        // A candidate whose full spelling equals the typed sequence is a better fit than
-        // alternative decodings from the same 18-key groups. Do not pin the raw letters
-        // themselves: uuru should surface words, not a Latin "uuru" candidate.
-        val typed = raw.filter { it != '\'' }
-            .map { token -> Keyboard18Keys.group(token.code)?.first() ?: token }
-            .joinToString("")
-        fun spelledAsTyped(candidate: Pinyin18Candidate) = typed.length > 1 &&
-            candidate.spelling.substringBefore(" · ").replace(" ", "").replace("'", "") == typed
-        // A candidate made only of the letters the user just tapped is the pinyin echo,
-        // not a word. This covers single+single, single+double, double+single and
-        // double+double key combinations. A few genuine terms are exempted.
-        fun keyLetterEcho(candidate: Pinyin18Candidate): Boolean {
-            if (candidate.text.any { it !in 'a'..'z' && it !in 'A'..'Z' }) return false
-            val lower = candidate.text.lowercase()
-            if (lower in KEEP_LATIN) return false
-            if (lower in Keyboard18Keys.groups) return true
-            val tokens = raw.filter { it != '\'' }
-            if (tokens.isEmpty()) return false
-            // Each tap contributes one to three letters from its key group. A candidate
-            // that can be partitioned this way is the pinyin echo of the keys, not a word.
-            fun match(tokenIndex: Int, charIndex: Int): Boolean {
-                // Prefix candidates are allowed to consume only the leading taps.
-                if (charIndex == candidate.text.length) return tokenIndex > 0
-                if (tokenIndex == tokens.length) return false
-                val token = tokens[tokenIndex]
-                val allowed = Keyboard18Keys.group(token.code) ?: token.toString()
-                for (width in 1..allowed.length) {
-                    if (charIndex + width > candidate.text.length) break
-                    if (candidate.text.substring(charIndex, charIndex + width).all { it in allowed } &&
-                        match(tokenIndex + 1, charIndex + width)) return true
-                }
-                return false
-            }
-            return match(0, 0)
-        }
-        // Rank corpus words, valid sentences and partial selections together. A fabricated
-        // complete path no longer beats every real word merely because it consumes all taps.
+        val taps = raw.filter { it != '\'' }
+        val picks = HashMap<String, Int>()
+        fun picked(text: String) = picks.getOrPut(text) { frequency(text).let { if (it >= LEARNED_THRESHOLD) it else 0 } }
         candidates = (learned + lexical + whole + completion)
-            .filterNot { it.synthetic }
-            // Drop Latin letter strings that only echo the typed pinyin: they are neither
-            // English nor Chinese words. Real English entries such as "ok" stay.
-            .filterNot { candidate ->
-                candidate.text.all { it in 'a'..'z' || it in 'A'..'Z' } &&
-                    !dictionary.hasText(candidate.text)
-            }
-            // A single Latin letter is not a word either.
-            .filterNot { candidate ->
-                candidate.text.length == 1 && candidate.text[0] in 'a'..'z' &&
-                    candidate.text !in setOf("a", "i")
-            }
-            // English-table rows that are exactly a Chinese pinyin code or a bare
-            // pinyin final (ai, ui, ...) are the pinyin itself, not a candidate word.
-            .filterNot { candidate ->
-                candidate.text.length == 2 && candidate.text.all { it in 'a'..'z' || it in 'A'..'Z' } &&
-                    candidate.text.lowercase() !in KEEP_LATIN &&
-                    dictionary.literalWeight(candidate.text) < TWO_LETTER_WORD_MIN_WEIGHT
-            }
-            .filterNot(::keyLetterEcho)
+            .filterNot { it.synthetic || latinNoise(it.text, taps) }
             .sortedWith(
-            // Real candidates covering the entire input come first so one tap commits the
-            // whole sentence instead of leaving the user to pick word by word. Prefix
-            // completions are not "complete": they add characters the user did not type.
-            // A learned composition for these exact taps always wins.
-            // Typed-letter fallback and learned compositions lead.
-            compareByDescending<Pinyin18Candidate> { it.score >= LEARNED_COMPOSITION_SCORE }
-                // Associative completions always come after candidates for the typed input.
-                .thenBy { it.suggestion }
-                // Words covering the whole typed sequence beat shorter prefix words,
-                // even when a single character was picked repeatedly before.
-                .thenByDescending { it.consumed == raw.length }
-                .thenByDescending { spelledAsTyped(it) }
-                .thenByDescending { it.complete }
-                // Within the same coverage, repeated picks solidify.
-                .thenByDescending { frequency(it.text) >= LEARNED_THRESHOLD }
-                .thenByDescending { c -> frequency(c.text).let { if (it >= LEARNED_THRESHOLD) it else 0 } }
-                .thenByDescending { it.score - PREFIX_PENALTY * (raw.length - it.consumed) }
-        ).distinctBy { it.text to it.consumed }.take(MAX_CANDIDATES)
+                // A learned composition for exactly these taps always wins.
+                compareByDescending<Pinyin18Candidate> { it.learned }
+                    // Associative completions always come after candidates for the typed input.
+                    .thenBy { it.suggestion }
+                    // Candidates covering every tap commit the whole input in one pick.
+                    .thenByDescending { it.consumed == raw.length }
+                    // Within the same coverage, words picked three times or more solidify.
+                    .thenByDescending { picked(it.text) }
+                    .thenByDescending { it.score - PREFIX_PENALTY * (raw.length - it.consumed) }
+            ).distinctBy { it.text to it.consumed }.take(MAX_CANDIDATES)
+    }
+
+    /**
+     * Pure Latin candidates are kept only when they are real dictionary terms rather than an
+     * echo of the tapped key letters (sd, rt, uuru, to, am...). Chinese and mixed text always stays.
+     */
+    private fun latinNoise(text: String, taps: String): Boolean {
+        if (!text.all { it in 'a'..'z' || it in 'A'..'Z' }) return false
+        val lower = text.lowercase()
+        if (lower in KEEP_LATIN) return false
+        if (!dictionary.isLiteral(text) || text.length == 1 || lower in Keyboard18Keys.groups) return true
+        // Two-letter rows below this weight are key abbreviations or pinyin fragments.
+        if (text.length == 2 && dictionary.literalWeight(text) < TWO_LETTER_WORD_MIN_WEIGHT) return true
+        return echoesTaps(text, taps)
+    }
+
+    /**
+     * True when [text] can be split so that each piece comes from the key group of one tap, in
+     * order: the candidate only spells back the keys. Case-sensitive, so cased terms such as
+     * iPhone are kept. Failed states are memoized; repeated groups cannot blow up exponentially.
+     */
+    private fun echoesTaps(text: String, taps: String): Boolean {
+        if (taps.isEmpty()) return false
+        val failed = HashSet<Int>()
+        fun match(tap: Int, char: Int): Boolean {
+            // Prefix candidates may consume only the leading taps.
+            if (char == text.length) return tap > 0
+            if (tap == taps.length) return false
+            val state = tap * (text.length + 1) + char
+            if (state in failed) return false
+            val allowed = Keyboard18Keys.group(taps[tap].code) ?: taps[tap].toString()
+            for (width in 1..allowed.length) {
+                if (char + width > text.length) break
+                if ((char until char + width).all { text[it] in allowed } && match(tap + 1, char + width)) return true
+            }
+            failed += state
+            return false
+        }
+        return match(0, 0)
     }
     private fun learning(text: String): Double {
         val count = frequency(text)
@@ -255,8 +233,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         paths.clear(); paths.addAll(top)
     }
     companion object {
-        private const val LEARNED_COMPOSITION_SCORE = 1_000_000.0
-const val MAX_INPUT = 64
+        private const val MAX_INPUT = 64
         private const val BEAM = 8
         private const val WORD_PENALTY = 0.7
         private const val INITIAL_PENALTY = 1.2
@@ -264,10 +241,19 @@ const val MAX_INPUT = 64
         private const val PREFIX_PENALTY = 1.5
         /** Two-letter key abbreviations and pinyin fragments sit below real English words. */
         private const val TWO_LETTER_WORD_MIN_WEIGHT = 10_000
+        /** Common Latin terms kept even though they spell back the tapped keys. */
         private val KEEP_LATIN = setOf("ai", "ok", "qq", "app", "api", "wx", "vx")
         private const val REPETITION_PENALTY = 6.0
         private const val MIN_COMPOSITION_WEIGHT = 32
         private const val MAX_CANDIDATES = 160
         private const val LEARNED_THRESHOLD = 3
+
+        /**
+         * Storage key of a learned composition: the scheme plus the projected taps, so the same
+         * taps learned under full pinyin are not offered after switching to a shuangpin scheme.
+         */
+        internal fun compositionKey(scheme: ShuangpinScheme?, taps: String): String =
+            (scheme?.name ?: "QUANPIN") + ":" +
+                taps.map { if (it == '\'') '|' else Keyboard18Keys.projected(it) }.joinToString("")
     }
 }

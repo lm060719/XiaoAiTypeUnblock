@@ -46,6 +46,13 @@ internal object FeatureCatalog {
             extra = ::shortcutTable
         ))
 
+    val deleteSwipe = Feature(ConfigManager.KEY_DELETE_SWIPE, "18 键删除键上滑清空",
+        "上滑清空光标前的文字，随后下滑可恢复", Detail(
+            "18 键中文布局下，按住删除键上滑清空光标之前的内容（光标后的内容保留）；清空后在同一输入框内下滑删除键，可在 1 分钟内恢复刚清空的文字。",
+            notes = listOf("开启后删除键的点按与长按连删由模块接管，不再播放输入法自带的按键音；按住删除键时另一根手指的按键不生效。",
+                "密码框清空后不保存原文，也无法恢复；恢复内容只能回到原输入框，切换到其他应用或输入框后自动失效。")
+        ))
+
     /** Hint text drawn on the same keys that carry the swipe action. */
     val shortcutLabels = Feature(ConfigManager.KEY_SHORTCUT_LABELS, "在按键上显示操作文字",
         "在九键、18键、26键及虎码/五笔标出段首、复制、粘贴、全选等文字，大小与位置可调")
@@ -65,7 +72,7 @@ internal object FeatureCatalog {
     val bottomSpacing = Feature(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, "自定义键盘底部间距",
         "调节按键下方的留白")
 
-    val keyboardFeatures get() = listOf(keyboardShortcuts, shortcutLabels, emojiCandidates, keyboardHeight, bottomSpacing, t9Shuangpin)
+    val keyboardFeatures get() = listOf(keyboardShortcuts, deleteSwipe, shortcutLabels, emojiCandidates, keyboardHeight, bottomSpacing, t9Shuangpin)
 
     /** Rows of action, nine-key, 26-key (also shape input) and 18-key triggers. */
     private val shortcutKeys = listOf(

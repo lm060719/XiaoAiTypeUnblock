@@ -240,11 +240,62 @@ class Keyboard18EngineTest {
 
     @Test fun `learned composition appears for the same grouped taps`() {
         val engine = Keyboard18Engine(mergedDictionary,
-            compositionCandidates = { key -> if (key == "ui") listOf(Keyboard18CompositionStore.Learned("精实", "jing shi")) else emptyList() })
+            compositionCandidates = { key ->
+                if (key == Keyboard18Engine.compositionKey(null, grouped("u", "io")))
+                    listOf(Keyboard18CompositionStore.Learned("精实", "jing shi")) else emptyList()
+            })
         engine.inputText(grouped("u", "io"))
         assertEquals("精实", engine.candidates.first().text)
         assertEquals("精实", engine.select(0))
         assertTrue(engine.raw.isEmpty())
+    }
+
+    @Test fun `single grouped syllables keep the most frequent reading first`() {
+        val engine = Keyboard18Engine(mergedDictionary)
+        // The first letter of a double key must not outrank the more common second letter.
+        engine.inputText(grouped("bn", "io"))
+        assertEquals("你", engine.candidates.first().text)
+        engine.clear()
+        engine.inputText(grouped("sd", "a"))
+        assertTrue(engine.candidates.first().text in setOf("大", "打"))
+        engine.clear()
+        engine.inputText(grouped("bn", "a"))
+        assertTrue(engine.candidates.take(5).any { it.text in setOf("那", "拿", "哪") })
+    }
+
+    @Test fun `composition key covers only the taps actually picked after a backspace`() {
+        val keys = ArrayList<String>()
+        val engine = Keyboard18Engine(testDictionary("你\tni\t1000000\n好\thao\t1000000\n哈\tha\t1000000\n"),
+            recordComposition = { key, parts, _ -> keys += key + "=" + parts.joinToString("") })
+        engine.inputText("nihao")
+        engine.select(engine.candidates.indexOfFirst { it.text == "你" })
+        engine.backspace()
+        engine.select(engine.candidates.indexOfFirst { it.text == "哈" })
+        assertEquals(listOf(Keyboard18Engine.compositionKey(null, "niha") + "=你哈"), keys)
+    }
+
+    @Test fun `composition keys differ between full pinyin and shuangpin`() {
+        val taps = grouped("bn", "io", "h", "xc")
+        assertNotEquals(Keyboard18Engine.compositionKey(null, taps),
+            Keyboard18Engine.compositionKey(ShuangpinScheme.XIAOHE, taps))
+    }
+
+    @Test fun `mixed entries encode their pinyin syllables under shuangpin`() {
+        val rows = "qq飞车\tqq fei che\t8000\nok\tok\t5000\n"
+        val bytes = ByteArrayOutputStream().apply {
+            GZIPOutputStream(this).bufferedWriter().use { it.write(rows) }
+        }.toByteArray()
+        val scheme = ShuangpinScheme.XIAOHE
+        val encoded = Keyboard18Dictionary.read(bytes.inputStream(), scheme)
+        val expected = "qq " + scheme.encodeSyllable("fei") + " " + scheme.encodeSyllable("che")
+        assertEquals(expected, encoded.entries.single { it.text == "qq飞车" }.inputSpelling)
+        assertEquals("ok", encoded.entries.single { it.text == "ok" }.inputSpelling)
+    }
+
+    @Test fun `plain lowercase english rows are not shipped because they never surface`() {
+        assertFalse(mergedDictionary.entries.any { it.literal && it.text.all { c -> c in 'a'..'z' } &&
+            it.text !in setOf("ai", "ok", "qq", "app", "api", "wx", "vx") })
+        assertTrue(mergedDictionary.entries.any { it.text == "iPhone" })
     }
 
     private fun testDictionary(rows: String) = ByteArrayOutputStream().apply {

@@ -110,22 +110,32 @@ object KeyboardShortcutsHook {
                 service?.let { KeyboardSelectionHook.selected(it) in shortcutKeyboards } == true
         }, layout = { KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,
             keyboard18 = service?.let { KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18 } == true) },
+            deleteSwipeEnabled = {
+                ConfigManager.isDeleteSwipeEnabled() &&
+                    service?.let { KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18 } == true
+            },
             clearInput = {
                 service?.let { ime ->
-                    ime.currentInputConnection?.let(KeyboardShortcutActions::clearInput)
+                    // Drop the 18-key pinyin preedit first so it is neither committed nor kept for restore.
+                    val composing = Keyboard18Hook.hasComposition()
                     Keyboard18Hook.clearCompositionOnSwipe()
+                    ime.currentInputConnection?.let {
+                        KeyboardShortcutActions.clearInput(it, ime.currentInputEditorInfo, dropComposing = composing)
+                    }
                 }
             },
             restoreInput = {
-                service?.currentInputConnection?.let(KeyboardShortcutActions::restoreInput)
+                service?.let { ime ->
+                    ime.currentInputConnection?.let { KeyboardShortcutActions.restoreInput(it, ime.currentInputEditorInfo) }
+                } == true
             },
-            fieldLength = {
-                service?.currentInputConnection?.getTextBeforeCursor(100_000, 0)?.length ?: -1
+            fieldLength = { service?.currentInputConnection?.getTextBeforeCursor(100_000, 0)?.length ?: -1 },
+            fieldEmpty = {
+                service?.currentInputConnection?.getTextBeforeCursor(1, 0)?.isEmpty() == true &&
+                    !Keyboard18Hook.hasComposition()
             },
             hasComposition = { Keyboard18Hook.hasComposition() },
-            hasSelection = {
-                service?.currentInputConnection?.getSelectedText(0)?.isNotEmpty() == true
-            })
+            hasSelection = { service?.currentInputConnection?.getSelectedText(0)?.isNotEmpty() == true })
             .install(module, loader)
         XposedUtils.log(module, "Independent downward swipe shortcut hooks installed (resolved ABI)")
     }

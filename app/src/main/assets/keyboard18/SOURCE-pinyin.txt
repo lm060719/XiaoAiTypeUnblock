@@ -18,3 +18,6 @@ Modified for this prototype: extract data rows; validate pinyin against the base
 base entries with weight >= 10000; add missing 8105 characters with capped weights; merge curated modern
 Chinese/tech/life terms and common English words; deduplicate text/spelling pairs; sort by weight and retain
 spaced pinyin; UTF-8 TSV, deterministic gzip.
+english.table keeps only cased terms (iPhone, WiFi), mixed Chinese-English terms and a few common Latin
+abbreviations (ai, ok, qq, app, api, wx, vx): plain lowercase words are always filtered from 18-key Chinese
+candidates as echoes of the tapped keys, so they are not shipped.
