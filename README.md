@@ -93,7 +93,7 @@
 > 本模块基于最新的 **libxposed API 102** 标准构建，摒弃了传统的 legacy Xposed API 与已被废弃的 `XSharedPreferences` 方案，完美兼容 Android 14/15/16/17 (HyperOS 4) 严苛的 SELinux 策略与隐藏 API 限制。
 
 > [!TIP]
-> **小版本自适配**：AI 安全、语音风控、系统版本判定、键盘高度、底部间距、剪贴板永久保存、现代键盘外观，以及独立键盘选择、虎码/五笔、18键和字母下滑快捷操作均接入 [DexKit](https://github.com/LuckyPray/DexKit) 指纹与缓存。宿主或模块变化后重新扫描，结果保存到各进程自己的 `/data/user_de/0/<包名>/cache/xatype-*symbols.json`。缓存使用完整 ZIP 条目元数据标识并校验成员；损坏或不可加载时重扫，临时异常在下次启动重试。新增键盘接口按字符串、指令和调用关系解析，找不到或不唯一时跳过对应功能，首页展示适配结果；旧功能继续保留已验证版本的回退。新增接口已在 0.2.1053 及整体重命名样本中验证，其他版本须满足结构校验，不能据此推定全部兼容。悬浮键盘识别与 AI 面板动画仍只在 0.2.1053 上启用。可用 `scripts/verify-host-fingerprints.ps1`（剪贴板加 `-Table PhraseSymbols`）检查；详见 [DEX 缓存适配记录](docs/2026-10-15_逆向-DEX缓存适配-report.md)。
+> **小版本自适配**：AI 安全、语音风控、云端黑名单、系统版本判定、键盘高度、底部间距、剪贴板永久保存、现代键盘外观、AI 面板展开收起动画、悬浮与外接键盘外观识别，以及独立键盘选择、虎码/五笔、18键和字母下滑快捷操作均接入 [DexKit](https://github.com/LuckyPray/DexKit) 指纹与缓存。宿主或模块变化后重新扫描，结果保存到各进程自己的 `/data/user_de/0/<包名>/cache/xatype-*symbols.json`。缓存使用完整 ZIP 条目元数据标识并校验成员；损坏或不可加载时重扫，临时异常在下次启动重试。新增键盘接口按字符串、指令和调用关系解析，找不到或不唯一时跳过对应功能，首页展示适配结果；旧功能继续保留已验证版本的回退。新增接口已在 0.2.1053 及整体重命名样本中验证，其他版本须满足结构校验，不能据此推定全部兼容。AI 面板动画与悬浮/外接键盘识别按 `keyboardHeight` 动画和 AI 面板关闭处理的调用结构定位，已在 0.2.701 ~ 0.2.1246 的 DEX 上静态核对；0.2.910 及更早原生自带这两段动画，模块只在 0.2.974 起补齐。可用 `scripts/verify-host-fingerprints.ps1`（剪贴板加 `-Table PhraseSymbols`）检查；详见 [DEX 缓存适配记录](docs/2026-10-15_逆向-DEX缓存适配-report.md)。
 
 ---
 
@@ -175,7 +175,7 @@ graph TD
 | **语音风控拦截** | `a8.n.f(Context, String, String)` | 拦截 Miclaw 错误提示，检测到 `CONTENT_MODERATION` 时返回 `null` 压制弹窗。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
 | **ASR 错误码重写** | `s8.f.m(int, String)` | 捕获语音风控状态码 `30002` 并重写为安全状态码 `-1`。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
 | **ASR 会话保护** | `s8.d.e(Bundle)` | 丢弃携带 `code: 30002` 的 Bundle 回调，阻止语音引擎强行关闭输入会话。 | [`VoiceModerationHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/VoiceModerationHook.kt) |
-| **云端黑名单清空** | `c1.onPyCloudAttachUpdate(...)` | 拦截云端下发附带词库，将 `blacklistStr` 参数置空。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/CloudBlacklistHook.kt) |
+| **云端黑名单清空** | 引擎委托（`XFInputCoreDelegate` 实现类）的 `onPyCloudAttachUpdate(...)` | 拦截云端下发附带词库，将 `blacklistStr` 参数置空。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/CloudBlacklistHook.kt) |
 | **词库实体置空** | `PinyinCloudAttachResult.get/setBlackListStr` | 强制返回空字符串并阻止黑名单内存字段写入。 | [`CloudBlacklistHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/CloudBlacklistHook.kt) |
 | **剪贴板敏感绕过** | `PersistableBundle.getBoolean(...)`<br>`BaseBundle.getBoolean(...)` | 拦截 key 为 `android.content.extra.IS_SENSITIVE` 的调用并返回 `false`。 | [`ClipboardSensitiveHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/ClipboardSensitiveHook.kt) |
 | **解除 AI 功能机型限制** | `AIDetail.isSupport()`<br>`AIDetail.isAvailable()` | 将被 AI 服务按机型/区域/配置白名单判定为不支持/不可用的能力在键盘侧强制返回 `true`。 | [`AiAbilityUnlockHook.kt`](file:///app/src/main/java/io/mo/xatype/hooks/AiAbilityUnlockHook.kt) |

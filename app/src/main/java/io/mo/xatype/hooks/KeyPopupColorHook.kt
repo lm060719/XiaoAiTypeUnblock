@@ -16,15 +16,19 @@ internal object KeyPopupColorHook {
             val abi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_PICKER)
             val paletteType = Class.forName(paletteClassName, false, loader)
             val composer = abi.type("s0.p")
-            val modifier = abi.type("e1.o")
-            val current = arrayOf(List::class.java, Integer.TYPE, paletteType, modifier, composer, Integer.TYPE)
-            val previous = arrayOf(List::class.java, Integer.TYPE, paletteType, java.lang.Boolean.TYPE,
-                modifier, composer, Integer.TYPE, Integer.TYPE)
+            // (items, selected, palette, Modifier, Composer, $changed); 0.2.1053 and earlier
+            // also take a Boolean before the Modifier and a $default mask after $changed.
+            // The Modifier slot is matched by position: its type ID belongs to other groups.
+            val current = listOf(List::class.java, Integer.TYPE, paletteType, null, composer, Integer.TYPE)
+            val previous = listOf(List::class.java, Integer.TYPE, paletteType, java.lang.Boolean.TYPE,
+                null, composer, Integer.TYPE, Integer.TYPE)
+            fun matches(types: Array<Class<*>>, expected: List<Class<*>?>) = types.size == expected.size &&
+                types.indices.all { expected[it]?.equals(types[it]) ?: !types[it].isPrimitive }
             // The fingerprinted UI owner is shared by supported modern hosts;
-            // this exact signature uniquely identifies the character selector.
+            // this signature uniquely identifies the character selector (0.2.974 to 0.2.1246).
             val method = abi.type("z9.u7").declaredMethods.single {
                 Modifier.isStatic(it.modifiers) && it.returnType == Void.TYPE &&
-                    (it.parameterTypes.contentEquals(current) || it.parameterTypes.contentEquals(previous))
+                    (matches(it.parameterTypes, current) || matches(it.parameterTypes, previous))
             }.apply { isAccessible = true }
             val changedIndex = method.parameterTypes.indexOf(composer) + 1
             val palettes = KeyPopupPalette(paletteType)
@@ -45,6 +49,7 @@ internal object KeyPopupColorHook {
             module.deoptimize(method)
             XposedUtils.log(module, "KeyPopupColorHook: character selector colors installed")
         }.onFailure {
+            HostSymbols.markUnavailable(HostSymbols.KEYBOARD_KEY_POPUP, it)
             XposedUtils.logError(module, "KeyPopupColorHook: character selector colors unavailable", it)
         }
     }
@@ -78,6 +83,10 @@ internal object KeyPopupColorHook {
             module.deoptimize(method)
             XposedUtils.log(module, "KeyPopupColorHook: tap preview colors installed")
         }.onFailure {
+            // A fingerprint miss is already reported; record installation failures too.
+            if (HostSymbols.has(HostSymbols.KEYBOARD_KEY_PREVIEW)) {
+                HostSymbols.markUnavailable(HostSymbols.KEYBOARD_KEY_PREVIEW, it)
+            }
             XposedUtils.logError(module, "KeyPopupColorHook: tap preview colors unavailable", it)
         }
     }

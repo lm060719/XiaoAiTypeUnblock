@@ -4,88 +4,117 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import io.github.libxposed.api.XposedModule
-import io.mo.xatype.compat.TargetCompatibility
-import io.mo.xatype.compat.TargetGeneration
+import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 import java.util.IdentityHashMap
 
-/** Restore the legacy extra-height spring removed from the 21053 Compose layout. */
+/**
+ * Restore the extra-height spring and the reply-panel slide-out that 0.2.974
+ * removed from the Compose layout. Members come from [HostSymbols]; builds that
+ * still animate natively (0.2.910 and earlier) leave both hooks inert.
+ */
 object PanelExpansionAnimationHook {
     private val pendingCloses = IdentityHashMap<InputMethodService, Runnable>()
     private val completingClose = ThreadLocal<Boolean>()
 
-    fun install(module: XposedModule, classLoader: ClassLoader) {
-        if (TargetCompatibility.detect(classLoader) != TargetGeneration.V21053) return
-        try {
-            val expansion = Class.forName("gb.p", false, classLoader)
-            val animatable = Class.forName("w.b", false, classLoader)
-            val continuation = Class.forName("rc.c", false, classLoader)
-            val spec = Class.forName("w.h", false, classLoader)
-            val callback = Class.forName("bd.b", false, classLoader)
-            val springType = Class.forName("w.n0", false, classLoader)
-            val springFactory = Class.forName("w.c", false, classLoader).getDeclaredMethod(
-                "p", Float::class.javaPrimitiveType, Float::class.javaPrimitiveType,
-                Any::class.java, Int::class.javaPrimitiveType
-            ).apply { isAccessible = true }
-            check(springFactory.returnType == springType && spec.isAssignableFrom(springType))
-            val spring = springFactory.invoke(null, 1f, 631f, null, 4)
-            val animateTo = animatable.getDeclaredMethod(
-                "c", animatable, Any::class.java, spec, callback,
-                continuation, Int::class.javaPrimitiveType
-            ).apply { isAccessible = true }
-            val snapTo = animatable.getDeclaredMethod("e", Any::class.java, continuation)
-                .apply { isAccessible = true }
-            val state = expansion.getDeclaredField("e").apply { isAccessible = true }
-            val capturedAnimation = expansion.getDeclaredField("h").apply { isAccessible = true }
-            check(state.type == Int::class.javaPrimitiveType && capturedAnimation.type == animatable)
-            check(animateTo.returnType == Any::class.java && snapTo.returnType == Any::class.java)
+    /** Coroutine labels of the expansion body: expand, slide out while closing, collapse. */
+    private const val LABEL_EXPAND = 1
+    private const val LABEL_CLOSING = 2
 
-            module.hook(snapTo).intercept { chain ->
-                val owner = chain.getArg(1)
-                // The coroutine has already set its resume label. Returning animateTo's
-                // suspension marker keeps cancellation and resume on the original job.
-                // Label 3 is ordinary collapse and must retain the native snap behavior.
-                if (ConfigManager.isStyleEnabled() && expansion.isInstance(owner) &&
-                    capturedAnimation.get(owner) === chain.thisObject &&
-                    state.getInt(owner) in 1..2
-                ) {
-                    XposedUtils.logDebug(module) { "PanelExpansionAnimationHook: spring label=${state.getInt(owner)}" }
-                    animateTo.invoke(null, chain.thisObject, chain.getArg(0), spring, null, owner, 12)
-                } else {
-                    chain.proceed()
-                }
-            }
-            XposedUtils.log(module, "PanelExpansionAnimationHook: 21053 panel spring restored")
-            installCollapseHook(module, classLoader)
+    /** The extra-height coroutine; [label] is its resume point, [animatable] its height. */
+    private class Expansion(val body: Method, val label: Field, val animatable: Field)
+
+    fun install(module: XposedModule) {
+        val expansion = try {
+            installSpring(module)
         } catch (t: Throwable) {
+            HostSymbols.markUnavailable(HostSymbols.PANEL_EXPANSION, t)
             XposedUtils.logError(module, "PanelExpansionAnimationHook: unsupported animation structure", t)
+            return
+        } ?: return
+        try {
+            installCollapseHook(module, expansion)
+        } catch (t: Throwable) {
+            HostSymbols.markUnavailable(HostSymbols.PANEL_CLOSE, t)
+            XposedUtils.logError(module, "PanelExpansionAnimationHook: unsupported panel close structure", t)
         }
     }
 
-    private fun installCollapseHook(module: XposedModule, classLoader: ClassLoader) {
-        val serviceType = Class.forName("com.mi.ime.MiInputMethodService", false, classLoader)
-        val managerType = Class.forName("ab.z1", false, classLoader)
-        val modeType = Class.forName("y7.l", false, classLoader)
-        val managerGetter = serviceType.getDeclaredMethod("getUiStateManager\$app_iflytekFullRelease")
-        val modeGetter = managerType.getDeclaredMethod("n")
-        val closingGetter = managerType.getDeclaredMethod("A")
-        val floatingGetter = managerType.getDeclaredMethod("v")
-        val closingState = managerType.getDeclaredField("n")
-        val setClosing = closingState.type.getMethod("setValue", Any::class.java)
-        val aiMode = modeType.getDeclaredField("k").get(null)
-        val close = Class.forName("lb.c", false, classLoader)
-            .getDeclaredMethod("d0", serviceType)
-        val completion = Class.forName("gb.n", false, classLoader)
-        val completionKind = completion.getDeclaredField("e")
-        val completionService = completion.getDeclaredField("f")
-        val heightIsZero = completion.getDeclaredField("g")
-        val onHeightChanged = completion.getDeclaredMethod("r", Any::class.java)
-        check(managerGetter.returnType == managerType && modeGetter.returnType == modeType)
+    private fun installSpring(module: XposedModule): Expansion? {
+        val body = HostSymbols.method(HostSymbols.PANEL_EXPANSION)
+        val snapTo = HostSymbols.method(HostSymbols.PANEL_SNAP)
+        val animateTo = HostSymbols.method(HostSymbols.PANEL_ANIMATE)
+        val springFactory = HostSymbols.method(HostSymbols.PANEL_SPRING)
+        if (body == null || snapTo == null || animateTo == null || springFactory == null) {
+            XposedUtils.log(module, "PanelExpansionAnimationHook: skipped unsupported target")
+            return null
+        }
+        val expansion = body.declaringClass
+        val animatable = snapTo.declaringClass
+        val continuation = animateTo.parameterTypes[4]
+        val fields = expansion.declaredFields.filter { !Modifier.isStatic(it.modifiers) }
+            .onEach { it.isAccessible = true }
+        val label = fields.single { it.type == Int::class.javaPrimitiveType }
+        val captured = fields.single { it.type == animatable }
+        // 0.2.1246 passes the continuation first; earlier builds pass the target first.
+        val ownerIndex = snapTo.parameterTypes.indexOf(continuation)
+        val valueIndex = 1 - ownerIndex
+        check(ownerIndex in 0..1 && snapTo.parameterTypes[valueIndex] == Any::class.java)
+        check(animateTo.parameterTypes[0] == animatable &&
+            animateTo.parameterTypes[2].isAssignableFrom(springFactory.returnType))
+        // spring(dampingRatio = 1f, stiffness = 631f), the legacy extra-height spring.
+        val spring = springFactory.invoke(null, 1f, 631f, null, 4)
+
+        module.hook(snapTo).intercept { chain ->
+            val owner = chain.getArg(ownerIndex)
+            // The coroutine has already set its resume label. Returning animateTo's
+            // suspension marker keeps cancellation and resume on the original job.
+            // Label 3 is ordinary collapse and must retain the native snap behavior.
+            if (ConfigManager.isStyleEnabled() && expansion.isInstance(owner) &&
+                captured.get(owner) === chain.thisObject &&
+                label.getInt(owner) in LABEL_EXPAND..LABEL_CLOSING
+            ) {
+                XposedUtils.logDebug(module) { "PanelExpansionAnimationHook: spring label=${label.getInt(owner)}" }
+                // animateTo$default: initialVelocity and the per-frame block keep their defaults.
+                animateTo.invoke(null, chain.thisObject, chain.getArg(valueIndex), spring, null, owner, 12)
+            } else {
+                chain.proceed()
+            }
+        }
+        XposedUtils.log(module, "PanelExpansionAnimationHook: panel spring hook installed")
+        return Expansion(body, label, captured)
+    }
+
+    private fun installCollapseHook(module: XposedModule, expansion: Expansion) {
+        if (HostSymbols.has(HostSymbols.PANEL_CLOSE) && HostSymbols.strings(HostSymbols.PANEL_CLOSE).isNullOrEmpty()) {
+            XposedUtils.log(module, "PanelExpansionAnimationHook: host animates the reply panel close itself")
+            return
+        }
+        val close = HostSymbols.method(HostSymbols.PANEL_CLOSE)
+        val managerGetter = HostSymbols.method(HostSymbols.UI_MANAGER)
+        val modeGetter = HostSymbols.method(HostSymbols.UI_MODE)
+        val closingGetter = HostSymbols.method(HostSymbols.UI_CLOSING)
+        val floatingGetter = HostSymbols.method(HostSymbols.UI_FLOATING)
+        val closingState = HostSymbols.field(HostSymbols.UI_CLOSING_STATE)
+        val replyMode = HostSymbols.field(HostSymbols.UI_AI_MODE)
+        if (close == null || managerGetter == null || modeGetter == null || closingGetter == null ||
+            floatingGetter == null || closingState == null || replyMode == null
+        ) {
+            XposedUtils.log(module, "PanelExpansionAnimationHook: reply panel close not located; collapse skipped")
+            return
+        }
+        val serviceType = managerGetter.declaringClass
+        val managerType = managerGetter.returnType
+        check(close.returnType == Void.TYPE && close.parameterTypes.contentEquals(arrayOf(serviceType)))
+        check(modeGetter.declaringClass.isAssignableFrom(managerType) && modeGetter.returnType == replyMode.type)
         check(closingGetter.returnType == Boolean::class.javaPrimitiveType &&
             floatingGetter.returnType == Boolean::class.javaPrimitiveType)
-        check(close.returnType == Void.TYPE && completionKind.type == Int::class.javaPrimitiveType &&
-            completionService.type == serviceType && heightIsZero.type == Boolean::class.javaPrimitiveType)
+        val setClosing = closingState.type.getMethod("setValue", Any::class.java)
+        val aiMode = replyMode.get(null)
         val handler = Handler(Looper.getMainLooper())
 
         fun finish(service: InputMethodService) {
@@ -115,8 +144,8 @@ object PanelExpansionAnimationHook {
                     pendingCloses.remove(service)?.let(handler::removeCallbacks)
                     val timeout = Runnable { finish(service) }
                     pendingCloses[service] = timeout
-                    // The native layout retains AI content while A() is true and
-                    // animates its extra height to zero using coroutine label 2.
+                    // The native layout retains the reply content while the closing flag
+                    // is set and animates its extra height to zero using coroutine label 2.
                     setClosing.invoke(closingState.get(manager), true)
                     // Covers a detached composition that cannot deliver its effect.
                     handler.postDelayed(timeout, 650L)
@@ -126,12 +155,16 @@ object PanelExpansionAnimationHook {
                 chain.proceed()
             }
         }
-        module.hook(onHeightChanged).intercept { chain ->
-            val owner = chain.thisObject
-            if (completionKind.getInt(owner) == 1 && heightIsZero.getBoolean(owner)) {
-                (completionService.get(owner) as? InputMethodService)?.let(::finish)
+        module.hook(expansion.body).intercept { chain ->
+            // A fresh coroutine starts at label 0, so entering at label 2 is the
+            // resume after the slide-out. A cancelled animation resumes with a
+            // failure, which the body rethrows before the close completes.
+            val resumedFromClosing = expansion.label.getInt(chain.thisObject) == LABEL_CLOSING
+            val result = chain.proceed()
+            if (resumedFromClosing && pendingCloses.isNotEmpty()) {
+                pendingCloses.keys.toList().forEach(::finish)
             }
-            chain.proceed()
+            result
         }
         listOf("onWindowHidden", "onFinishInputView", "onDestroy").forEach { name ->
             serviceType.declaredMethods.firstOrNull { it.name == name }?.let { method ->
@@ -148,6 +181,6 @@ object PanelExpansionAnimationHook {
                 }
             }
         }
-        XposedUtils.log(module, "PanelExpansionAnimationHook: AI panel collapse animation installed")
+        XposedUtils.log(module, "PanelExpansionAnimationHook: reply panel collapse animation installed")
     }
 }

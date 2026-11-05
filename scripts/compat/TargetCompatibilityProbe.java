@@ -146,34 +146,8 @@ public final class TargetCompatibilityProbe {
             method(topDrag, "m", Object.class, Object.class, Object.class);
             check(topDrag.getDeclaredField("a").getType() == int.class, "drag branch discriminator");
             method(load(target, "ed.a"), "k", int.class, int.class, int.class, int.class);
-            Class<?> expansion = load(target, "gb.p");
-            Class<?> animatable = load(target, "w.b");
-            Class<?> continuation = load(target, "rc.c");
-            Class<?> spec = load(target, "w.h");
-            Class<?> spring = load(target, "w.n0");
-            check(expansion.getDeclaredField("e").getType() == int.class, "expansion resume label");
-            check(expansion.getDeclaredField("h").getType() == animatable, "expansion animatable");
-            check(spec.isAssignableFrom(spring), "spring implements animation spec");
-            method(animatable, "e", Object.class, Object.class, continuation);
-            method(animatable, "c", Object.class, animatable, Object.class, spec,
-                    load(target, "bd.b"), continuation, int.class);
-            method(load(target, "w.c"), "p", spring, float.class, float.class, Object.class, int.class);
-            Class<?> service = load(target, "com.mi.ime.MiInputMethodService");
-            Class<?> manager = load(target, "ab.z1");
-            Class<?> mode = load(target, "y7.l");
-            method(service, "getUiStateManager$app_iflytekFullRelease", manager);
-            method(manager, "n", mode);
-            method(manager, "A", boolean.class);
-            method(manager, "v", boolean.class);
-            check(manager.getDeclaredField("n").getType().getMethod("setValue", Object.class)
-                    .getReturnType() == void.class, "AI closing state setter");
-            check(mode.getDeclaredField("k").getType() == mode, "AI input mode");
-            method(load(target, "lb.c"), "d0", void.class, service);
-            Class<?> completion = load(target, "gb.n");
-            check(completion.getDeclaredField("e").getType() == int.class, "completion variant");
-            check(completion.getDeclaredField("f").getType() == service, "completion service");
-            check(completion.getDeclaredField("g").getType() == boolean.class, "completion threshold flag");
-            method(completion, "r", Object.class, Object.class);
+            // The panel animation and UI-state members are fingerprinted (HostSymbols
+            // PANEL_* / UI_*); verify them with verify-host-fingerprints.ps1.
         }
         for (String name : new String[]{"h", "e", "f"}) {
             load(target, parser).getDeclaredMethod(name, String.class);

@@ -1709,17 +1709,11 @@ object KeyboardStyleHook {
         module: XposedModule,
         classLoader: ClassLoader
     ) {
-        CLIPBOARD_SWIPE_LISTENER_CLASSES.forEach { className ->
-            val listenerClass = XposedUtils.findClass(className, classLoader)
-                ?: return@forEach
+        ClipboardSwipeListeners.find(classLoader).forEach { listenerClass ->
             if (!clipboardSwipeHooks.add(listenerClass)) return@forEach
 
             listenerClass.declaredMethods
-                .filter {
-                    it.name == "onOpened" ||
-                        it.name == "onSlide" ||
-                        it.name == "viewSlideRelease"
-                }
+                .filter { it.name in ClipboardSwipeListeners.CALLBACKS }
                 .forEach { method ->
                     method.isAccessible = true
                     module.hook(method).intercept { chain ->
@@ -2022,11 +2016,6 @@ object KeyboardStyleHook {
         "com.miui.inputmethod.InputMethodClipboardAdapter",
         "com.miui.inputmethod.InputMethodClipboardHeaderAdapter",
         "com.miui.inputmethod.InputMethodPhraseAdapter"
-    )
-
-    private val CLIPBOARD_SWIPE_LISTENER_CLASSES = arrayOf(
-        "com.miui.inputmethod.InputMethodClipboardAdapter\$ViewHolder\$1",
-        "com.miui.inputmethod.InputMethodPhraseAdapter\$ViewHolder\$1"
     )
 
     private fun parseOptionalColor(value: String, opacity: Int = 100): Int? = value.takeIf { it.isNotBlank() }?.let {

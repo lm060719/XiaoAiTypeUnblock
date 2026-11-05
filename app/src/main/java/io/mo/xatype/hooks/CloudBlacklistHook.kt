@@ -2,40 +2,36 @@ package io.mo.xatype.hooks
 
 import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
+import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import java.lang.reflect.Method
 
 object CloudBlacklistHook {
 
     fun install(module: XposedInterface, classLoader: ClassLoader) {
-        // 1. Hook com.iflytek.inputmethod.smartengine.c1.onPyCloudAttachUpdate
-        val c1Class = XposedUtils.findClass("com.iflytek.inputmethod.smartengine.c1", classLoader)
-        if (c1Class != null) {
-            val methodAttach = XposedUtils.findMethodExact(
-                c1Class,
-                "onPyCloudAttachUpdate",
-                Int::class.javaPrimitiveType ?: Integer.TYPE,
-                String::class.java,
-                String::class.java,
-                String::class.java,
-                String::class.java
-            )
-            if (methodAttach != null) {
-                try {
-                    module.hook(methodAttach).intercept { chain ->
-                        if (!ConfigManager.isCloudBlacklistEnabled()) return@intercept chain.proceed()
-                        val blacklistStr = chain.getArg(1) as? String
-                        if (!blacklistStr.isNullOrEmpty()) {
-                            XposedUtils.logDebug(module) { "[Cloud Blacklist] Intercepted and cleared cloud blacklist (len=${blacklistStr.length}) in c1.onPyCloudAttachUpdate" }
-                        }
-                        // Replace blacklist string and version with empty strings
-                        chain.proceed(arrayOf(chain.getArg(0), "", "", chain.getArg(3), chain.getArg(4)))
+        // 1. The engine delegate's onPyCloudAttachUpdate. Its class is renamed between
+        //    builds (smartengine.c1 up to 0.2.1053, d1 in 0.2.1246).
+        val methodAttach = HostSymbols.method(HostSymbols.CLOUD_BLACKLIST) ?: legacyAttachMethod(classLoader)
+        if (methodAttach != null) {
+            val label = "${methodAttach.declaringClass.name}.onPyCloudAttachUpdate"
+            try {
+                module.hook(methodAttach).intercept { chain ->
+                    if (!ConfigManager.isCloudBlacklistEnabled()) return@intercept chain.proceed()
+                    val blacklistStr = chain.getArg(1) as? String
+                    if (!blacklistStr.isNullOrEmpty()) {
+                        XposedUtils.logDebug(module) { "[Cloud Blacklist] Intercepted and cleared cloud blacklist (len=${blacklistStr.length}) in $label" }
                     }
-                    XposedUtils.log(module, "[Cloud Blacklist] Hooked c1.onPyCloudAttachUpdate()")
-                } catch (t: Throwable) {
-                    XposedUtils.logError(module, "Failed to hook c1.onPyCloudAttachUpdate", t)
+                    // Replace blacklist string and version with empty strings
+                    chain.proceed(arrayOf(chain.getArg(0), "", "", chain.getArg(3), chain.getArg(4)))
                 }
+                XposedUtils.log(module, "[Cloud Blacklist] Hooked $label()")
+            } catch (t: Throwable) {
+                HostSymbols.markUnavailable(HostSymbols.CLOUD_BLACKLIST, t)
+                XposedUtils.logError(module, "Failed to hook $label", t)
             }
+        } else {
+            XposedUtils.logWarn(module, "[Cloud Blacklist] onPyCloudAttachUpdate implementation not found")
         }
 
         // 2. Hook com.iflytek.inputmethod.smart.api.entity.PinyinCloudAttachResult
@@ -96,4 +92,18 @@ object CloudBlacklistHook {
             }
         }
     }
+
+    /** Verified on 0.2.701 to 0.2.1053; used only when the fingerprint is unavailable. */
+    private fun legacyAttachMethod(classLoader: ClassLoader): Method? =
+        XposedUtils.findClass("com.iflytek.inputmethod.smartengine.c1", classLoader)?.let {
+            XposedUtils.findMethodExact(
+                it,
+                "onPyCloudAttachUpdate",
+                Integer.TYPE,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java
+            )
+        }
 }

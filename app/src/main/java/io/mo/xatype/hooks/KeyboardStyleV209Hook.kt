@@ -27,7 +27,6 @@ import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.ModernKeyboardProfile
 import io.mo.xatype.compat.TargetCompatibility
-import io.mo.xatype.compat.TargetGeneration
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 import java.util.IdentityHashMap
@@ -101,10 +100,10 @@ object KeyboardStyleV209Hook
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_SURFACE_TEXT, t)
             XposedUtils.logError(module, "KeyboardStyleV209Hook: candidate text colors unavailable for this host ABI", t)
         }
-        PanelExpansionAnimationHook.install(module, classLoader)
+        PanelExpansionAnimationHook.install(module)
         installClipboardPopupHook(module)
 
-        XposedUtils.log(module, "KeyboardStyleV209Hook: ${TargetCompatibility.detect(classLoader)} compatibility hooks installed")
+        XposedUtils.log(module, "KeyboardStyleV209Hook: modern appearance hooks installed (helper ${profile.helperClassName})")
     }
 
     private fun installLifecycleHooks(module: XposedModule, serviceClass: Class<*>)
@@ -1049,24 +1048,14 @@ object KeyboardStyleV209Hook
         classLoader: ClassLoader
     )
     {
-        CLIPBOARD_SWIPE_LISTENER_CLASSES.forEach { className ->
-            val listenerClass =
-                XposedUtils.findClass(
-                    className,
-                    classLoader
-                ) ?: return@forEach
-
+        ClipboardSwipeListeners.find(classLoader).forEach { listenerClass ->
             if (!clipboardSwipeHooks.add(listenerClass))
             {
                 return@forEach
             }
 
             listenerClass.declaredMethods
-                .filter {
-                    it.name == "onOpened" ||
-                        it.name == "onSlide" ||
-                        it.name == "viewSlideRelease"
-                }
+                .filter { it.name in ClipboardSwipeListeners.CALLBACKS }
                 .forEach { method ->
                     method.isAccessible = true
 
@@ -1648,11 +1637,6 @@ object KeyboardStyleV209Hook
         "com.miui.inputmethod.InputMethodPhraseAdapter"
     )
 
-    private val CLIPBOARD_SWIPE_LISTENER_CLASSES = arrayOf(
-        "com.miui.inputmethod.InputMethodClipboardAdapter\$ViewHolder\$1",
-        "com.miui.inputmethod.InputMethodPhraseAdapter\$ViewHolder\$1"
-    )
-
     private const val STYLE_ITEM_CARD = 1
     private const val STYLE_LOADING_CARD = 2
     private const val STYLE_TAB = 3
@@ -1869,14 +1853,24 @@ object KeyboardStyleV209Hook
             XposedUtils.getObjectField(it, profile.helperMaterialField) as? View
         }
         if (material != null && isPopupMaterial(service, material)) return true
-        // Verified 21053 UI state: v() is floating; n()==EXTERNAL_HW uses a
-        // compact hardware-keyboard toolbar rather than the docked background.
-        if (TargetCompatibility.detect(service.classLoader) != TargetGeneration.V21053) return false
+        // A floating keyboard, or the EXTERNAL_HW mode's compact hardware-keyboard
+        // toolbar, draws no docked background.
+        val getters = uiStateGetters ?: return false
         return runCatching {
-            val manager = service.javaClass.getMethod("getUiStateManager\$app_iflytekFullRelease").invoke(service)
-            manager.javaClass.getMethod("v").invoke(manager) == true ||
-                (manager.javaClass.getMethod("n").invoke(manager) as? Enum<*>)?.name == "EXTERNAL_HW"
+            val manager = getters.manager.invoke(service) ?: return false
+            getters.floating.invoke(manager) == true ||
+                (getters.mode.invoke(manager) as? Enum<*>)?.name == "EXTERNAL_HW"
         }.getOrDefault(false)
+    }
+
+    private class UiStateGetters(val manager: java.lang.reflect.Method, val mode: java.lang.reflect.Method,
+        val floating: java.lang.reflect.Method)
+
+    private val uiStateGetters: UiStateGetters? by lazy {
+        val manager = HostSymbols.method(HostSymbols.UI_MANAGER)
+        val mode = HostSymbols.method(HostSymbols.UI_MODE)
+        val floating = HostSymbols.method(HostSymbols.UI_FLOATING)
+        if (manager == null || mode == null || floating == null) null else UiStateGetters(manager, mode, floating)
     }
 
     private fun applyMaterialStyle(

@@ -1,8 +1,24 @@
 package io.mo.xatype.compat
 
 /** Members of the input method (com.xiaomi.type), located by [HostFingerprints]. */
-object HostSymbols : SymbolTable(9, HostFingerprints::resolve) {
+object HostSymbols : SymbolTable(10, HostFingerprints::resolve) {
     const val KEYBOARD_KEY_PREVIEW = "keyboard.keyPreview"
+    /** Status only: the long-press selector binds through the keyboard ABI. */
+    const val KEYBOARD_KEY_POPUP = "keyboard.keyPopup"
+    const val CLOUD_BLACKLIST = "cloud.blacklistAttach"
+    /** The extra-height coroutine body; its owner holds the label and the Animatable. */
+    const val PANEL_EXPANSION = "panel.expansion"
+    const val PANEL_SNAP = "panel.snapTo"
+    const val PANEL_ANIMATE = "panel.animateTo"
+    const val PANEL_SPRING = "panel.spring"
+    /** The reply panel's close handler; empty where the host animates closing itself. */
+    const val PANEL_CLOSE = "panel.close"
+    const val UI_MANAGER = "ui.manager"
+    const val UI_MODE = "ui.mode"
+    const val UI_FLOATING = "ui.floating"
+    const val UI_CLOSING = "ui.closing"
+    const val UI_CLOSING_STATE = "ui.closingState"
+    const val UI_AI_MODE = "ui.aiMode"
     const val T9_SHUANGPIN_INIT = "keyboard.t9ShuangpinInit"
     const val T9_SHUANGPIN_BOOLEAN = "keyboard.t9ShuangpinBoolean"
     const val T9_SHUANGPIN_STRING = "keyboard.t9ShuangpinString"
@@ -41,7 +57,9 @@ object HostSymbols : SymbolTable(9, HostFingerprints::resolve) {
         BOTTOM_SPACING, BOTTOM_SPACING_CONSUME, BOTTOM_SPACING_CALLERS,
         KEYBOARD_ENGINE, KEYBOARD_LAYOUT, KEYBOARD_ACTIONS, KEYBOARD_PICKER,
         KEYBOARD_SETTINGS, KEYBOARD_SWIPE, KEYBOARD_LETTER_APPEARANCE, KEYBOARD_SURFACE_TEXT,
-        T9_SHUANGPIN_INIT, T9_SHUANGPIN_BOOLEAN, T9_SHUANGPIN_STRING
+        T9_SHUANGPIN_INIT, T9_SHUANGPIN_BOOLEAN, T9_SHUANGPIN_STRING, CLOUD_BLACKLIST,
+        PANEL_EXPANSION, PANEL_SNAP, PANEL_ANIMATE, PANEL_SPRING,
+        UI_MANAGER, UI_MODE, UI_FLOATING, UI_CLOSING, UI_CLOSING_STATE, UI_AI_MODE, PANEL_CLOSE
     )
 
     fun modernKeyboard(): ModernKeyboardProfile? = strings(MODERN_KEYBOARD)?.let {
@@ -55,6 +73,7 @@ object HostSymbols : SymbolTable(9, HostFingerprints::resolve) {
         }.getOrDefault(false)
         key == AI_SAFETY_PARSERS -> values.size >= 2 && super.validateValues(key, values)
         key == BOTTOM_SPACING_CALLERS -> super.validateValues(key, values)
+        key == PANEL_CLOSE -> values.isEmpty() || (values.size == 1 && super.validateValues(key, values))
         else -> values.size == 1 && super.validateValues(key, values)
     }
 }

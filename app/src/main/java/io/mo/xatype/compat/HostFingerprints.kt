@@ -17,6 +17,7 @@ import org.luckypray.dexkit.wrap.DexMethod
  */
 internal object HostFingerprints {
     private const val SERVICE = "com.mi.ime.MiInputMethodService"
+    private const val RESUME_BEFORE_INVOKE = "call to 'resume' before 'invoke' with coroutine"
 
     fun resolve(bridge: DexKitBridge, loader: ClassLoader): FingerprintResult {
         val collector = FingerprintCollector()
@@ -39,6 +40,17 @@ internal object HostFingerprints {
         }
         collector.put(HostSymbols.BOTTOM_SPACING, HostSymbols.BOTTOM_SPACING_CONSUME,
             HostSymbols.BOTTOM_SPACING_CALLERS) { bottomSpacing(bridge, loader) }
+        collector.put(HostSymbols.CLOUD_BLACKLIST) { listOf(listOf(cloudBlacklistAttach(bridge))) }
+        collector.put(HostSymbols.PANEL_EXPANSION, HostSymbols.PANEL_SNAP, HostSymbols.PANEL_ANIMATE,
+            HostSymbols.PANEL_SPRING) { panelExpansion(bridge, loader) }
+        // One close-handler scan feeds both groups; each still misses independently.
+        val panelClose = runCatching { panelCloseAnchor(bridge, loader) }
+        collector.put(HostSymbols.UI_MANAGER, HostSymbols.UI_MODE, HostSymbols.UI_FLOATING) {
+            panelClose.getOrThrow().let { listOf(listOf(it.manager.descriptor), listOf(it.mode.descriptor),
+                listOf(it.floating.descriptor)) }
+        }
+        collector.put(HostSymbols.UI_CLOSING, HostSymbols.UI_CLOSING_STATE, HostSymbols.UI_AI_MODE,
+            HostSymbols.PANEL_CLOSE) { panelCloseState(panelClose.getOrThrow()) }
         val keyboard = KeyboardAbiFingerprints(bridge)
         collector.put(HostSymbols.T9_SHUANGPIN_INIT, HostSymbols.T9_SHUANGPIN_BOOLEAN,
             HostSymbols.T9_SHUANGPIN_STRING) { t9Shuangpin(bridge, loader) }
@@ -267,6 +279,120 @@ internal object HostFingerprints {
             drag.descriptor,
             DexField(kind).toString()
         )
+    }
+
+    /** The engine's XFInputCoreDelegate implementation; only the interface keeps its name. */
+    private fun cloudBlacklistAttach(bridge: DexKitBridge): String = single(
+        bridge.findMethod {
+            matcher {
+                name = "onPyCloudAttachUpdate"
+                paramTypes("int", "java.lang.String", "java.lang.String", "java.lang.String", "java.lang.String")
+                returnType("void")
+            }
+        }.filter { !Modifier.isAbstract(it.modifiers) }, "cloud attach update"
+    ).descriptor
+
+    /**
+     * The extra-height coroutine started beside the "keyboardHeight" animation:
+     * its body, Animatable.snapTo, animateTo$default and the spring factory, in
+     * [HostSymbols] PANEL_* order. From 0.2.974 the body snaps the expand
+     * (label 1) and closing (label 2) targets that earlier builds animated.
+     */
+    private fun panelExpansion(bridge: DexKitBridge, loader: ClassLoader): List<List<String>> {
+        val outer = single(bridge.findMethod {
+            matcher { usingEqStrings("keyboardHeight") }
+        }.filter { method ->
+            method.invokes.any { it.className == SERVICE && it.name.startsWith("getUiStateManager") }
+        }, "keyboard height composable")
+        // (expanding, closing, Animatable, target height, Continuation)
+        val start = single(outer.invokes.filter { invoke ->
+            val p = invoke.paramTypeNames
+            invoke.isConstructor && p.size == 5 && p[0] == "boolean" && p[1] == "boolean" &&
+                p[3] == "float" && '.' in p[2] && '.' in p[4]
+        }.distinctBy { it.descriptor }, "panel expansion constructor")
+        val animatable = start.paramTypeNames[2]
+        val continuation = start.paramTypeNames[4]
+        val spring = single(outer.invokes.filter {
+            it.isMethod && it.paramTypeNames == listOf("float", "float", "java.lang.Object", "int")
+        }.distinctBy { it.descriptor }, "spring factory")
+        val body = single(bridge.findMethod {
+            matcher {
+                declaredClass(start.className)
+                usingEqStrings(RESUME_BEFORE_INVOKE)
+            }
+        }, "panel expansion body")
+        // 0.2.1246 swapped snapTo's parameters; the Continuation still identifies the owner.
+        val snap = single(body.invokes.filter {
+            it.className == animatable && it.paramCount == 2 && it.returnTypeName == "java.lang.Object" &&
+                continuation in it.paramTypeNames
+        }.distinctBy { it.descriptor }, "Animatable.snapTo")
+        val animate = single(checkNotNull(bridge.getClassData(animatable)) { "Animatable class data" }.methods.filter {
+            val p = it.paramTypeNames
+            Modifier.isStatic(it.modifiers) && it.returnTypeName == "java.lang.Object" && p.size == 6 &&
+                p[0] == animatable && p[4] == continuation && p[5] == "int"
+        }, "Animatable.animateTo")
+        val spec = animate.getMethodInstance(loader).parameterTypes[2]
+        if (!spec.isAssignableFrom(spring.getMethodInstance(loader).returnType)) {
+            throw FingerprintMiss("spring factory does not build an animateTo spec")
+        }
+        return listOf(listOf(body.descriptor), listOf(snap.descriptor), listOf(animate.descriptor),
+            listOf(spring.descriptor))
+    }
+
+    /** The reply panel's close handler and the UI-state members it consults. */
+    private class PanelCloseAnchor(
+        val close: MethodData,
+        val manager: MethodData,
+        val mode: MethodData,
+        val closing: MethodData,
+        val floating: MethodData
+    )
+
+    private fun panelCloseAnchor(bridge: DexKitBridge, loader: ClassLoader): PanelCloseAnchor {
+        val close = single(bridge.findMethod {
+            matcher {
+                modifiers(Modifier.STATIC)
+                paramTypes(SERVICE)
+                returnType("void")
+                addInvoke { name = "getSmartReplyInputHost\$app_iflytekFullRelease" }
+            }
+        }.filter { method ->
+            method.invokes.filter { it.className == SERVICE }.map { it.name }.containsAll(listOf(
+                "getSmartReplyReplace\$app_iflytekFullRelease", "getFloatingKeyboardManager\$app_iflytekFullRelease"
+            ))
+        }, "reply panel close")
+        val calls = close.invokes
+        val manager = single(calls.filter {
+            it.className == SERVICE && it.name.startsWith("getUiStateManager") && it.paramCount == 0
+        }.distinctBy { it.descriptor }, "UI state manager getter")
+        val getters = calls.filter { it.className == manager.returnTypeName && it.paramCount == 0 }
+            .distinctBy { it.descriptor }
+        val mode = single(getters.filter { '.' in it.returnTypeName }, "UI mode getter")
+        if (!Enum::class.java.isAssignableFrom(mode.getReturnTypeInstance(loader))) {
+            throw FingerprintMiss("UI mode is not an enum")
+        }
+        // Every build first checks the closing flag, then whether the keyboard floats.
+        val flags = getters.filter { it.returnTypeName == "boolean" }
+        if (flags.size != 2) throw FingerprintMiss("UI state flags: ${flags.size}")
+        return PanelCloseAnchor(close, manager, mode, flags[0], flags[1])
+    }
+
+    /** Returned in [HostSymbols] UI_CLOSING, UI_CLOSING_STATE, UI_AI_MODE, PANEL_CLOSE order. */
+    private fun panelCloseState(anchor: PanelCloseAnchor): List<List<String>> {
+        val managerType = anchor.manager.returnTypeName
+        val modeType = anchor.mode.returnTypeName
+        val replyMode = single(anchor.close.usingFields.map { it.field }.filter {
+            it.className == modeType && it.typeName == modeType
+        }.distinctBy { it.descriptor }, "reply panel mode")
+        val state = single(anchor.closing.usingFields.map { it.field }.filter {
+            it.className == managerType
+        }.distinctBy { it.descriptor }, "closing state")
+        // 0.2.910 and earlier enter the closing state themselves and animate it natively.
+        val native = anchor.close.invokes.any {
+            it.className == managerType && it.paramTypeNames == listOf("boolean") && it.returnTypeName == "void"
+        }
+        return listOf(listOf(anchor.closing.descriptor), listOf(state.descriptor), listOf(replyMode.descriptor),
+            if (native) emptyList() else listOf(anchor.close.descriptor))
     }
 
     private fun isHostType(type: Class<*>): Boolean =

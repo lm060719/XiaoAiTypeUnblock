@@ -33,16 +33,8 @@ object HyperOsVersionHook {
             )
         }
 
+        // AIVersion also covers the ai_sdk metadata the service version is read from.
         hookAiVersion(module, classLoader)
-
-        if (generation == TargetGeneration.LEGACY) {
-            hookMetadataHelper(module, classLoader)
-        } else {
-            XposedUtils.log(
-                module,
-                "[HyperOS Unblock] $generation detected; use AIVersion directly instead of legacy nc.a metadata hook"
-            )
-        }
 
         hookDialogHostActivity(module, classLoader)
     }
@@ -277,45 +269,7 @@ object HyperOsVersionHook {
     }
 
     /**
-     * 4. Hook nc.a.s(Context, String, String) to provide virtual ai_sdk metadata if missing.
-     */
-    private fun hookMetadataHelper(module: XposedInterface, classLoader: ClassLoader) {
-        val ncClass = XposedUtils.findClass("nc.a", classLoader)
-        if (ncClass != null) {
-            val methodS = XposedUtils.findMethodExact(
-                ncClass,
-                "s",
-                Context::class.java,
-                String::class.java,
-                String::class.java
-            )
-            if (methodS != null) {
-                try {
-                    module.hook(methodS).intercept { chain ->
-                        if (!ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
-                        val pkgName = chain.getArg(1) as? String
-                        val metaKey = chain.getArg(2) as? String
-
-                        if ("com.xiaomi.aiservice" == pkgName) {
-                            when (metaKey) {
-                                "ai_sdk_code" -> "200"
-                                "ai_sdk_name" -> "2.0.0-b2a69a6-260410-SNAPSHOT01"
-                                else -> chain.proceed()
-                            }
-                        } else {
-                            chain.proceed()
-                        }
-                    }
-                    XposedUtils.log(module, "[HyperOS Unblock] Hooked nc.a.s(Context, String, String)")
-                } catch (t: Throwable) {
-                    XposedUtils.logError(module, "Failed to hook nc.a.s", t)
-                }
-            }
-        }
-    }
-
-    /**
-     * 5. Hook DialogHostActivity to block OS_VERSION_UNSUPPORTED dialog if triggered.
+     * 4. Hook DialogHostActivity to block OS_VERSION_UNSUPPORTED dialog if triggered.
      */
     private fun hookDialogHostActivity(module: XposedInterface, classLoader: ClassLoader) {
         val dialogHostClass = XposedUtils.findClass("com.mi.ime.dialog.DialogHostActivity", classLoader)
