@@ -7,19 +7,52 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.SweepGradient
 import android.graphics.drawable.Drawable
 import android.view.View
 import io.mo.xatype.config.ConfigManager
+import kotlin.math.cos
 
 /**
  * A thin specular rim on the keyboard card, like the edge of a glass panel
- * catching light: brightest along the top edge and rounded corners, fading
- * down the sides. A floating card also reflects a little along its bottom.
+ * lit from one side: light falls from the upper left, so the top-left corner
+ * is brightest, the top edge stays bright, the right side is dimmest, and the
+ * opposite (lower right) edge catches a weaker reflection through the glass.
  * Light surfaces get a faint dark hairline outside the highlight, since white
  * alone does not separate a pale keyboard from pale app content.
  */
 internal object GlassRim {
     const val DEFAULT_INTENSITY = 60
+
+    /**
+     * The outward edge normal that faces the light, in degrees counter-clockwise
+     * from the right with y up: upper left, a little above the diagonal.
+     */
+    const val LIGHT_ANGLE = 120f
+    val LIGHT_NAMES = listOf("左上", "正上", "右上")
+
+    /** [ConfigManager.KEY_RIM_LIGHT] as a light angle: upper left, top, or the mirrored upper right. */
+    fun lightAngle(direction: Int): Float = when (direction) {
+        1 -> 90f
+        2 -> 180f - LIGHT_ANGLE
+        else -> LIGHT_ANGLE
+    }
+
+    private const val AMBIENT = 0.13f
+    private const val COUNTER_REFLECTION = 0.4f
+
+    /**
+     * Rim brightness, 0..1, for an edge whose outward normal points at
+     * [normalDegrees] (same convention as [LIGHT_ANGLE]). Fitted to a glass
+     * card lit from the upper left: 1 facing the light, about 0.78 on the top
+     * edge, 0.34 on the left, 0.47 at the opposite corner, 0.12 side-on.
+     */
+    fun lightWeight(normalDegrees: Float, lightAngle: Float = LIGHT_ANGLE): Float {
+        val c = cos(Math.toRadians((normalDegrees - lightAngle).toDouble())).toFloat()
+        val key = if (c > 0f) c * c else 0f
+        val back = if (c < 0f) c * c else 0f
+        return (AMBIENT + key + COUNTER_REFLECTION * back) / (1f + AMBIENT)
+    }
 
     data class Spec(
         val intensity: Int,
@@ -27,19 +60,17 @@ internal object GlassRim {
         /** Floating cards round and outline all four corners; docked ones run off the bottom. */
         val roundBottom: Boolean,
         val surfaceDark: Boolean,
-        val density: Float
+        val density: Float,
+        val lightAngle: Float = LIGHT_ANGLE
     )
 
     /** White highlight alpha. A light surface needs more of it to read. */
     fun highlightAlpha(intensity: Int, surfaceDark: Boolean): Int =
-        scaled(intensity, if (surfaceDark) 150 else 235)
+        scaled(intensity, if (surfaceDark) 190 else 255)
 
     /** Dark outer hairline, for light surfaces only. */
     fun hairlineAlpha(intensity: Int, surfaceDark: Boolean): Int =
         if (surfaceDark) 0 else scaled(intensity, 40)
-
-    /** Soft sheen just inside the top edge. */
-    fun sheenAlpha(intensity: Int): Int = scaled(intensity, 22)
 
     private fun scaled(intensity: Int, max: Int): Int = (intensity.coerceIn(0, 100) * max + 50) / 100
 
@@ -54,78 +85,141 @@ internal object GlassRim {
             ConfigManager.getCornerRadius().coerceAtLeast(0) * density,
             roundBottom,
             ReadabilityScrim.surfaceDark(view.context),
-            density
+            density,
+            lightAngle(ConfigManager.getRimLight())
         )
     }
 
     /** Draws the rim inside a card's bounds. Not thread-safe; keep one per drawing owner. */
     class Painter {
-        private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-        private val rect = RectF()
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.BUTT
+        }
+        private val oval = RectF()
+        private val sweepPositions = FloatArray(SWEEP_STOPS) { it / (SWEEP_STOPS - 1f) }
+        private val sweepWeights = FloatArray(SWEEP_STOPS)
+        private var sweepLight = Float.NaN
 
         fun draw(canvas: Canvas, left: Float, top: Float, right: Float, bottom: Float, spec: Spec) {
             val width = right - left
             val height = bottom - top
             if (width <= 0f || height <= 0f || spec.intensity <= 0) return
             val d = spec.density
-            val radius = spec.radiusPx.coerceIn(0f, width / 2)
+            val radius = spec.radiusPx.coerceIn(0f, if (spec.roundBottom) minOf(width, height) / 2 else width / 2)
             // A docked card continues below the window: keep its bottom edge out of view.
             val overshoot = if (spec.roundBottom) 0f else radius + 4 * d
-
-            val sheen = sheenAlpha(spec.intensity)
-            if (sheen > 0) {
-                val sheenHeight = minOf(18 * d, height * 0.3f)
-                fill.shader = LinearGradient(0f, top, 0f, top + sheenHeight,
-                    white(sheen), white(0), Shader.TileMode.CLAMP)
-                rect.set(left, top, right, bottom + overshoot)
-                canvas.drawRoundRect(rect, radius, radius, fill)
-                fill.shader = null
+            val ring = Ring(left, top, right, bottom, overshoot, radius, spec)
+            if (spec.lightAngle != sweepLight) {
+                sweepLight = spec.lightAngle
+                // Android sweeps clockwise from 3 o'clock with y down; the light angle runs counter-clockwise.
+                for (i in sweepWeights.indices) sweepWeights[i] = lightWeight(360f - 360f * sweepPositions[i], sweepLight)
             }
 
             var inset = 0f
             val hairline = hairlineAlpha(spec.intensity, spec.surfaceDark)
             if (hairline > 0) {
                 val lineWidth = maxOf(0.6f * d, 1f)
-                strokeRim(canvas, left, top, right, bottom, overshoot, radius, inset, lineWidth,
-                    hairline, black = true, spec)
+                strokeRing(canvas, ring, inset, lineWidth, hairline, black = true, lit = false)
                 inset += lineWidth
             }
-            strokeRim(canvas, left, top, right, bottom, overshoot, radius, inset, maxOf(d, 1f),
-                highlightAlpha(spec.intensity, spec.surfaceDark), black = false, spec)
+            // A bright core with a soft falloff inside it, as a lit glass edge reads.
+            val highlight = highlightAlpha(spec.intensity, spec.surfaceDark)
+            val core = maxOf(d, 1f)
+            strokeRing(canvas, ring, inset, core, highlight, black = false, lit = true)
+            strokeRing(canvas, ring, inset + core, 0.8f * d, (highlight * 0.45f).toInt(), black = false, lit = true)
+            strokeRing(canvas, ring, inset + core + 0.8f * d, d, (highlight * 0.18f).toInt(), black = false, lit = true)
         }
 
-        private fun strokeRim(
-            canvas: Canvas, left: Float, top: Float, right: Float, bottom: Float,
-            overshoot: Float, radius: Float, inset: Float, lineWidth: Float,
-            alpha: Int, black: Boolean, spec: Spec
+        private class Ring(
+            val left: Float, val top: Float, val right: Float, val bottom: Float,
+            val overshoot: Float, val radius: Float, val spec: Spec
+        )
+
+        /**
+         * One concentric band of the rim, [inset] in from the card edge. Straight
+         * edges take the light of their fixed normal; corners sweep between them.
+         */
+        private fun strokeRing(
+            canvas: Canvas, ring: Ring, inset: Float, lineWidth: Float,
+            alpha: Int, black: Boolean, lit: Boolean
         ) {
+            if (alpha <= 0 || lineWidth <= 0f) return
+            val spec = ring.spec
             val center = inset + lineWidth / 2
-            rect.set(left + center, top + center, right - center,
-                if (spec.roundBottom) bottom - center else bottom + overshoot)
-            if (rect.width() <= 0f || rect.height() <= 0f) return
-            val height = bottom - top
-            val cornerEnd = (radius / height).coerceIn(0f, 0.45f)
-            val (positions, weights) = if (spec.roundBottom) {
-                floatArrayOf(0f, cornerEnd, 0.5f, 1f - cornerEnd, 1f) to
-                    floatArrayOf(1f, 0.8f, 0.22f, 0.4f, 0.5f)
-            } else {
-                // Docked sides lie on the screen edge; let them go after the corner.
-                val fadeEnd = ((radius + 40 * spec.density) / height).coerceIn(cornerEnd + 0.01f, 1f)
-                floatArrayOf(0f, cornerEnd, fadeEnd, 1f) to floatArrayOf(1f, 0.8f, 0f, 0f)
-            }
-            val colors = IntArray(weights.size) {
-                val a = (alpha * weights[it] + 0.5f).toInt()
-                if (black) a shl 24 else white(a)
+            val l = ring.left + center
+            val t = ring.top + center
+            val r = ring.right - center
+            val b = if (spec.roundBottom) ring.bottom - center else ring.bottom + ring.overshoot
+            if (r <= l || b <= t) return
+            val rr = (ring.radius - center).coerceIn(0f, minOf(r - l, b - t) / 2)
+            // Square corners: let the horizontal edges cover the corner pixels.
+            val ext = if (rr <= 0f) lineWidth / 2 else 0f
+            val light = spec.lightAngle
+            fun color(weight: Float): Int {
+                val a = (alpha * (if (lit) weight else 1f) + 0.5f).toInt().coerceIn(0, 255)
+                return if (black) a shl 24 else white(a)
             }
             stroke.strokeWidth = lineWidth
-            stroke.shader = LinearGradient(0f, top, 0f, bottom, colors, positions, Shader.TileMode.CLAMP)
-            val r = (radius - center).coerceAtLeast(0f)
-            canvas.drawRoundRect(rect, r, r, stroke)
+
             stroke.shader = null
+            stroke.color = color(lightWeight(90f, light))
+            canvas.drawLine(l + rr - ext, t, r - rr + ext, t, stroke)
+            if (spec.roundBottom) {
+                stroke.color = color(lightWeight(270f, light))
+                canvas.drawLine(l + rr - ext, b, r - rr + ext, b, stroke)
+            }
+
+            val sideTop = t + rr
+            if (spec.roundBottom) {
+                val sideBottom = b - rr
+                if (sideBottom > sideTop) {
+                    stroke.color = color(lightWeight(180f, light))
+                    canvas.drawLine(l, sideTop, l, sideBottom, stroke)
+                    stroke.color = color(lightWeight(0f, light))
+                    canvas.drawLine(r, sideTop, r, sideBottom, stroke)
+                }
+            } else {
+                // Docked sides lie on the screen edge; let them go after the corner.
+                val fadeEnd = (ring.top + ring.radius + 40 * spec.density).coerceAtLeast(sideTop + 1f)
+                for ((x, normal) in listOf(l to 180f, r to 0f)) {
+                    val c = color(lightWeight(normal, light))
+                    stroke.color = OPAQUE
+                    stroke.shader = LinearGradient(0f, sideTop, 0f, fadeEnd, c, c and 0x00ffffff, Shader.TileMode.CLAMP)
+                    canvas.drawLine(x, sideTop, x, fadeEnd, stroke)
+                }
+                stroke.shader = null
+            }
+
+            if (rr > 0f) {
+                val colors = if (lit) IntArray(SWEEP_STOPS) { color(sweepWeights[it]) } else null
+                fun corner(cx: Float, cy: Float, start: Float) {
+                    oval.set(cx - rr, cy - rr, cx + rr, cy + rr)
+                    if (colors != null) {
+                        stroke.color = OPAQUE
+                        stroke.shader = SweepGradient(cx, cy, colors, sweepPositions)
+                    } else {
+                        stroke.shader = null
+                        stroke.color = color(1f)
+                    }
+                    canvas.drawArc(oval, start, 90f, false, stroke)
+                }
+                corner(l + rr, t + rr, 180f)
+                corner(r - rr, t + rr, 270f)
+                if (spec.roundBottom) {
+                    corner(r - rr, b - rr, 0f)
+                    corner(l + rr, b - rr, 90f)
+                }
+                stroke.shader = null
+            }
         }
 
         private fun white(alpha: Int): Int = (alpha.coerceIn(0, 255) shl 24) or 0xffffff
+
+        private companion object {
+            const val SWEEP_STOPS = 37
+            const val OPAQUE = -0x1000000
+        }
     }
 
     /**

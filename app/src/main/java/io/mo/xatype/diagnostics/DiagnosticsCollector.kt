@@ -120,7 +120,7 @@ object DiagnosticsCollector {
                 "manualDark=${prefs.getBoolean(AppearanceProfiles.MANUAL_DARK, false)} systemDark=$systemDark")
             listOf(ConfigManager.KEY_CORNER_RADIUS, ConfigManager.KEY_OPACITY,
                 ConfigManager.KEY_BLUR_RADIUS, ConfigManager.KEY_BG_TYPE,
-                ConfigManager.KEY_RIM_HIGHLIGHT).forEach {
+                ConfigManager.KEY_RIM_HIGHLIGHT, ConfigManager.KEY_RIM_LIGHT).forEach {
                 append("Appearance $it=${style.getInt(it, -1)}")
             }
             listOf(ConfigManager.KEY_BG_COLOR, ConfigManager.KEY_TEXT_COLOR,

@@ -215,7 +215,8 @@ class AppearancePage(
             },
             Option("边缘高光", "", Focus.RIM, {
                 val level = stylePrefs().getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0)
-                Summary(if (level > 0) "$level%" else "关闭")
+                val light = GlassRim.LIGHT_NAMES[stylePrefs().getInt(ConfigManager.KEY_RIM_LIGHT, 0).coerceIn(0, 2)]
+                Summary(if (level > 0) "$level% · $light" else "关闭")
             }, ::buildRimPanel),
             Option("背景类型", "", Focus.BACKGROUND, {
                 val p = stylePrefs()
@@ -573,6 +574,16 @@ class AppearancePage(
             level = it
             stylePrefs().edit().putInt(ConfigManager.KEY_RIM_HIGHLIGHT, it).apply()
         }
+        config.addView(label("光源方向", 14f, R.color.text_primary).apply { setPadding(0, dp(12), 0, 0) })
+        val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val choices = GlassRim.LIGHT_NAMES.map { radio(it) }
+        choices.forEach { group.addView(it, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)) }
+        group.check(choices[stylePrefs().getInt(ConfigManager.KEY_RIM_LIGHT, 0).coerceIn(0, 2)].id)
+        group.setOnCheckedChangeListener { _, id ->
+            val direction = choices.indexOfFirst { it.id == id }
+            if (direction >= 0) stylePrefs().edit().putInt(ConfigManager.KEY_RIM_LIGHT, direction).apply()
+        }
+        config.addView(group)
     }
 
     private fun buildScrimPanel(panel: LinearLayout) {
@@ -825,7 +836,8 @@ class AppearancePage(
             keyPopupBackground = color(ConfigManager.KEY_KEY_POPUP_BACKGROUND),
             keyPopupSelected = color(ConfigManager.KEY_KEY_POPUP_SELECTED),
             keyPopupText = color(ConfigManager.KEY_KEY_POPUP_TEXT),
-            rimHighlight = p.getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100)
+            rimHighlight = p.getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100),
+            rimLight = p.getInt(ConfigManager.KEY_RIM_LIGHT, 0).coerceIn(0, 2)
         )
     }
 

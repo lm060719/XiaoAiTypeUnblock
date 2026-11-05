@@ -54,7 +54,8 @@ class KeyboardPreviewView @JvmOverloads constructor(
         val keyPopupBackground: Int? = null,
         val keyPopupSelected: Int? = null,
         val keyPopupText: Int? = null,
-        val rimHighlight: Int = 0
+        val rimHighlight: Int = 0,
+        val rimLight: Int = 0
     )
 
     enum class Focus { NONE, CORNER, RIM, BACKGROUND, TEXT, SCRIM, LETTER_KEY, FUNCTION_KEY, MENU_CARD, CLIPBOARD_CARD, KEY_POPUP }
@@ -162,7 +163,8 @@ class KeyboardPreviewView @JvmOverloads constructor(
         // Like the keyboard material's foreground: above the surface, below the keys.
         if (custom && style.rimHighlight > 0) {
             rimPainter.draw(canvas, 0f, top, w, h, GlassRim.Spec(style.rimHighlight, radius,
-                roundBottom = false, surfaceDark = surfaceDark, density = resources.displayMetrics.density))
+                roundBottom = false, surfaceDark = surfaceDark, density = resources.displayMetrics.density,
+                lightAngle = GlassRim.lightAngle(style.rimLight)))
         }
         when (focus) {
             Focus.MENU_CARD -> drawMenu(canvas, w, h, top)
