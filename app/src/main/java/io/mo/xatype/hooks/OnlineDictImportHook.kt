@@ -15,6 +15,7 @@ import java.io.File
 import java.lang.reflect.Method
 import java.util.IdentityHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -26,6 +27,7 @@ object OnlineDictImportHook {
     private const val DECODER = "com.iflytek.inputmethod.smart.api.DecoderManager"
     private const val START_DELAY_MS = 8_000L
     private const val IMPORTED_WORD_TYPE = 1
+    private const val ENGINE_CALL_TIMEOUT_S = 60L
     private val running = AtomicBoolean(false)
 
     fun install(module: XposedInterface, loader: ClassLoader) {
@@ -40,8 +42,10 @@ object OnlineDictImportHook {
             method.isAccessible = true
             module.hook(method).intercept { chain ->
                 val result = chain.proceed()
+                // The host initialises the engine on the thread every later engine call must use.
+                val engineLooper = Looper.myLooper() ?: Looper.getMainLooper()
                 if (result == true) runCatching {
-                    schedule(module, chain.getThisObject(), chain.getArg(0) as Context)
+                    schedule(module, chain.getThisObject(), chain.getArg(0) as Context, engineLooper)
                 }.onFailure { XposedUtils.logError(module, "[OnlineDict] Cannot schedule import", it) }
                 result
             }
@@ -49,13 +53,13 @@ object OnlineDictImportHook {
         XposedUtils.log(module, "[OnlineDict] Waiting for engine initialisation")
     }
 
-    private fun schedule(module: XposedInterface, manager: Any?, context: Context) {
+    private fun schedule(module: XposedInterface, manager: Any?, context: Context, engineLooper: Looper) {
         if (manager == null || !running.compareAndSet(false, true)) return
         val app = context.applicationContext ?: context
         Thread({
             try {
                 Thread.sleep(START_DELAY_MS) // Stay out of the way of the first keyboard appearance.
-                sync(module, manager, app)
+                sync(module, manager, app, engineLooper)
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "[OnlineDict] Import failed", t)
             } finally {
@@ -64,7 +68,7 @@ object OnlineDictImportHook {
         }, "xatype-online-dict").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
     }
 
-    private fun sync(module: XposedInterface, manager: Any, app: Context) {
+    private fun sync(module: XposedInterface, manager: Any, app: Context, engineLooper: Looper) {
         val state = app.contentResolver.call(OnlineDictContentProvider.CONTENT_URI, "state", null, null) ?: return
         val revision = state.getLong(OnlineDictStore.REVISION)
         val action = state.getString(OnlineDictStore.ACTION).orEmpty()
@@ -80,7 +84,7 @@ object OnlineDictImportHook {
             return
         }
         val engine = try {
-            ReflectiveEngine(decoder)
+            ReflectiveEngine(decoder, engineLooper)
         } catch (t: Throwable) {
             XposedUtils.logError(module, "[OnlineDict] Host user-word API differs", t)
             report(app, revision, "输入法用户词接口不匹配，当前版本不兼容", 0)
@@ -99,7 +103,7 @@ object OnlineDictImportHook {
         }
         dir.mkdirs()
         attempt.writeText(revision.toString())
-        XposedUtils.log(module, "[OnlineDict] Applying request $revision ($action)")
+        XposedUtils.log(module, "[OnlineDict] Applying request $revision ($action) on ${engineLooper.thread.name}")
         val result = (if (action == OnlineDictStore.ACTION_IMPORT)
             app.contentResolver.openInputStream(OnlineDictContentProvider.WORDS_URI) else null).use { words ->
             OnlineDictApplier(engine, dir).apply(action, words)
@@ -149,50 +153,51 @@ object OnlineDictImportHook {
         return null
     }
 
-    private class ReflectiveEngine(private val decoder: Any) : UserWordEngine {
+    private class ReflectiveEngine(private val decoder: Any, private val looper: Looper) : UserWordEngine {
         private val int = Int::class.javaPrimitiveType!!
         private val getWords: Method = method("getUserWords", int)
         private val import: Method = method("importUserWords", String::class.java, int, int)
         private val delete: Method = method("deleteUserWord", CharArray::class.java, Boolean::class.javaPrimitiveType!!, int)
         private val save: Method = method("saveUserWordsToDictionary", Boolean::class.javaPrimitiveType!!)
 
-        private val main = Handler(Looper.getMainLooper())
+        private val handler = Handler(looper)
 
         private fun method(name: String, vararg types: Class<*>): Method =
             decoder.javaClass.getMethod(name, *types)
 
         /**
-         * The native engine is bound to the keyboard's main thread: calling it from any other thread
-         * crashes the process (SIGSEGV in Phn_ResQuery). Keystrokes run between calls, but each call
-         * blocks the keyboard while it runs (measured up to ~4 s for one 5000-word import batch).
+         * The native engine is bound to the thread that initialised it: calling it from any other
+         * thread races the host's own calls and crashes the process (SIGSEGV in Phn_ResQuery). That
+         * was the main thread up to 0.2.1246; 0.2.1358 moved it to the `ime-iflytek-engine`
+         * HandlerThread. Keystrokes run between calls, but each call blocks the engine while it runs.
          */
-        private fun <T> onMain(block: () -> T): T {
-            if (Looper.myLooper() == Looper.getMainLooper()) return block()
+        private fun <T> onEngine(block: () -> T): T {
+            if (Looper.myLooper() == looper) return block()
             val done = CountDownLatch(1)
             var result: Result<T>? = null
-            main.post {
+            check(handler.post {
                 result = runCatching(block)
                 done.countDown()
-            }
-            done.await()
+            }) { "输入法引擎线程已退出" }
+            check(done.await(ENGINE_CALL_TIMEOUT_S, TimeUnit.SECONDS)) { "输入法引擎线程无响应" }
             return result!!.getOrThrow()
         }
 
-        override fun words(): List<String>? = onMain {
+        override fun words(): List<String>? = onEngine {
             (getWords.invoke(decoder, -1) as? List<*>)?.map { it.toString() }
         }
 
         // Mode 1 only appends; mode 2 would delete the user's own words. On host 0.2.1246 the words
         // imported this way are stored as type 1 (contact context), see [delete].
-        override fun importFile(path: String): Int = onMain { import.invoke(decoder, path, 1, 1) as Int }
+        override fun importFile(path: String): Int = onEngine { import.invoke(decoder, path, 1, 1) as Int }
 
         // Verified on 0.2.1246: only type 1 removes words added by importFile; types 0 and -1 remove none.
         override fun delete(words: List<String>) {
-            onMain { words.forEach { delete.invoke(decoder, it.toCharArray(), false, IMPORTED_WORD_TYPE) } }
+            onEngine { words.forEach { delete.invoke(decoder, it.toCharArray(), false, IMPORTED_WORD_TYPE) } }
         }
 
         override fun save() {
-            onMain { save.invoke(decoder, true) }
+            onEngine { save.invoke(decoder, true) }
         }
     }
 }

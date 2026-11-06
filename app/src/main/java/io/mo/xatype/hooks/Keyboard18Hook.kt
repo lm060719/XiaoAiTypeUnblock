@@ -95,12 +95,12 @@ object Keyboard18Hook {
         val editorChange = layoutFactory.declaringClass.abiMethod(abi, "G",
             android.view.inputmethod.EditorInfo::class.java, bridge.engineType)
         module.hook(modeChange).intercept { chain ->
-            layoutMode = (chain.getArg(0) as Enum<*>).name
+            (chain.getArg(0) as? Enum<*>)?.let { layoutMode = it.name }
             chain.proceed()
         }
         module.deoptimize(modeChange)
         module.hook(editorChange).intercept { chain ->
-            layoutMode = (chain.getArg(1) as Enum<*>).name
+            (chain.getArg(1) as? Enum<*>)?.let { layoutMode = it.name }
             chain.proceed()
         }
         module.deoptimize(editorChange)

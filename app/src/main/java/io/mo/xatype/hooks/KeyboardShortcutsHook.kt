@@ -71,7 +71,7 @@ object KeyboardShortcutsHook {
         for ((method, index) in listOf(modeChange to 0, editorChange to 1)) {
             module.hook(method).intercept { chain ->
                 captureManager(chain.thisObject!!)
-                layoutMode = (chain.getArg(index) as Enum<*>).name
+                (chain.getArg(index) as? Enum<*>)?.let { layoutMode = it.name }
                 chain.proceed()
             }
             module.deoptimize(method)

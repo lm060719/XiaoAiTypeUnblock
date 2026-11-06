@@ -102,6 +102,14 @@ class OnlineDictActivity : AppCompatActivity() {
                 if (busy) return@navRow
                 if (hasUpdate) install(current) else checkNow(current, manual = true)
             }
+            if (!pending(state) && state.getInt(OnlineDictStore.HOST_IMPORTED) == 0 &&
+                state.getString(OnlineDictStore.HOST_STATUS).orEmpty().isNotEmpty() && OnlineDictStore.hasWords(this)) {
+                rows += kit.navRow("重新导入", "使用已下载的词库再试一次，重启输入法后生效", R.drawable.ic_shape_import) {
+                    if (busy) return@navRow
+                    runCatching { OnlineDictStore.requeue(this) }.onFailure { toast(it.message ?: "无法保存导入请求") }
+                    render()
+                }
+            }
             rows += kit.navRow("清除导入的词", "只删除由本功能导入的词", R.drawable.ic_shape_restore) {
                 if (!busy) confirmClear()
             }

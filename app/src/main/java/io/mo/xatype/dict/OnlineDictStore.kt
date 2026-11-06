@@ -110,6 +110,15 @@ object OnlineDictStore {
             .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存导入请求" }
     }
 
+    /** Queues the already downloaded word file again, e.g. after a failed or abandoned import. */
+    @Synchronized
+    fun requeue(context: Context) {
+        val sp = prefs(context)
+        check(hasWords(context) && sp.getString(SOURCE, "").orEmpty().isNotEmpty()) { "没有已下载的词库，请重新下载" }
+        check(sp.edit().putString(ACTION, ACTION_IMPORT).putLong(REVISION, sp.getLong(REVISION, 0) + 1)
+            .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存导入请求" }
+    }
+
     /** Queues removal of everything this feature imported. User-typed words are not touched. */
     @Synchronized
     fun requestClear(context: Context) {
