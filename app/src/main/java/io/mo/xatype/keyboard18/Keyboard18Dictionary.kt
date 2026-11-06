@@ -85,6 +85,32 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
     fun words(raw: String, start: Int) = findWords(root, raw, start, false)
     fun abbreviations(raw: String, start: Int) = findWords(initialRoot, raw, start, true)
 
+    /**
+     * Entries spelling all of `raw[start, end)`, without the per-code cap of [words]: the lattice
+     * needs only the frequent few, but the candidate list must reach every character of a reading.
+     */
+    fun wholeWords(raw: String, start: Int) = findWhole(root, raw, start, false)
+    fun wholeAbbreviations(raw: String, start: Int) = findWhole(initialRoot, raw, start, true)
+
+    private fun findWhole(rootNode: Node, raw: String, start: Int, abbreviated: Boolean): List<Pinyin18Entry> {
+        var node = rootNode
+        var count = 0
+        for (position in start until raw.length) {
+            if (raw[position] == '\'') continue
+            if (++count > maxLength) return emptyList()
+            node = node.children?.get(Keyboard18Keys.projected(raw[position])) ?: return emptyList()
+        }
+        if (count == 0) return emptyList()
+        val result = ArrayList<Pinyin18Entry>()
+        for (entry in node.words.orEmpty()) {
+            if (compatible(entry, raw, start, raw.length, abbreviated)) {
+                result.add(entry)
+                if (result.size == WHOLE_WORDS) break
+            }
+        }
+        return result
+    }
+
     private fun findWords(rootNode: Node, raw: String, start: Int, abbreviated: Boolean): List<Pair<Int, Pinyin18Entry>> {
         val result = ArrayList<Pair<Int, Pinyin18Entry>>()
         var node = rootNode
@@ -121,6 +147,8 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
     companion object {
         private const val COMPLETIONS = 24
         private const val WORDS_PER_CODE = 48
+        /** yi alone has 300+ characters; this bounds only two-letter abbreviation nodes. */
+        private const val WHOLE_WORDS = 600
         fun read(input: InputStream, scheme: ShuangpinScheme? = null): Keyboard18Dictionary {
             val rows = ArrayList<Pinyin18Entry>()
             val encoded = HashMap<String, String?>()

@@ -399,7 +399,45 @@ class Keyboard18EngineTest {
         assertTrue(mergedDictionary.entries.any { it.text == "iPhone" })
     }
 
-    private fun testDictionary(rows: String) = ByteArrayOutputStream().apply {
+    private fun top(pinyin: String, count: Int): List<String> {
+        val engine = Keyboard18Engine(mergedDictionary)
+        engine.inputText(pinyin.map { letter ->
+            Keyboard18Keys.code(Keyboard18Keys.groups.first { letter in it }).toChar() }.joinToString(""))
+        return engine.candidates.take(count).map { it.text }
+    }
+
+    @Test fun `hand set corpus weights no longer outrank everyday words`() {
+        mapOf("jzm" to "就这么", "zd" to "知道", "nihao" to "你好", "jt" to "今天", "mt" to "明天", "zg" to "这个",
+            "wsm" to "为什么").forEach { (input, expected) -> assertEquals(input, expected, top(input, 1).single()) }
+        mapOf("bq" to "版权", "ws" to "猥琐", "td" to "土豆", "wgy" to "五个亿").forEach { (input, junk) ->
+            assertNotEquals(input, junk, top(input, 1).single())
+        }
+    }
+
+    @Test fun `common characters rank ahead of rare and vulgar ones`() {
+        assertTrue(top("ji", 40).containsAll(listOf("计", "鸡", "机", "几")))
+        assertTrue(top("yi", 40).containsAll(listOf("衣", "艺", "议", "意")))
+        assertTrue(top("xi", 40).containsAll(listOf("细", "西", "洗")))
+        assertFalse(top("ni", 40).contains("屄"))
+        assertFalse(top("ye", 20).any { it in setOf("葉", "業", "頁") })
+    }
+
+    @Test fun `every character of a reading is reachable in exact and grouped input`() {
+        val missing = ArrayList<String>()
+        dictionary.entries.filter { it.text.length == 1 && it.syllableCount == 1 && !it.literal }
+            .groupBy { it.code }.forEach { (syllable, characters) ->
+                for (input in listOf(syllable, syllable.map { letter ->
+                    Keyboard18Keys.code(Keyboard18Keys.groups.first { letter in it }).toChar() }.joinToString(""))) {
+                    val engine = engine()
+                    engine.inputText(input)
+                    val shown = engine.candidates.filter { it.consumed == engine.raw.length }.mapTo(HashSet()) { it.text }
+                    characters.filter { it.text !in shown }.forEach { missing += syllable + ":" + it.text }
+                }
+            }
+        assertTrue(missing.take(40).joinToString(" "), missing.isEmpty())
+    }
+
+    private fun testDictionary(rows: String) =ByteArrayOutputStream().apply {
         GZIPOutputStream(this).bufferedWriter().use { it.write(rows) }
     }.toByteArray().inputStream().use { Keyboard18Dictionary.read(it) }
 

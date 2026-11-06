@@ -266,7 +266,12 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             .map { Pinyin18Candidate(it.text, it.spelling, raw.length,
                 it.score + if (it.segments > 1) learning(it.text) else 0.0,
                 synthetic = it.segments > 1 && it.latin, code = it.code) }
-        val lexical = direct.map { word -> Pinyin18Candidate(word.entry.text,
+        // The lattice composes from the capped per-code lists; the candidate list itself must
+        // reach every character of the typed reading (ji alone has 250+), so whole-input words are uncapped.
+        val wholeWords = (dictionary.wholeWords(raw, 0).map { Word(raw.length, it, false) } +
+            dictionary.wholeAbbreviations(raw, 0).map { Word(raw.length, it, true) })
+            .filter { fits(0, it.end, it.entry.boundaries, it.abbreviated) }
+        val lexical = (direct.filter { it.end != raw.length } + wholeWords).map { word -> Pinyin18Candidate(word.entry.text,
             word.entry.spelling + if (word.abbreviated) " · 简拼" else "", word.end,
             score(word) + if (word.end == raw.length) COMPLETE_WORD_BONUS else 0.0, code = word.entry.inputSpelling) }
         // English completions are noise in Chinese mode: the ambiguous 18-key groups
@@ -355,7 +360,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         private val KEEP_LATIN = setOf("ai", "ok", "qq", "app", "api", "wx", "vx")
         private const val REPETITION_PENALTY = 6.0
         private const val MIN_COMPOSITION_WEIGHT = 32
-        private const val MAX_CANDIDATES = 160
+        private const val MAX_CANDIDATES = 600
         private const val LEARNED_THRESHOLD = 3
 
         /**
