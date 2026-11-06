@@ -16,6 +16,8 @@ object Keyboard18Keys {
         letter in it || (it == "l" && letter == ';')
     } ?: (token == letter)
     fun projected(token: Char): Char = group(token.code)?.first() ?: representative(token)
+    /** Preedit letter of one tap: a group shows its first letter, an exact letter or separator itself. */
+    fun shown(token: Char): Char = group(token.code)?.first() ?: token
     fun readable(raw: String) = buildString {
         raw.forEach { append(group(it.code)?.let { letters -> if (letters.length > 1) "[$letters]" else letters } ?: it.toString()) }
     }

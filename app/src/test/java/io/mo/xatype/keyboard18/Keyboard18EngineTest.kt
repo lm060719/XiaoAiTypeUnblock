@@ -292,6 +292,107 @@ class Keyboard18EngineTest {
         assertEquals("ok", encoded.entries.single { it.text == "ok" }.inputSpelling)
     }
 
+    @Test fun `picking an abbreviated reading decodes its full pinyin and backspace takes it back`() {
+        val engine = Keyboard18Engine(mergedDictionary)
+        val taps = grouped("h", "fg", "fg")
+        engine.inputText(taps)
+        val before = engine.candidates.map { it.text }
+        val index = engine.pinyinVariants().indexOf("hen feng fu")
+        assertTrue(engine.pinyinVariants().toString(), index >= 0)
+        val picked = engine.choosePinyin(index)
+        assertTrue(picked.consumed)
+        assertEquals("henfengfu", engine.raw)
+        assertEquals("很丰富", engine.candidates.first().text)
+        assertEquals("hen feng fu", engine.display)
+        // Every candidate now reads as the picked pinyin, a leading part of it, or a completion of it.
+        fun agrees(reading: String) = reading == "hen feng fu" || reading.startsWith("hen feng fu ") ||
+            "hen feng fu".startsWith("$reading ")
+        assertTrue(engine.candidates.joinToString { it.spelling }, engine.candidates.all {
+            agrees(it.spelling.substringBefore(" · ")) })
+        assertTrue(engine.pinyinVariants().all(::agrees))
+
+        engine.backspace()
+        assertEquals(taps, engine.raw)
+        assertEquals(before, engine.candidates.map { it.text })
+    }
+
+    @Test fun `picking a leading reading locks its syllable for the remaining taps`() {
+        val engine = Keyboard18Engine(mergedDictionary)
+        val taps = grouped("h", "we", "bn", "fg", "we", "bn", "fg", "fg", "u")
+        engine.inputText(taps)
+        val index = engine.pinyinVariants().indexOf("hen")
+        assertTrue(engine.pinyinVariants().toString(), index >= 0)
+        engine.choosePinyin(index)
+        assertEquals("hen" + taps.drop(3), engine.raw)
+        assertTrue(engine.candidates.isNotEmpty())
+        // hen stays one syllable: neither heng nor he + n... readings survive.
+        assertTrue(engine.candidates.joinToString { it.spelling }, engine.candidates.all {
+            it.spelling.startsWith("hen ") || it.spelling.substringBefore(" · ") == "hen" })
+        assertEquals("很", engine.select(engine.candidates.indexOfFirst { it.text == "很" }))
+        assertEquals(taps.drop(3), engine.raw)
+        assertEquals("丰富", engine.candidates.first().text)
+    }
+
+    @Test fun `backspace deletes taps typed after a picked reading before restoring its taps`() {
+        val engine = Keyboard18Engine(testDictionary("很\then\t1000\n和\the\t900\n恒\theng\t800\n"))
+        val taps = grouped("h", "we", "bn")
+        engine.inputText(taps)
+        engine.choosePinyin(engine.pinyinVariants().indexOf("hen"))
+        assertEquals("hen", engine.raw)
+        engine.inputText(grouped("fg"))
+        // The picked syllable ends at its boundary: the next tap cannot extend it into heng.
+        assertFalse(engine.candidates.any { it.text == "恒" })
+        engine.backspace()
+        assertEquals("hen", engine.raw)
+        engine.backspace()
+        assertEquals(taps, engine.raw)
+        assertTrue(engine.candidates.any { it.text == "和" })
+        engine.backspace()
+        assertEquals(taps.dropLast(1), engine.raw)
+    }
+
+    @Test fun `picked readings keep syllable boundaries between identical letters`() {
+        val engine = Keyboard18Engine(testDictionary(
+            "先\txian\t1000\n西安\txi an\t900\n西\txi\t800\n安\tan\t700\n啊\ta\t600\n"))
+        engine.inputText(grouped("xc", "io", "a", "bn"))
+        engine.choosePinyin(engine.pinyinVariants().indexOf("xi an"))
+        assertEquals("xian", engine.raw)
+        assertEquals(listOf("西安", "西"), engine.candidates.map { it.text })
+        engine.backspace()
+        engine.choosePinyin(engine.pinyinVariants().indexOf("xian"))
+        assertEquals(listOf("先"), engine.candidates.map { it.text })
+        engine.backspace()
+        // After a picked word leaves the composition, the rest of the reading stays fixed...
+        engine.choosePinyin(engine.pinyinVariants().indexOf("xi an"))
+        assertEquals("西", engine.select(engine.candidates.indexOfFirst { it.text == "西" }))
+        assertEquals("an", engine.raw)
+        assertEquals(listOf("安"), engine.candidates.map { it.text })
+        // ...but deleting into a fixed syllable releases its open end.
+        engine.backspace()
+        assertEquals("a", engine.raw)
+        assertTrue(engine.candidates.any { it.text == "啊" })
+    }
+
+    @Test fun `picking a reading under double pinyin uses the scheme codes`() {
+        val scheme = ShuangpinScheme.XIAOHE
+        val engine = Keyboard18Engine(Keyboard18Dictionary.read(ByteArrayOutputStream().apply {
+            GZIPOutputStream(this).bufferedWriter().use { it.write("中国\tzhong guo\t1000\n种过\tzhong guo\t10\n中\tzhong\t100\n") }
+        }.toByteArray().inputStream(), scheme))
+        val code = scheme.encodeSyllable("zhong") + scheme.encodeSyllable("guo")
+        engine.inputText(code.map { letter -> Keyboard18Keys.code(Keyboard18Keys.groups.first { letter in it }).toChar() }
+            .joinToString(""))
+        engine.choosePinyin(engine.pinyinVariants().indexOf("zhong guo"))
+        assertEquals(code, engine.raw)
+        assertEquals(listOf("中国", "种过"), engine.candidates.take(2).map { it.text })
+    }
+
+    @Test fun `unknown pinyin index leaves the input unchanged`() {
+        val engine = Keyboard18Engine(testDictionary("你\tni\t1000\n"))
+        engine.inputText(grouped("bn", "io"))
+        assertFalse(engine.choosePinyin(5).consumed)
+        assertEquals(grouped("bn", "io"), engine.raw)
+    }
+
     @Test fun `plain lowercase english rows are not shipped because they never surface`() {
         assertFalse(mergedDictionary.entries.any { it.literal && it.text.all { c -> c in 'a'..'z' } &&
             it.text !in setOf("ai", "ok", "qq", "app", "api", "wx", "vx") })

@@ -53,7 +53,9 @@ class Keyboard18HostBridge(private val loader: ClassLoader, private val profile:
                 else result(engine.restore(arguments[0] as String))
             "e" -> false
             "f" -> state(engine)
-            "g", "r", "filterSingleChar", "insertAtCursor", "deleteAtCursor" -> result(engine.snapshot(false))
+            // Tapping a reading in the expanded page's pinyin column; the host applies only consumed results.
+            "r" -> result(engine.choosePinyin(arguments[0] as Int))
+            "g", "filterSingleChar", "insertAtCursor", "deleteAtCursor" -> result(engine.snapshot(false))
             "singleCharFilterSupported", "cursorEditing" -> false
             "engineName" -> "xatype-keyboard18"
             "segmentState" -> 0
