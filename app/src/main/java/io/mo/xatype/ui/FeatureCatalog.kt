@@ -26,12 +26,7 @@ internal object FeatureCatalog {
         "剪贴板" to listOf(
             Feature(ConfigManager.KEY_CLIPBOARD_SENSITIVE, "剪贴板敏感标记忽略绕过", "敏感内容也能记录与联想"),
             Feature(ConfigManager.KEY_CLIPBOARD_PERMANENT, "剪贴板永久保存", "不限条数、时长与文字长度"),
-            Feature(ConfigManager.KEY_SCREENSHOT_CLIPBOARD, "截图自动复制", "截图保存后自动写入剪贴板", Detail(
-                "开启后，系统截图工具新保存的图片会自动复制，供粘贴及小爱剪贴板历史收录。每次截图会替换当前剪贴板内容。",
-                notes = listOf("默认关闭，不补录旧截图，不收录普通照片和下载图片。",
-                    "需在 LSPosed 中启用系统界面作用域；首次安装或更新模块后重启手机。之后切换此开关即时生效。",
-                    "适用于支持媒体库截图识别的小米系统。锁屏时跳过；图片文件被删除或清理后可能无法再粘贴。")
-            ))
+            Feature(ConfigManager.KEY_SCREENSHOT_CLIPBOARD, "截图自动复制", "截图保存后自动写入剪贴板")
         ),
         "隐私" to listOf(
             Feature(ConfigManager.KEY_TELEMETRY_BLOCK, "遥测与埋点拦截", "关闭小米统计与广告监控上报")
@@ -56,11 +51,7 @@ internal object FeatureCatalog {
     val t9Shuangpin = Feature(ConfigManager.KEY_T9_SHUANGPIN, "九键双拼", "在拼音九键中使用双拼")
 
     val emojiCandidates = Feature(ConfigManager.KEY_EMOJI_CANDIDATES, "Emoji 候选增强",
-        "打出关键词时，同时候选相关表情", Detail(
-            "根据当前输入与前几项汉字候选离线匹配表情，保留汉字首选，点选表情直接上屏。",
-            notes = listOf("开启后重启输入法。支持原生全拼及双拼，输入完整关键词时增强。",
-                "每个词最多补充 3 个表情。整句中的部分词、已有选词片段、密码框与独立形码/18 键引擎不增强。")
-        ))
+        "打出关键词时，同时候选相关表情")
 
     val bottomSpacing = Feature(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, "自定义键盘底部间距",
         "调节按键下方的留白")

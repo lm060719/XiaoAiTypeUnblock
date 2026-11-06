@@ -475,9 +475,7 @@ class MainActivity : AppCompatActivity() {
         val modes = PredictionMode.entries
         fun selected() = PredictionMode.resolve(prefs.getString(ConfigManager.KEY_PREDICTION_MODE, null))
         lateinit var row: View
-        row = kit.navRow("上屏后联想", "${selected().title} · ${selected().summary}", null,
-            detail = SettingsKit.Detail("控制文字上屏后是否显示输入法原有的联想词。",
-                notes = listOf("选择后重启输入法生效。适用于原生拼音与双拼，不影响输入中的候选词和 Emoji 候选增强。"))) {
+        row = kit.navRow("上屏后联想", "${selected().title} · ${selected().summary}", null) {
             InfoSheet.choose(this, "上屏后联想", modes.map { it.title }, modes.indexOf(selected()),
                 modes.map { it.summary }) { index ->
                 prefs.edit().putString(ConfigManager.KEY_PREDICTION_MODE, modes[index].name).apply()
