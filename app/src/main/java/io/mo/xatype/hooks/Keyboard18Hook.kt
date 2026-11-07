@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.Instrumentation
 import android.content.Context
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.compat.HostSymbols
@@ -25,6 +26,8 @@ import io.mo.xatype.keyboard18.Keyboard18Engine
 import io.mo.xatype.keyboard18.Keyboard18HostAppearance
 import io.mo.xatype.keyboard18.Keyboard18HostBridge
 import io.mo.xatype.keyboard18.Keyboard18HostLayout
+import io.mo.xatype.keyboard18.Pinyin18Entry
+import io.mo.xatype.keyboard.ShuangpinScheme
 import io.mo.xatype.keyboard18.GroupedKeys
 import io.mo.xatype.keyboard18.Keyboard14Keys
 import io.mo.xatype.keyboard18.Keyboard18Keys
@@ -38,8 +41,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Opt-in 18/14-key keyboards and independent offline decoder, validated against the resolved host ABI. */
 object Keyboard18Hook {
     private val reports = Executors.newSingleThreadExecutor()
+    /** Off the main thread: a full load parses ~100k rows and builds two tries. */
+    private val preloader = Executors.newSingleThreadExecutor { Thread(it, "xatype-keyboard18-preload").apply { isDaemon = true } }
     private data class Loaded(val settings: Bundle, val keys: GroupedKeys, val dictionary: Keyboard18Dictionary?)
+    /** Parsed rows depend only on the scheme, so switching 18 <-> 14 keys rebuilds just the tries. */
+    private class Corpus(val scheme: ShuangpinScheme?, val entries: List<Pinyin18Entry>)
     @Volatile private var loaded: Loaded? = null
+    private var corpus: Corpus? = null
+    @Volatile private var module: XposedInterface? = null
     @Volatile private var service: InputMethodService? = null
     @Volatile private var layoutMode = "PINYIN"
     @Volatile private var chineseReady = false
@@ -48,6 +57,7 @@ object Keyboard18Hook {
     @Volatile private var applicationContext: Context? = null
 
     fun install(module: XposedInterface, loader: ClassLoader) {
+        this.module = module
         // Package hooks install before Application exists. Keep this observer independent
         // so even an ABI-resolution failure can reach the module's status page.
         val applicationCreate = Instrumentation::class.java.getDeclaredMethod(
@@ -58,6 +68,9 @@ object Keyboard18Hook {
             if (context?.packageName == "com.xiaomi.type") {
                 applicationContext = context.applicationContext ?: context
                 installFailure?.let { reportFailure(context, module, "Hook安装失败", it) }
+                // The IME service is bound well before the keyboard first shows; load while it is idle.
+                if (installFailure == null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+                        Application.getProcessName() == context.packageName)) preload(context)
             }
             result
         }
@@ -243,7 +256,28 @@ object Keyboard18Hook {
         else -> null
     }
 
-    /** One dictionary stays resident: switching between 18 and 14 keys rebuilds it for the new grouping. */
+    /**
+     * Loads the selected grouped keyboard's dictionary in the background. Engine creation still calls
+     * [load] on the main thread; it then finds the cache, or waits only for the load already under way.
+     */
+    fun preload(context: Context) {
+        val app = context.applicationContext ?: context
+        preloader.execute {
+            runCatching {
+                val keys = groupedKeys(app) ?: return@runCatching
+                if (load(app, keys).dictionary == null) return@runCatching
+                // Warm the preferences engine creation opens, so their first read does not block either.
+                val device = app.createDeviceProtectedStorageContext()
+                device.getSharedPreferences("keyboard18_frequency", Context.MODE_PRIVATE).all
+                device.getSharedPreferences("keyboard18_compositions", Context.MODE_PRIVATE).all
+            }.onFailure { failure ->
+                // Engine creation retries on the main thread and reports a failure there.
+                module?.let { XposedUtils.logWarn(it, "18-key preload failed: ${failure.javaClass.simpleName}: ${failure.message}") }
+            }
+        }
+    }
+
+    /** One dictionary stays resident: switching between 18 and 14 keys rebuilds its tries for the new grouping. */
     @Synchronized
     private fun load(context: Context, keys: GroupedKeys): Loaded {
         loaded?.takeIf { it.keys === keys }?.let { return it }
@@ -251,8 +285,12 @@ object Keyboard18Hook {
         val settings = context.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "snapshot", null, null)
             ?: error("无法读取${keys.title}设置")
         if (!Keyboard18Store.visible(settings, keys)) return Loaded(settings, keys, null).also { loaded = it }
-        val dictionary = checkNotNull(context.contentResolver.openInputStream(Keyboard18ContentProvider.DICTIONARY_URI))
-            .use { Keyboard18Dictionary.read(it, Keyboard18Store.scheme(settings), keys) }
+        val scheme = Keyboard18Store.scheme(settings)
+        val entries = corpus?.takeIf { it.scheme == scheme }?.entries
+            ?: checkNotNull(context.contentResolver.openInputStream(Keyboard18ContentProvider.DICTIONARY_URI))
+                .use { Keyboard18Dictionary.entries(it, scheme) }
+                .also { corpus = Corpus(scheme, it) }
+        val dictionary = Keyboard18Dictionary.build(entries, scheme, keys)
         val latest = context.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "snapshot", null, null)
         check(latest?.getLong(Keyboard18Store.REVISION) == settings.getLong(Keyboard18Store.REVISION)) { "设置已更新，请重启输入法" }
         return Loaded(settings, keys, dictionary).also { loaded = it }

@@ -150,7 +150,15 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
         private const val WORDS_PER_CODE = 48
         /** yi alone has 300+ characters; this bounds only two-letter abbreviation nodes. */
         private const val WHOLE_WORDS = 600
-        fun read(input: InputStream, scheme: ShuangpinScheme? = null, keys: GroupedKeys = Keyboard18Keys): Keyboard18Dictionary {
+        fun read(input: InputStream, scheme: ShuangpinScheme? = null, keys: GroupedKeys = Keyboard18Keys): Keyboard18Dictionary =
+            build(entries(input, scheme), scheme, keys)
+
+        /** Builds the tries for [keys] from [entries] (as [entries] returns them); the rows can be shared across groupings. */
+        fun build(entries: List<Pinyin18Entry>, scheme: ShuangpinScheme?, keys: GroupedKeys): Keyboard18Dictionary =
+            Keyboard18Dictionary(entries, scheme, keys)
+
+        /** Parses the corpus once; the slow part of loading, independent of the key grouping. */
+        fun entries(input: InputStream, scheme: ShuangpinScheme? = null): List<Pinyin18Entry> {
             val rows = ArrayList<Pinyin18Entry>()
             val encoded = HashMap<String, String?>()
             GZIPInputStream(input).bufferedReader(Charsets.UTF_8).useLines { lines ->
@@ -180,7 +188,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
                 }
             }
             require(rows.isNotEmpty() && rows.size <= 300_000) { "拼音词库为空或过大" }
-            return Keyboard18Dictionary(rows.sortedByDescending { it.weight }, scheme, keys)
+            return rows.sortedByDescending { it.weight }
         }
     }
 }

@@ -235,6 +235,8 @@ object KeyboardSelectionHook {
                 val sp = context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 val before = sp.getString(SELECTED, null)
                 check(sp.edit().putString(SELECTED, choice.id).commit())
+                // Start loading the grouped dictionary before the host recreates the engine.
+                if (choice == KeyboardChoice.KEYBOARD18 || choice == KeyboardChoice.KEYBOARD14) Keyboard18Hook.preload(context)
                 try {
                     // Even PINYIN -> PINYIN recreates the engine through the normal host lifecycle.
                     invoke(original, if (id == KeyboardChoice.SHAPE.id || id == KeyboardChoice.KEYBOARD18.id ||
