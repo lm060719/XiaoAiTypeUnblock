@@ -37,6 +37,7 @@ class LogContentProvider : ContentProvider() {
                     val sp = AppearanceProfiles.selected(local, systemDark)
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_SHORTCUTS, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_SHORTCUTS, false))
+                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HANDWRITING, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HANDWRITING, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, false))
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, local.getString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, "KEEP"))

@@ -29,6 +29,21 @@ class KeyboardShortcutHostActions(loader: ClassLoader, private val abi: Keyboard
             else commit.parameterCount == 1)
     }
 
+    /** Input awaits a candidate choice. */
+    fun hasPending(target: Any) = pending.invoke(target) == true
+
+    /** Commit [text] through the native pipeline (main editor or the host's own input boxes). */
+    fun commitText(target: Any, text: String) {
+        check(!suspending)
+        commit.invoke(target, text)
+    }
+
+    /** Suspend: [commitText] from 0.2.1358. */
+    fun commitText(target: Any, text: String, continuation: Any): Any? {
+        check(suspending)
+        return commit.invoke(target, text, continuation)
+    }
+
     fun finishInput(target: Any) {
         check(!suspending)
         var previous: String? = null

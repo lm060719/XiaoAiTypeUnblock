@@ -22,6 +22,13 @@ class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardA
         Boolean::class.javaPrimitiveType, Integer::class.java,
         *fields.drop(18).map { it.type }.toTypedArray())
     fun label(instance: Any) = fields[1].get(instance) as String
+
+    /** A letter or grouped-letter key (26/18/14-key, 虎码/五笔), never a function or separator key. */
+    fun letter(instance: Any): Boolean {
+        if ((fields[5].get(instance) as Enum<*>).name != "CHAR") return false
+        val letters = (fields[1].get(instance) as? String)?.filterNot(Char::isWhitespace) ?: return false
+        return letters.isNotEmpty() && letters.all { it in 'a'..'z' || it in 'A'..'Z' }
+    }
     fun action(instance: Any, layout: KeyboardShortcutLayout): String? {
         if ((fields[5].get(instance) as Enum<*>).name != "CHAR") return null
         val code = fields[0].getInt(instance)

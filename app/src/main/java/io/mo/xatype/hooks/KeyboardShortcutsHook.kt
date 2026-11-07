@@ -1,6 +1,8 @@
 package io.mo.xatype.hooks
 
+import android.graphics.RectF
 import android.inputmethodservice.InputMethodService
+import android.view.inputmethod.InputConnection
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.compat.HostCoroutines
 import io.mo.xatype.compat.HostSymbols
@@ -8,6 +10,7 @@ import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.abiField
 import io.mo.xatype.compat.abiMethod
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.keyboard.HandwritingRecognizer
 import io.mo.xatype.keyboard.KeyboardChoice
 import io.mo.xatype.keyboard.KeyboardShortcutActions
 import io.mo.xatype.keyboard.KeyboardShortcutHostActions
@@ -29,6 +32,9 @@ object KeyboardShortcutsHook {
     @Volatile private var supported: Boolean? = null
     @Volatile private var layoutMode = "PINYIN"
     @Volatile private var nativeLayoutId = ""
+    /** Chinese letter layouts that accept handwriting: 26-key (also 虎码/五笔), 18-key and 14-key. */
+    private val handwritingLayouts = setOf(KeyboardShortcutLayout.QWERTY, KeyboardShortcutLayout.KEYBOARD18,
+        KeyboardShortcutLayout.KEYBOARD14)
 
     fun install(module: XposedInterface, loader: ClassLoader) {
         val abi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_LAYOUT, HostSymbols.KEYBOARD_ACTIONS, HostSymbols.KEYBOARD_SWIPE)
@@ -61,9 +67,18 @@ object KeyboardShortcutsHook {
         }.apply { isAccessible = true }
         require(factory.returnType == layouts.layout && (handler.returnType == Void.TYPE || coroutines != null))
 
+        fun visibleLayout(): KeyboardShortcutLayout? {
+            val selected = service?.let { KeyboardSelectionHook.selected(it) }
+            return KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,
+                keyboard18 = selected == KeyboardChoice.KEYBOARD18, keyboard14 = selected == KeyboardChoice.KEYBOARD14)
+        }
+        var swipe: ShortcutSwipeHostHook? = null
+        val handwriting = installHandwriting(module, loader, hostService, actions, coroutines, ::visibleLayout) { swipe }
+
         fun captureManager(instance: Any) {
             service = context.get(instance) as InputMethodService
             supported = true
+            handwriting?.let { writer -> service?.let(writer::attach) }
         }
 
         val modeChange = manager.abiMethod(abi, "H", engineType,
@@ -140,15 +155,86 @@ object KeyboardShortcutsHook {
             if (uiManager == null || uiFloating == null) return false
             return runCatching { uiManager.invoke(ime)?.let(uiFloating::invoke) == true }.getOrDefault(false)
         }
-        ShortcutSwipeHostHook(floating = ::floating, enabled = {
+        swipe = ShortcutSwipeHostHook(floating = ::floating, enabled = {
             supported == true && ConfigManager.isKeyboardShortcutsEnabled() &&
                 service?.let { KeyboardSelectionHook.selected(it) in shortcutKeyboards } == true
-        }, layout = {
-            val selected = service?.let { KeyboardSelectionHook.selected(it) }
-            KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,
-                keyboard18 = selected == KeyboardChoice.KEYBOARD18, keyboard14 = selected == KeyboardChoice.KEYBOARD14)
-        })
-            .install(module, loader)
+        }, layout = ::visibleLayout, geometry = {
+            handwriting != null && supported == true && ConfigManager.isKeyboardHandwritingEnabled()
+        }, suppress = { handwriting?.suppressing == true })
+        swipe!!.install(module, loader)
         XposedUtils.log(module, "Independent downward swipe shortcut hooks installed (resolved ABI)")
+    }
+
+    /** Handwriting on the letter keys; needs the host's handwriting SDK, otherwise skipped. */
+    private fun installHandwriting(module: XposedInterface, loader: ClassLoader, hostService: Class<*>,
+                                   actions: KeyboardShortcutHostActions, coroutines: HostCoroutines?,
+                                   layout: () -> KeyboardShortcutLayout?, swipe: () -> ShortcutSwipeHostHook?): KeyboardHandwriting? {
+        val recognizer = try {
+            HandwritingRecognizer(loader).also { it.install(module) }
+        } catch (failure: Throwable) {
+            XposedUtils.logError(module, "Keyboard handwriting unavailable", failure)
+            return null
+        }
+        val keyCallbacks = runCatching { hostService.getMethod("getKeyHandlerCallbacks\$app_iflytekFullRelease") }.getOrNull()
+        val scope = if (coroutines != null) runCatching { hostService.getMethod("getServiceScope\$app_iflytekFullRelease") }.getOrNull() else null
+        fun target(ime: InputMethodService): Any? = keyCallbacks?.let { runCatching { it.invoke(ime) }.getOrNull() }
+        fun scopeContext(ime: InputMethodService): Any? =
+            if (coroutines == null || scope == null) null else runCatching { coroutines.scopeContext(scope.invoke(ime)!!) }.getOrNull()
+        val writer = KeyboardHandwriting(module, object : KeyboardHandwriting.Host {
+            override fun active(): Boolean = supported == true && ConfigManager.isKeyboardHandwritingEnabled() &&
+                layoutMode == "PINYIN" && layout() in handwritingLayouts
+
+            override fun letterBounds(): List<RectF> = swipe()?.letterBounds().orEmpty()
+
+            override fun swipeTracking(): Boolean = swipe()?.tracking() == true
+
+            override fun finishComposing(done: () -> Unit) {
+                val ime = service ?: return done()
+                val target = target(ime) ?: return done()
+                try {
+                    if (!actions.hasPending(target)) return done()
+                    if (coroutines == null) {
+                        actions.finishInput(target)
+                        return done()
+                    }
+                    val context = scopeContext(ime) ?: return done()
+                    actions.finishInput(coroutines, context, ime, target) { result ->
+                        result.exceptionOrNull()?.let { XposedUtils.logError(module, "Handwriting: finishing input failed", it) }
+                        done()
+                    }
+                } catch (failure: Throwable) {
+                    XposedUtils.logError(module, "Handwriting: finishing input failed", failure)
+                    done()
+                }
+            }
+
+            override fun commit(text: String) {
+                val ime = service ?: return
+                fun direct() { ime.currentInputConnection?.commitText(text, 1) }
+                val target = target(ime) ?: return direct()
+                try {
+                    if (coroutines == null) return actions.commitText(target, text)
+                    val context = scopeContext(ime) ?: return direct()
+                    coroutines.start(context, { actions.commitText(target, text, it) }) { result ->
+                        result.exceptionOrNull()?.let {
+                            XposedUtils.logError(module, "Handwriting: native commit failed, committing directly", it)
+                            direct()
+                        }
+                    }
+                } catch (failure: Throwable) {
+                    XposedUtils.logError(module, "Handwriting: native commit failed, committing directly", failure)
+                    direct()
+                }
+            }
+
+            override fun connection(): InputConnection? = service?.currentInputConnection
+        }, recognizer)
+        val hide = InputMethodService::class.java.getDeclaredMethod("hideWindow")
+        module.hook(hide).intercept { chain ->
+            writer.reset()
+            chain.proceed()
+        }
+        XposedUtils.log(module, "Keyboard handwriting hooks installed")
+        return writer
     }
 }

@@ -45,6 +45,15 @@ internal object FeatureCatalog {
     val shortcutLabels = Feature(ConfigManager.KEY_SHORTCUT_LABELS, "在按键上显示操作文字",
         "在九键、18/14键、26键及虎码/五笔标出段首、复制、粘贴、全选等文字，大小与位置可调")
 
+    val keyboardHandwriting = Feature(ConfigManager.KEY_KEYBOARD_HANDWRITING, "键盘区域手写",
+        "在 26 键、虎码/五笔、18 键和 14 键的字母区直接手写汉字", Detail(
+            "在字母键上起笔划动即开始手写，轻点仍是打字；停笔约半秒后自动识别，首选直接上屏，上方候选条点选可替换。",
+            notes = listOf("仅在中文输入时生效；英文、九键、数字与符号面板不受影响。",
+                "首笔需划出一小段距离，避免与点按冲突；写字过程中的点画不受限制。按住不动仍是长按选字母。",
+                "开启按键下滑快捷操作时，从快捷键起笔的竖直下划仍触发快捷操作。",
+                "识别使用小爱自带的讯飞手写引擎，无需联网。重启输入法后生效。")
+        ))
+
     val keyboardHeight = Feature(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, "解除键盘高度上限",
         "可继续向上拉伸")
 
@@ -56,7 +65,7 @@ internal object FeatureCatalog {
     val bottomSpacing = Feature(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, "自定义键盘底部间距",
         "调节按键下方的留白")
 
-    val keyboardFeatures get() = listOf(keyboardShortcuts, shortcutLabels, emojiCandidates, keyboardHeight, bottomSpacing, t9Shuangpin)
+    val keyboardFeatures get() = listOf(keyboardShortcuts, shortcutLabels, keyboardHandwriting, emojiCandidates, keyboardHeight, bottomSpacing, t9Shuangpin)
 
     /** Rows of action, nine-key, 26-key (also shape input), 18-key and 14-key triggers. */
     private val shortcutKeys = listOf(

@@ -50,6 +50,7 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
     } }
 
     fun label(instance: Any) = keys.label(instance)
+    fun letter(instance: Any) = keys.letter(instance)
     fun action(instance: Any, layout: KeyboardShortcutLayout) = keys.action(instance, layout)
     fun actionKey(source: Any, action: String) = keys.actionKey(source, action)
     fun dispatch(target: Any, key: Any) { invoke.invoke(target, key) }
