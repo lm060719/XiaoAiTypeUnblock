@@ -34,7 +34,8 @@ import kotlin.math.max
  *
  * Touches are read ahead of the keyboard through the IME window callback. A touch that starts
  * on a letter key stays a key press until it travels [CLAIM_DP] (upward: [Host.upwardClaimDp],
- * leaving shorter flicks to the host's swipe-up digits and symbols); it then becomes the first
+ * leaving shorter flicks to the host's swipe-up digits and symbols; sideways: [Host.sideClaimDp]);
+ * it then becomes the first
  * stroke and the key press is cancelled. While strokes are pending, every touch in the keyboard
  * area is ink, dots included. [RECOGNITION_DELAY_MS] after the last stroke the ink goes to the
  * host's own handwriting engine; the best candidate is committed and the others are offered on
@@ -51,6 +52,8 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
         fun swipeTracking(): Boolean
         /** Travel, in dp, before an upward drag becomes a stroke (the host's swipe-up symbols). */
         fun upwardClaimDp(): Float
+        /** Travel, in dp, before a leftward or rightward drag becomes a stroke. */
+        fun sideClaimDp(): Float
         /** Commit pending composition first, then run [done]. */
         fun finishComposing(done: () -> Unit)
         fun commit(text: String)
@@ -222,7 +225,13 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
                 if (host.swipeTracking() && dy > 0 && abs(dx) <= dy * DOWNWARD_RATIO) return pass(event)
                 // An upward flick (within 45° of vertical) types the key's digit or symbol until it
                 // runs past the configured distance.
-                if (dy < 0 && abs(dx) <= -dy && hypot(dx, dy) < host.upwardClaimDp() * density) return pass(event)
+                // Directions split at 45°: up, left/right, and down (撇, 点, 竖 keep the short claim).
+                val required = when {
+                    dy < 0 && abs(dx) <= -dy -> host.upwardClaimDp()
+                    abs(dx) > abs(dy) -> host.sideClaimDp()
+                    else -> CLAIM_DP
+                }
+                if (hypot(dx, dy) < required * density) return pass(event)
                 suppressing = true
                 val cancel = MotionEvent.obtain(event).apply { this.action = MotionEvent.ACTION_CANCEL }
                 try { pass(cancel) } finally { cancel.recycle() }

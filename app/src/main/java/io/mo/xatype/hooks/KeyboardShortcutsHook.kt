@@ -188,6 +188,7 @@ object KeyboardShortcutsHook {
 
             override fun swipeTracking(): Boolean = swipe()?.tracking() == true
             override fun upwardClaimDp(): Float = ConfigManager.getHandwritingUpDistance().toFloat()
+            override fun sideClaimDp(): Float = ConfigManager.getHandwritingSideDistance().toFloat()
 
             override fun finishComposing(done: () -> Unit) {
                 val ime = service ?: return done()

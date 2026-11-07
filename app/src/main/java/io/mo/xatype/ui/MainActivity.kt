@@ -610,25 +610,30 @@ class MainActivity : AppCompatActivity() {
     /** Handwriting switch plus the upward distance that keeps swipe-up digits and symbols. */
     private fun handwritingRow(): View {
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        lateinit var slider: View
+        val sliders = ArrayList<View>()
         fun refresh(on: Boolean) {
             fun enableTree(view: View) {
                 view.isEnabled = on
                 if (view is ViewGroup) for (index in 0 until view.childCount) enableTree(view.getChildAt(index))
             }
-            enableTree(slider)
-            slider.alpha = if (on) 1f else 0.45f
+            sliders.forEach { enableTree(it); it.alpha = if (on) 1f else 0.45f }
         }
         val toggle = featureSwitch(FeatureCatalog.keyboardHandwriting) { refresh(it) }
         container.addView(toggle.view)
-        slider = shortcutLabelSlider("上滑起笔距离", ConfigManager.HANDWRITING_UP_DISTANCE_RANGE,
+        sliders += shortcutLabelSlider("上滑起笔距离", ConfigManager.HANDWRITING_UP_DISTANCE_RANGE,
             prefs.getInt(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, ConfigManager.HANDWRITING_UP_DISTANCE_DEFAULT),
             "向上起笔转为手写所需的距离",
             { "$it dp" }) { distance ->
             prefs.edit().putInt(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, distance).apply()
         }
-        container.addView(slider)
-        val note = kit.label("向上划不足该距离仍交给输入法上滑输入数字和符号（输入法约需 64 dp），超过才开始手写；其他方向划过约 12 dp 即开始手写。",
+        sliders += shortcutLabelSlider("左右起笔距离", ConfigManager.HANDWRITING_SIDE_DISTANCE_RANGE,
+            prefs.getInt(ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, ConfigManager.HANDWRITING_SIDE_DISTANCE_DEFAULT),
+            "向左或向右起笔转为手写所需的距离",
+            { "$it dp" }) { distance ->
+            prefs.edit().putInt(ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, distance).apply()
+        }
+        sliders.forEach { container.addView(it) }
+        val note = kit.label("向上划不足上滑距离仍交给输入法输入数字和符号（输入法约需 64 dp）；左右划不足左右距离仍是按键。向下起笔划过约 12 dp 即开始手写。",
             12f, R.color.text_secondary)
         val pad = kit.dimen(R.dimen.settings_row_padding)
         note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))
