@@ -102,10 +102,8 @@ object KeyboardSelectionHook {
                     val args = chain.args.toTypedArray()
                     if (args[0] == KeyboardChoice.PINYIN.id) args[0] = choice.id
                     args[1] = wrapped
-                    args[3] = (args[3] as? Set<*>)?.toMutableSet()?.apply {
-                        if (visible.shape) add(KeyboardChoice.SHAPE.id)
-                        if (visible.keyboard18) add(KeyboardChoice.KEYBOARD18.id)
-                        if (visible.keyboard14) add(KeyboardChoice.KEYBOARD14.id)
+                    args[3] = (args[3] as? Set<*>)?.let {
+                        KeyboardPickerBridge.modes(it, choice, visible.shape, visible.keyboard18, visible.keyboard14)
                     }
                     chain.proceed(args)
                 }

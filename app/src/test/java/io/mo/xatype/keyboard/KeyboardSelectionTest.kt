@@ -21,6 +21,19 @@ class KeyboardSelectionTest {
         assertEquals(4, original.size)
     }
 
+    @Test fun nativeModesStayListedWhenAModuleEngineLoadedFirst() {
+        // A module engine created first leaves the host's native core unloaded: only English is listed.
+        val englishOnly = setOf("qwerty_english")
+        val modes = KeyboardPickerBridge.modes(englishOnly, KeyboardChoice.KEYBOARD14, false, true, true)
+        assertTrue(modes.containsAll(KeyboardPickerBridge.NATIVE_IDS + "qwerty_english"))
+        assertTrue(modes.containsAll(listOf(KeyboardChoice.KEYBOARD18.id, KeyboardChoice.KEYBOARD14.id)))
+        assertFalse(KeyboardChoice.SHAPE.id in modes)
+        // With native pinyin selected, the host's own availability is kept as it is.
+        assertEquals(englishOnly, KeyboardPickerBridge.modes(englishOnly, KeyboardChoice.PINYIN, false, false, false))
+        val partial = setOf("qwerty_chinese", "t9_chinese")
+        assertEquals(partial, KeyboardPickerBridge.modes(partial, KeyboardChoice.KEYBOARD18, false, false, false))
+    }
+
     @Test fun keyboard14IsAddedAfterOtherChoicesAndHiddenByDefault() {
         val result = picker.extend(native(), true, true, show14 = true)!!
         assertEquals(listOf("xatype_shape", "xatype_keyboard18", "xatype_keyboard14"), result.drop(4).map { (it as g6).a })
