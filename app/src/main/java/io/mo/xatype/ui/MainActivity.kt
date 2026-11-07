@@ -446,7 +446,7 @@ class MainActivity : AppCompatActivity() {
         // Key shortcuts are independent of experimental keyboards and appearance.
         kit.group(root, "输入增强", listOf(
             featureSwitch(FeatureCatalog.keyboardShortcuts).view,
-            featureSwitch(FeatureCatalog.keyboardHandwriting).view,
+            handwritingRow(),
             featureSwitch(FeatureCatalog.emojiCandidates).view,
             predictionModeRow(),
             shortcutLabelRow()
@@ -599,6 +599,36 @@ class MainActivity : AppCompatActivity() {
         }
         controls.forEach { container.addView(it) }
         val note = kit.label("文字显示在九键、18/14键、拼音/英文26键及虎码/五笔快捷键的底部居中；与按键下滑快捷操作同时开启，重启输入法后生效。",
+            12f, R.color.text_secondary)
+        val pad = kit.dimen(R.dimen.settings_row_padding)
+        note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))
+        container.addView(note)
+        refresh(toggle.switch.isChecked)
+        return container
+    }
+
+    /** Handwriting switch plus the upward distance that keeps swipe-up digits and symbols. */
+    private fun handwritingRow(): View {
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        lateinit var slider: View
+        fun refresh(on: Boolean) {
+            fun enableTree(view: View) {
+                view.isEnabled = on
+                if (view is ViewGroup) for (index in 0 until view.childCount) enableTree(view.getChildAt(index))
+            }
+            enableTree(slider)
+            slider.alpha = if (on) 1f else 0.45f
+        }
+        val toggle = featureSwitch(FeatureCatalog.keyboardHandwriting) { refresh(it) }
+        container.addView(toggle.view)
+        slider = shortcutLabelSlider("上滑起笔距离", ConfigManager.HANDWRITING_UP_DISTANCE_RANGE,
+            prefs.getInt(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, ConfigManager.HANDWRITING_UP_DISTANCE_DEFAULT),
+            "向上起笔转为手写所需的距离",
+            { "$it dp" }) { distance ->
+            prefs.edit().putInt(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, distance).apply()
+        }
+        container.addView(slider)
+        val note = kit.label("向上划不足该距离仍交给输入法上滑输入数字和符号（输入法约需 64 dp），超过才开始手写；其他方向划过约 12 dp 即开始手写。",
             12f, R.color.text_secondary)
         val pad = kit.dimen(R.dimen.settings_row_padding)
         note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))

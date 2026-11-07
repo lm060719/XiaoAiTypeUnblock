@@ -24,6 +24,10 @@ object ConfigManager {
     const val KEY_KEYBOARD_HEIGHT_UNBLOCK = "pref_keyboard_height_unblock"
     const val KEY_KEYBOARD_SHORTCUTS = "pref_keyboard_shortcuts"
     const val KEY_KEYBOARD_HANDWRITING = "pref_keyboard_handwriting"
+    /** dp an upward first stroke travels before handwriting claims it; shorter swipes stay the host's symbols. */
+    const val KEY_HANDWRITING_UP_DISTANCE = "pref_handwriting_up_distance"
+    const val HANDWRITING_UP_DISTANCE_DEFAULT = 96
+    val HANDWRITING_UP_DISTANCE_RANGE = 16..200
     const val KEY_T9_SHUANGPIN = "pref_t9_shuangpin"
     const val KEY_EMOJI_CANDIDATES = "pref_emoji_candidates"
     const val KEY_PREDICTION_MODE = "pref_prediction_mode"
@@ -85,6 +89,7 @@ object ConfigManager {
     @Volatile private var cachedKeyboardHeightUnblock = false
     @Volatile private var cachedKeyboardShortcuts = false
     @Volatile private var cachedKeyboardHandwriting = false
+    @Volatile private var cachedHandwritingUpDistance = HANDWRITING_UP_DISTANCE_DEFAULT
     @Volatile private var cachedT9Shuangpin = false
     @Volatile private var cachedEmojiCandidates = false
     @Volatile private var cachedPredictionMode = PredictionMode.KEEP.name
@@ -155,6 +160,8 @@ object ConfigManager {
                 cachedKeyboardHeightUnblock = bundle.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
                 cachedKeyboardShortcuts = bundle.getBoolean(KEY_KEYBOARD_SHORTCUTS, false)
                 cachedKeyboardHandwriting = bundle.getBoolean(KEY_KEYBOARD_HANDWRITING, false)
+                cachedHandwritingUpDistance = bundle.getInt(KEY_HANDWRITING_UP_DISTANCE, HANDWRITING_UP_DISTANCE_DEFAULT)
+                    .coerceIn(HANDWRITING_UP_DISTANCE_RANGE)
                 cachedT9Shuangpin = bundle.getBoolean(KEY_T9_SHUANGPIN, false)
                 cachedEmojiCandidates = bundle.getBoolean(KEY_EMOJI_CANDIDATES, false)
                 cachedPredictionMode = bundle.getString(KEY_PREDICTION_MODE, PredictionMode.KEEP.name) ?: PredictionMode.KEEP.name
@@ -265,6 +272,12 @@ object ConfigManager {
     fun isKeyboardHandwritingEnabled(): Boolean {
         if (hasSyncedFromProvider) return cachedKeyboardHandwriting
         return remotePrefs?.getBoolean(KEY_KEYBOARD_HANDWRITING, false) ?: cachedKeyboardHandwriting
+    }
+
+    fun getHandwritingUpDistance(): Int {
+        if (hasSyncedFromProvider) return cachedHandwritingUpDistance
+        return (remotePrefs?.getInt(KEY_HANDWRITING_UP_DISTANCE, HANDWRITING_UP_DISTANCE_DEFAULT)
+            ?: cachedHandwritingUpDistance).coerceIn(HANDWRITING_UP_DISTANCE_RANGE)
     }
 
     fun isT9ShuangpinEnabled(): Boolean {

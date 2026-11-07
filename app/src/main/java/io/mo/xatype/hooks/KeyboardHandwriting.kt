@@ -33,7 +33,8 @@ import kotlin.math.max
  * Handwriting on the letter keys of the Chinese 26-key, 虎码/五笔, 18-key and 14-key keyboards.
  *
  * Touches are read ahead of the keyboard through the IME window callback. A touch that starts
- * on a letter key stays a key press until it travels [CLAIM_DP]; it then becomes the first
+ * on a letter key stays a key press until it travels [CLAIM_DP] (upward: [Host.upwardClaimDp],
+ * leaving shorter flicks to the host's swipe-up digits and symbols); it then becomes the first
  * stroke and the key press is cancelled. While strokes are pending, every touch in the keyboard
  * area is ink, dots included. [RECOGNITION_DELAY_MS] after the last stroke the ink goes to the
  * host's own handwriting engine; the best candidate is committed and the others are offered on
@@ -48,6 +49,8 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
         fun letterBounds(): List<RectF>
         /** A downward swipe shortcut owns the current touch. */
         fun swipeTracking(): Boolean
+        /** Travel, in dp, before an upward drag becomes a stroke (the host's swipe-up symbols). */
+        fun upwardClaimDp(): Float
         /** Commit pending composition first, then run [done]. */
         fun finishComposing(done: () -> Unit)
         fun commit(text: String)
@@ -217,6 +220,9 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
                 }
                 // A straight downward drag from a shortcut key stays a swipe shortcut.
                 if (host.swipeTracking() && dy > 0 && abs(dx) <= dy * DOWNWARD_RATIO) return pass(event)
+                // An upward flick (within 45° of vertical) types the key's digit or symbol until it
+                // runs past the configured distance.
+                if (dy < 0 && abs(dx) <= -dy && hypot(dx, dy) < host.upwardClaimDp() * density) return pass(event)
                 suppressing = true
                 val cancel = MotionEvent.obtain(event).apply { this.action = MotionEvent.ACTION_CANCEL }
                 try { pass(cancel) } finally { cancel.recycle() }
