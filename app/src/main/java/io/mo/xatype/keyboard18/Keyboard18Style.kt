@@ -14,10 +14,19 @@ object Keyboard18Style {
     const val PREVIEW_GAP = 2
     const val PREVIEW_SIDE_GAP = 4
     private const val LETTER_SEPARATOR = "\u2009"
+    /** Narrowest space MiSans carries; pads single letters without visibly shifting them. */
+    private const val SINGLE_PADDING = "\u200a"
 
     fun weight(group: String) = if (group.length == 2) PAIR_WEIGHT else SINGLE_WEIGHT
-    fun label(group: String, uppercase: Boolean = false) =
-        (if (uppercase) group.uppercase() else group).map(Char::toString).joinToString(LETTER_SEPARATOR)
+    /**
+     * The host styles a hinted key by its label length: one character takes the QWERTY letter size
+     * and corner hint, longer labels the T9 letter size and centered hint badge. Pad single letters
+     * so every grouped key takes the same path and the letters and hints line up across a row.
+     */
+    fun label(group: String, uppercase: Boolean = false): String {
+        val letters = (if (uppercase) group.uppercase() else group).map(Char::toString)
+        return if (letters.size == 1) SINGLE_PADDING + letters[0] + SINGLE_PADDING else letters.joinToString(LETTER_SEPARATOR)
+    }
 
     // Compose TextUnit packs the unit tag above the raw float value. Retain the tag
     // and the host's font scaling rather than substituting a fixed pixel size.
