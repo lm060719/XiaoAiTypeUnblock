@@ -21,6 +21,15 @@ class KeyboardSelectionTest {
         assertEquals(4, original.size)
     }
 
+    @Test fun keyboard14IsAddedAfterOtherChoicesAndHiddenByDefault() {
+        val result = picker.extend(native(), true, true, show14 = true)!!
+        assertEquals(listOf("xatype_shape", "xatype_keyboard18", "xatype_keyboard14"), result.drop(4).map { (it as g6).a })
+        assertEquals("14键", (result.last() as g6).b)
+        assertEquals(KeyboardChoice.PINYIN, KeyboardChoice.resolve(KeyboardChoice.KEYBOARD14.id, true, true))
+        assertEquals(KeyboardChoice.KEYBOARD14, KeyboardChoice.resolve(KeyboardChoice.KEYBOARD14.id, false, false, show14 = true))
+        assertTrue(KeyboardChoice.KEYBOARD14.grouped && KeyboardChoice.KEYBOARD18.grouped && !KeyboardChoice.SHAPE.grouped)
+    }
+
     @Test fun visibilitySwitchesAreIndependent() {
         for (shape in listOf(false, true)) for (keyboard18 in listOf(false, true)) {
             val ids = picker.extend(native(), shape, keyboard18)!!.map { (it as g6).a }
@@ -47,7 +56,7 @@ class KeyboardSelectionTest {
 
     @Test fun selectionSurvivesRestartAndSwitchesBackToNative() {
         for (choice in KeyboardChoice.entries) {
-            assertEquals(choice, KeyboardChoice.resolve(choice.id, true, true, legacyShape = true))
+            assertEquals(choice, KeyboardChoice.resolve(choice.id, true, true, legacyShape = true, show14 = true))
         }
         for (native in listOf("t9_chinese", "stroke_chinese", "handwriting_chinese", "invalid")) {
             assertEquals(KeyboardChoice.PINYIN, KeyboardChoice.resolve(native, true, true))

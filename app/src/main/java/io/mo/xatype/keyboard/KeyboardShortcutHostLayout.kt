@@ -3,6 +3,7 @@ package io.mo.xatype.keyboard
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.abiField
+import io.mo.xatype.keyboard18.Keyboard14Keys
 import io.mo.xatype.keyboard18.Keyboard18Keys
 
 /** Inspect native/grouped letters and create a release action without mutating visible keys. */
@@ -35,6 +36,12 @@ class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardA
                 it.first() == code.toChar().lowercaseChar() && it == letters
             }
             return KeyboardShortcuts.groups18[group].takeIf { group == letters }
+        }
+        if (layout == KeyboardShortcutLayout.KEYBOARD14) {
+            // Only the generated private codes: native M shares the label of the 14-key M group.
+            val letters = label(instance).filterNot(Char::isWhitespace).lowercase()
+            val group = Keyboard14Keys.group(code)
+            return KeyboardShortcuts.groups14[group].takeIf { group == letters }
         }
         if (code !in 'a'.code..'z'.code && code !in 'A'.code..'Z'.code) return null
         val label = fields[1].get(instance) as? String ?: return null

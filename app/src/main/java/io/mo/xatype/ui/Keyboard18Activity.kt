@@ -25,13 +25,19 @@ import io.mo.xatype.keyboard.KeyboardShortcuts
 import io.mo.xatype.keyboard.ShuangpinScheme
 import io.mo.xatype.keyboard18.Keyboard18Dictionary
 import io.mo.xatype.keyboard18.Keyboard18Engine
+import io.mo.xatype.keyboard18.GroupedKeys
+import io.mo.xatype.keyboard18.Keyboard14Keys
 import io.mo.xatype.keyboard18.Keyboard18Keys
 import io.mo.xatype.keyboard18.Keyboard18Store
 import io.mo.xatype.keyboard18.Keyboard18Style
 import java.util.concurrent.Executors
 
-/** Interactive local preview uses the same dictionary and decoder as the host hook. */
+/**
+ * Interactive local preview uses the same dictionary and decoder as the host hook.
+ * [EXTRA_LAYOUT] selects the 18-key or 14-key grouping; both share the double-pinyin settings.
+ */
 class Keyboard18Activity : AppCompatActivity() {
+    private lateinit var keys: GroupedKeys
     private lateinit var style: ShapeUiStyle
     private lateinit var enabled: SwitchCompat
     private lateinit var status: TextView
@@ -58,13 +64,14 @@ class Keyboard18Activity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         style = ShapeUiStyle(this)
+        keys = if (intent.getStringExtra(EXTRA_LAYOUT) == LAYOUT_14) Keyboard14Keys else Keyboard18Keys
         english = savedInstanceState?.getBoolean("english") ?: false
         uppercase = savedInstanceState?.getBoolean("uppercase") ?: false
         pendingRestart = savedInstanceState?.getBoolean("pending_restart") ?: false
         restoreRaw = savedInstanceState?.getString("raw").orEmpty()
         val root = column().apply { setBackgroundColor(style.background) }
         val toolbar = Toolbar(this).apply {
-            title = "18键键盘"
+            title = "${keys.title}键盘"
             setTitleTextColor(style.primary)
             setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
             navigationIcon?.setTint(style.primary)
@@ -78,18 +85,22 @@ class Keyboard18Activity : AppCompatActivity() {
             addView(body, android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_HORIZONTAL)) }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        body.addView(text("更宽的按键，更轻松地输入", ShapeUiStyle.TITLE, strong = true))
-        body.addView(text("按图片的 7 · 6 · 5 布局，三排同宽。中文点按分组键，长按选择准确字母和数字；切到英文自动换成 26 键。开启首页「字母下滑快捷操作」后，底排字母下滑渐变为功能图标，轻震后松手执行。",
+        body.addView(text(if (keys === Keyboard14Keys) "字母两两成对，按键更大" else "更宽的按键，更轻松地输入",
+            ShapeUiStyle.TITLE, strong = true))
+        body.addView(text((if (keys === Keyboard14Keys)
+            "按 5 · 5 · 4 布局，QWERTY 字母两两一键，底排左侧为分隔键（'），输入拼音时用于划分音节。"
+        else "按图片的 7 · 6 · 5 布局，三排同宽。") +
+            "中文点按分组键，长按选择准确字母和数字；切到英文自动换成 26 键。开启首页「字母下滑快捷操作」后，底排字母下滑渐变为功能图标，轻震后松手执行。",
             ShapeUiStyle.BODY, secondary = true), spaced())
         val settings = card()
         enabled = SwitchCompat(this).apply {
-            text = "在键盘选择中显示18键"
+            text = "在键盘选择中显示${keys.title}"
             textSize = ShapeUiStyle.HEADING
             setTextColor(style.primary)
             minHeight = style.dp(ShapeUiStyle.BUTTON)
-            isChecked = Keyboard18Store.snapshot(this@Keyboard18Activity).getBoolean(Keyboard18Store.SHOW_IN_PICKER)
+            isChecked = Keyboard18Store.visible(Keyboard18Store.snapshot(this@Keyboard18Activity), keys)
             setOnCheckedChangeListener { _, checked ->
-                runCatching { Keyboard18Store.setVisible(this@Keyboard18Activity, checked) }
+                runCatching { Keyboard18Store.setVisible(this@Keyboard18Activity, checked, keys) }
                     .onSuccess { pendingRestart = true; performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); updateStatus() }
                     .onFailure { Toast.makeText(this@Keyboard18Activity, it.message, Toast.LENGTH_LONG).show()
                         setOnCheckedChangeListener(null); isChecked = !checked; recreate() }
@@ -98,7 +109,7 @@ class Keyboard18Activity : AppCompatActivity() {
         settings.addView(enabled, LinearLayout.LayoutParams(-1, -2))
         val initialSettings = Keyboard18Store.snapshot(this)
         val doublePinyin = SwitchCompat(this).apply {
-            text = "18键双拼"
+            text = "${keys.title}双拼"
             textSize = ShapeUiStyle.HEADING
             setTextColor(style.primary)
             minHeight = style.dp(ShapeUiStyle.BUTTON)
@@ -113,18 +124,18 @@ class Keyboard18Activity : AppCompatActivity() {
         schemeButton = button("双拼方案：${ShuangpinScheme.resolve(initialSettings.getString(Keyboard18Store.SCHEME)).title}") {
             val schemes = ShuangpinScheme.entries
             val selected = ShuangpinScheme.resolve(Keyboard18Store.snapshot(this).getString(Keyboard18Store.SCHEME))
-            InfoSheet.choose(this, "18 键双拼方案", schemes.map { it.title }, schemes.indexOf(selected)) { index ->
+            InfoSheet.choose(this, "${keys.title}双拼方案", schemes.map { it.title }, schemes.indexOf(selected)) { index ->
                 saveShuangpin(doublePinyin.isChecked, schemes[index])
             }
         }
         settings.addView(schemeButton, spaced())
-        settings.addView(text("重启应用设置后，在小爱「键盘选择」中选择「18键」。可直接切换拼音26键、虎码/五笔；此开关只控制入口显示。词库和输入均在本地。",
+        settings.addView(text("重启应用设置后，在小爱「键盘选择」中选择「${keys.title}」。可直接切换拼音26键、18键、14键、虎码/五笔；此开关只控制入口显示。18键与14键共用双拼设置和学习记录，词库和输入均在本地。",
             ShapeUiStyle.CAPTION, secondary = true), spaced())
         status = text("", ShapeUiStyle.CAPTION, secondary = true)
         settings.addView(status, spaced())
         body.addView(settings, spaced())
 
-        body.addView(text("试试18键", ShapeUiStyle.HEADING, strong = true), spaced())
+        body.addView(text("试试${keys.title}", ShapeUiStyle.HEADING, strong = true), spaced())
         inputHelp = text("", ShapeUiStyle.CAPTION, secondary = true)
         body.addView(inputHelp, spaced())
         val preview = card()
@@ -183,12 +194,13 @@ class Keyboard18Activity : AppCompatActivity() {
         candidateRow.removeAllViews()
         composing.text = ""
         inputHelp.text = if (selectedScheme == null)
-            "支持全拼和首字母简拼，例如「为什么」简拼 wsm：依次点 WE、SD、M。" else
+            "支持全拼和首字母简拼，例如「为什么」简拼 wsm：依次点 ${example("、")}。" +
+                (if (keys.separatorKey) "音节有歧义时点 ' 分隔。" else "") else
             "${selectedScheme.title}：按双拼编码依次点对应的分组键；长按可选择准确字母。" +
                 if (selectedScheme.usesSemicolon) "分号韵母共用 L 键，也可长按 L 选择分号。" else ""
         worker.execute {
             val loaded = runCatching { Keyboard18Store.dictionaryFile(this).inputStream()
-                .use { Keyboard18Dictionary.read(it, selectedScheme) } }
+                .use { Keyboard18Dictionary.read(it, selectedScheme, keys) } }
             runOnUiThread {
                 if (isDestroyed || isFinishing || generation != loadGeneration) return@runOnUiThread
                 loaded.onSuccess { dictionary ->
@@ -222,6 +234,8 @@ class Keyboard18Activity : AppCompatActivity() {
         keypad.removeAllViews()
         previewControls.clear()
         letterButtons.clear(); englishButtons.clear()
+        // 14-key Chinese has no shift key, so a shift carried over from English is released.
+        if (!english && keys.separatorKey) uppercase = false
         if (english) {
             // English mirrors the host: a plain 26-key QWERTY instead of the 18-key grid.
             listOf("qwertyuiop", "asdfghjkl", "zxcvbnm").forEachIndexed { index, letters ->
@@ -254,21 +268,26 @@ class Keyboard18Activity : AppCompatActivity() {
                 keypad.addView(row, LinearLayout.LayoutParams(-1, -2))
             }
         } else {
-            Keyboard18Keys.rows.forEachIndexed { rowIndex, groups ->
+            keys.rows.forEachIndexed { rowIndex, groups ->
                 val row = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
-                if (rowIndex == 2) {
+                if (rowIndex == 2 && keys.separatorKey) {
+                    val separator = keyButton("'") { separator() }
+                    separator.contentDescription = "分隔键，划分音节"
+                    row.addView(separator, keyParams(keys.controlWeight))
+                    row.addView(android.widget.Space(this), sideGap())
+                } else if (rowIndex == 2) {
                     shiftButton = keyButton("⇧") { flush(); uppercase = !uppercase; labels() }
-                    row.addView(shiftButton, keyParams(Keyboard18Style.CONTROL_WEIGHT))
+                    row.addView(shiftButton, keyParams(keys.controlWeight))
                 }
                 groups.forEach { group ->
                     val button = keyButton(group) {
                         val decoder = engine ?: return@keyButton
                         if (uppercase) { flush(); insert(group.first().uppercaseChar().toString()) }
-                        else showResult(decoder.input(Keyboard18Keys.code(group).toChar()))
+                        else showResult(decoder.input(keys.code(group).toChar()))
                     }
                     button.contentDescription = "${group.uppercase()}键，长按选择字母和符号；下滑快捷操作由首页开关控制"
                     (button as ShortcutSwipeButton).apply {
-                        shortcut = KeyboardShortcuts.groups18[group]
+                        shortcut = (if (keys === Keyboard14Keys) KeyboardShortcuts.groups14 else KeyboardShortcuts.groups18)[group]
                         shortcutsEnabled = { ConfigManager.getLocalPrefs(this@Keyboard18Activity)
                             .getBoolean(ConfigManager.KEY_KEYBOARD_SHORTCUTS, false) }
                         executeShortcut = { this@Keyboard18Activity.shortcut(it) }
@@ -277,11 +296,12 @@ class Keyboard18Activity : AppCompatActivity() {
                     letterButtons[group] = button
                     row.addView(button, keyParams(Keyboard18Style.weight(group)))
                 }
+                if (rowIndex == 2 && keys.separatorKey) row.addView(android.widget.Space(this), sideGap())
                 if (rowIndex == 2) {
                     val delete = keyButton("⌫") { deletePreview() }
                     delete.contentDescription = "退格，长按清空预览"
                     delete.setOnLongClickListener { engine?.clear(); output.text.clear(); showCandidates(); true }
-                    row.addView(delete, keyParams(Keyboard18Style.CONTROL_WEIGHT))
+                    row.addView(delete, keyParams(keys.controlWeight))
                 }
                 keypad.addView(row, LinearLayout.LayoutParams(-1, -2))
             }
@@ -310,8 +330,7 @@ class Keyboard18Activity : AppCompatActivity() {
     }
     private fun labels() {
         letterButtons.forEach { (group, view) ->
-            val index = Keyboard18Keys.groups.indexOf(group)
-            val hint = Keyboard18Keys.hints[index]
+            val hint = keys.hint(group)
             view.text = SpannableString(hint + "\n" + Keyboard18Style.label(group, true)).apply {
                 setSpan(RelativeSizeSpan(Keyboard18Style.PREVIEW_HINT_SCALE), 0, hint.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 setSpan(ForegroundColorSpan(style.secondary), 0, hint.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -321,7 +340,7 @@ class Keyboard18Activity : AppCompatActivity() {
             view.text = (if (uppercase) letter.uppercaseChar() else letter).toString()
         }
         languageButton.text = if (english) "英" else "中"
-        shiftButton.text = if (uppercase) "⇪" else "⇧"
+        if (::shiftButton.isInitialized) shiftButton.text = if (uppercase) "⇪" else "⇧"
     }
     private fun showResult(result: io.mo.xatype.keyboard18.Pinyin18Result) { result.commit?.let(::insert); showCandidates() }
     private fun showCandidates() {
@@ -330,7 +349,7 @@ class Keyboard18Activity : AppCompatActivity() {
             when {
                 english -> "英文：26键，点按输入字母"
                 decoder.scheme != null -> "${decoder.scheme!!.title}：按双拼编码输入"
-                else -> "全拼 / 简拼：为什么 → WE · SD · M"
+                else -> "全拼 / 简拼：为什么 → ${example(" · ")}"
             }
         }
         candidateRow.removeAllViews()
@@ -347,15 +366,23 @@ class Keyboard18Activity : AppCompatActivity() {
     private fun flush() { engine?.commitAll()?.let(::insert); showCandidates() }
     private fun literal(value: String) { flush(); insert(value) }
     private fun popup(group: String) {
-        val hint = Keyboard18Keys.hints[Keyboard18Keys.groups.indexOf(group)]
+        val hint = keys.hint(group)
         val values = group.map { if (uppercase) it.uppercaseChar().toString() else it.toString() } +
             listOf(hint).filter { it.length == 1 } +
-            if (!english && !uppercase && group == "l" && engine?.scheme?.usesSemicolon == true) listOf(";") else emptyList()
+            if (!english && !uppercase && group == keys.semicolonGroup && engine?.scheme?.usesSemicolon == true) listOf(";") else emptyList()
         choices("${group.uppercase()}键", values) { selected ->
             if (!english && !uppercase && selected.length == 1 && (selected[0] in 'a'..'z' ||
                     (selected == ";" && engine?.raw?.isNotEmpty() == true && engine?.scheme?.usesSemicolon == true)))
                 engine?.input(selected.single())?.let(::showResult) else literal(selected)
         }
+    }
+    /** Simple pinyin of 为什么 (wsm) spelled with this layout's key groups. */
+    private fun example(separator: String) = "wsm".map { letter -> keys.groups.first { letter in it }.uppercase() }
+        .joinToString(separator)
+    private fun separator() {
+        val decoder = engine ?: return
+        // As on the host's segmentation key, the separator only splits syllables while composing.
+        if (!english && decoder.raw.isNotEmpty()) showResult(decoder.input('\''))
     }
     private fun shortcut(action: String) {
         flush()
@@ -402,8 +429,12 @@ class Keyboard18Activity : AppCompatActivity() {
     private fun keyParams(weight: Float) = LinearLayout.LayoutParams(0, -2, weight).apply {
         setMargins(style.dp(Keyboard18Style.PREVIEW_GAP), style.dp(Keyboard18Style.PREVIEW_GAP),
             style.dp(Keyboard18Style.PREVIEW_GAP), style.dp(Keyboard18Style.PREVIEW_GAP)) }
+    /** Mirrors the native 26-key side gap that sets the 14-key controls apart from the letters. */
+    private fun sideGap() = LinearLayout.LayoutParams(style.dp(Keyboard18Style.PREVIEW_SIDE_GAP), 1)
     private fun spaced() = LinearLayout.LayoutParams(-1, -2).apply { topMargin = style.dp(ShapeUiStyle.MD) }
     companion object {
         private const val PREVIEW_OUTPUT_HEIGHT = 80
+        const val EXTRA_LAYOUT = "layout"
+        const val LAYOUT_14 = "14"
     }
 }

@@ -12,7 +12,7 @@ class KeyboardPickerBridge(loader: ClassLoader, private val abi: KeyboardAbi = K
     private val icon = item.abiField(abi, "c").apply { isAccessible = true }
     private val nativeIds = setOf("qwerty_chinese", "t9_chinese", "handwriting_chinese", "stroke_chinese")
 
-    fun extend(values: Array<*>, showShape: Boolean, show18: Boolean): List<Any>? {
+    fun extend(values: Array<*>, showShape: Boolean, show18: Boolean, show14: Boolean = false): List<Any>? {
         if (values.isEmpty() || values.size > nativeIds.size || values.any { !item.isInstance(it) }) return null
         val ids = values.map { id.get(it) }
         if (ids.distinct().size != values.size || ids.any { it !in nativeIds } || KeyboardChoice.PINYIN.id !in ids) return null
@@ -20,6 +20,7 @@ class KeyboardPickerBridge(loader: ClassLoader, private val abi: KeyboardAbi = K
         return values.filterNotNull().toMutableList().apply {
             if (showShape) add(constructor.newInstance(icon.getInt(qwerty), KeyboardChoice.SHAPE.id, "虎码/五笔"))
             if (show18) add(constructor.newInstance(icon.getInt(qwerty), KeyboardChoice.KEYBOARD18.id, "18键"))
+            if (show14) add(constructor.newInstance(icon.getInt(qwerty), KeyboardChoice.KEYBOARD14.id, "14键"))
         }
     }
 }

@@ -1,5 +1,5 @@
 package ka
-enum class f { CHAR, BACKSPACE, ENTER, SHIFT, SPACE, SWITCH, GAP }
+enum class f { CHAR, BACKSPACE, ENTER, SHIFT, SPACE, SWITCH, FUNCTION, GAP }
 class c(
     @JvmField val a: Int, @JvmField val b: String, @JvmField val c: Float,
     @JvmField val d: Float?, @JvmField val e: Float?, @JvmField val f: ka.f,

@@ -41,13 +41,14 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
     val display: String get() = pinyinDisplay()
     /** Candidate bar shows the real pinyin of the leading candidate, not group tags. */
     private fun pinyinDisplay(): String {
-        val top = candidates.firstOrNull() ?: return Keyboard18Keys.readable(raw)
+        val top = candidates.firstOrNull() ?: return keys.readable(raw)
         val spelling = top.spelling.substringBefore(" · ")
         val rest = raw.drop(top.consumed)
         if (rest.isEmpty()) return spelling
-        return spelling + rest.map { Keyboard18Keys.shown(it) }.joinToString("")
+        return spelling + rest.map { keys.shown(it) }.joinToString("")
     }
     val scheme get() = dictionary.scheme
+    val keys get() = dictionary.keys
     fun snapshot(consumed: Boolean = true, commit: String? = null) =
         Pinyin18Result(consumed, raw, display, candidates, commit)
     private fun resetComposition() { composedParts.clear(); composedSpellings.clear(); composedRaw.setLength(0) }
@@ -142,7 +143,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             // Only a phrase built from two or more picks is a composition worth fixing;
             // three identical repeats turn it into a single candidate next time.
             if (composedParts.size >= 2) {
-                recordComposition(compositionKey(scheme, composedRaw.toString()),
+                recordComposition(compositionKey(scheme, composedRaw.toString(), keys),
                     composedParts.toList(), composedSpellings.toList())
                 // The composed phrase itself joins the frequency memory as well.
                 learn(composedParts.joinToString(""))
@@ -156,7 +157,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         if (raw.isEmpty()) return null
         // Space commits the highest ranked candidate; a prefix selection keeps the suffix composing.
         if (candidates.isNotEmpty()) return select(0)
-        val literal = Keyboard18Keys.readable(raw)
+        val literal = keys.readable(raw)
         clear()
         return literal
     }
@@ -220,7 +221,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         if (lock.isEmpty()) return true
         val letters = code.replace(" ", "")
         val taps = raw.filter { it != '\'' }
-        if (letters.length != taps.length || letters.indices.any { !Keyboard18Keys.matches(taps[it], letters[it]) })
+        if (letters.length != taps.length || letters.indices.any { !keys.matches(taps[it], letters[it]) })
             return false
         val boundaries = buildSet { var count = 0; code.forEach { if (it == ' ') add(count) else count++ } }
         return fits(0, raw.length, boundaries, abbreviated = false)
@@ -233,7 +234,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
 
     private fun refresh() {
         if (raw.isEmpty()) { candidates = emptyList(); return }
-        val learned = compositionCandidates(compositionKey(scheme, raw)).map {
+        val learned = compositionCandidates(compositionKey(scheme, raw, keys)).map {
             Pinyin18Candidate(it.text, it.spelling, raw.length, 0.0, learned = true, code = learnedCode(it.spelling))
         }.filter { fitsLearned(it.code) }
         val paths = Array(raw.length + 1) { mutableListOf<Path>() }
@@ -309,7 +310,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         if (!text.all { it in 'a'..'z' || it in 'A'..'Z' }) return false
         val lower = text.lowercase()
         if (lower in KEEP_LATIN) return false
-        if (!dictionary.isLiteral(text) || text.length == 1 || lower in Keyboard18Keys.groups) return true
+        if (!dictionary.isLiteral(text) || text.length == 1 || lower in keys.groups) return true
         // Two-letter rows below this weight are key abbreviations or pinyin fragments.
         if (text.length == 2 && dictionary.literalWeight(text) < TWO_LETTER_WORD_MIN_WEIGHT) return true
         return echoesTaps(text, taps)
@@ -329,7 +330,7 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
             if (tap == taps.length) return false
             val state = tap * (text.length + 1) + char
             if (state in failed) return false
-            val allowed = Keyboard18Keys.group(taps[tap].code) ?: taps[tap].toString()
+            val allowed = keys.group(taps[tap].code) ?: taps[tap].toString()
             for (width in 1..allowed.length) {
                 if (char + width > text.length) break
                 if ((char until char + width).all { text[it] in allowed } && match(tap + 1, char + width)) return true
@@ -366,9 +367,10 @@ class Keyboard18Engine(private val dictionary: Keyboard18Dictionary,
         /**
          * Storage key of a learned composition: the scheme plus the projected taps, so the same
          * taps learned under full pinyin are not offered after switching to a shuangpin scheme.
+         * 14-key taps carry a layout prefix; the 18-key format is unchanged for existing learning.
          */
-        internal fun compositionKey(scheme: ShuangpinScheme?, taps: String): String =
-            (scheme?.name ?: "QUANPIN") + ":" +
-                taps.map { if (it == '\'') '|' else Keyboard18Keys.projected(it) }.joinToString("")
+        internal fun compositionKey(scheme: ShuangpinScheme?, taps: String, keys: GroupedKeys = Keyboard18Keys): String =
+            keys.compositionPrefix + (scheme?.name ?: "QUANPIN") + ":" +
+                taps.map { if (it == '\'') '|' else keys.projected(it) }.joinToString("")
     }
 }

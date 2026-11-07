@@ -25,6 +25,8 @@ import io.mo.xatype.keyboard18.Keyboard18Engine
 import io.mo.xatype.keyboard18.Keyboard18HostAppearance
 import io.mo.xatype.keyboard18.Keyboard18HostBridge
 import io.mo.xatype.keyboard18.Keyboard18HostLayout
+import io.mo.xatype.keyboard18.GroupedKeys
+import io.mo.xatype.keyboard18.Keyboard14Keys
 import io.mo.xatype.keyboard18.Keyboard18Keys
 import io.mo.xatype.keyboard18.Keyboard18Store
 import io.mo.xatype.keyboard18.Pinyin18Result
@@ -33,16 +35,16 @@ import io.mo.xatype.util.XposedUtils
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Opt-in 18-key keyboard and independent offline decoder, validated against the resolved host ABI. */
+/** Opt-in 18/14-key keyboards and independent offline decoder, validated against the resolved host ABI. */
 object Keyboard18Hook {
     private val reports = Executors.newSingleThreadExecutor()
-    private data class Loaded(val settings: Bundle, val dictionary: Keyboard18Dictionary?)
+    private data class Loaded(val settings: Bundle, val keys: GroupedKeys, val dictionary: Keyboard18Dictionary?)
     @Volatile private var loaded: Loaded? = null
     @Volatile private var service: InputMethodService? = null
     @Volatile private var layoutMode = "PINYIN"
     @Volatile private var chineseReady = false
     @Volatile private var installFailure: Throwable? = null
-    @Volatile private var layoutReported = false
+    @Volatile private var reportedLayout: GroupedKeys? = null
     @Volatile private var applicationContext: Context? = null
 
     fun install(module: XposedInterface, loader: ClassLoader) {
@@ -123,30 +125,36 @@ object Keyboard18Hook {
             fun perform(ops: List<KeyOp>, thenNative: Boolean = false) = keys.perform(module, chain, ops, thenNative) {
                 XposedUtils.logError(module, "18-key input delivery failed", it)
             }
-            val enabled = loaded?.dictionary != null && service?.let {
-                KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18
-            } == true
+            val enabled = loaded?.dictionary != null && service?.let { groupedKeys(it) } != null
             if (enabled && session != null && label in KeyboardShortcuts.actions) {
                 if (!ConfigManager.isKeyboardShortcutsEnabled()) keys.consumed() else perform(listOf(flush(), KeyOp.Action {
                     runCatching {
                         session.service.currentInputConnection?.let { KeyboardShortcutActions.perform(it, label) }
-                    }.onFailure { XposedUtils.logError(module, "18-key shortcut failed: $label", it) }
+                    }.onFailure { XposedUtils.logError(module, "Grouped-key shortcut failed: $label", it) }
                 }))
             } else if (session == null) chain.proceed()
             else if (kind == "BACKSPACE" && session.engine.raw.isNotEmpty()) {
                 perform(listOf(engineOp({ session.engine.backspace() }) { host.backspace!! }))
             } else if (kind == "SPACE" && session.engine.raw.isNotEmpty()) {
                 perform(listOf(engineOp({ session.engine.input(' ') }) { host.key(' '.code) }))
-            } else if (kind == "CHAR") {
-                val group = Keyboard18Keys.group(code)
-                val letter = code.toChar()
+            } else if (kind == "CHAR" || (session.engine.keys.separatorKey && Keyboard18HostLayout.isSeparator(code))) {
+                // The 14-key separator is the host's segmentation key but types like a character.
+                val grouped = session.engine.keys
+                val separator = grouped.separatorKey && Keyboard18HostLayout.isSeparator(code)
+                val group = if (separator) null else grouped.group(code)
+                val letter = if (separator) Keyboard18HostLayout.SEPARATOR else code.toChar()
                 session.onInput()
-                if ((group != null && keys.uppercase(callbacks)) || letter in 'A'..'Z') {
+                // 14-key shows a separator instead of shift; a shift left over from English must not
+                // turn its group taps into capitals that cannot be released from this layout.
+                if ((group != null && !grouped.separatorKey && keys.uppercase(callbacks)) || letter in 'A'..'Z') {
                     // Native keys release a one-shot shift after the uppercase letter; caps lock stays.
                     perform(listOf(flush(), KeyOp.Commit((group?.first()?.uppercaseChar() ?: letter).toString()),
                         KeyOp.Action { keys.releaseShift(callbacks) }))
                 } else if (group != null || letter in 'a'..'z' || session.engine.raw.isNotEmpty()) {
-                    perform(listOf(engineOp({ session.engine.input(letter) }) { host.key(code) }))
+                    perform(listOf(engineOp({ session.engine.input(letter) }) { host.key(letter.code) }))
+                } else if (grouped.separatorKey && letter == Keyboard18HostLayout.SEPARATOR) {
+                    // With nothing composing, the separator key types an apostrophe.
+                    perform(listOf(KeyOp.Commit(letter.toString())))
                 } else chain.proceed()
             } else if (code < 0 && kind != "BACKSPACE" && session.engine.raw.isNotEmpty()) {
                 perform(listOf(flush()), thenNative = true)
@@ -159,10 +167,11 @@ object Keyboard18Hook {
             val context = contextField.get(engines.manager(chain)) as InputMethodService
             service = context
             chineseReady = false
-            if (engines.engineType(chain) !== bridge.pinyin || KeyboardSelectionHook.selected(context) != KeyboardChoice.KEYBOARD18)
+            val grouped = groupedKeys(context)
+            if (engines.engineType(chain) !== bridge.pinyin || grouped == null)
                 chain.proceed() else {
-                val config = runCatching { load(context) }.onFailure {
-                    XposedUtils.logError(module, "18-key dictionary unavailable; retaining native input", it)
+                val config = runCatching { load(context, grouped) }.onFailure {
+                    XposedUtils.logError(module, "Grouped-key dictionary unavailable; retaining native input", it)
                     reportFailure(context, module, "设置或词库读取失败", it)
                 }.getOrNull()
                 val dictionary = config?.dictionary
@@ -180,14 +189,14 @@ object Keyboard18Hook {
                         compositionCandidates = compositions::candidates,
                         recordComposition = compositions::record)
                     val first = AtomicBoolean(false)
-                    report(context, config.settings, "18键离线引擎已接入，等待输入")
+                    report(context, config.settings, "${grouped.title}离线引擎已接入，等待输入")
                     bridge.create(engine, context) {
-                        if (first.compareAndSet(false, true)) report(context, config.settings, "已收到18键输入（未做运行验收）")
+                        if (first.compareAndSet(false, true)) report(context, config.settings, "已收到${grouped.title}输入（未做运行验收）")
                     }
                 }.onSuccess { chineseReady = true }
                     .onFailure {
                         chineseReady = false
-                        XposedUtils.logError(module, "18-key engine creation failed", it)
+                        XposedUtils.logError(module, "Grouped-key engine creation failed", it)
                         reportFailure(context, module, "引擎创建失败", it)
                     }
                     .getOrElse { chain.proceed() }
@@ -197,26 +206,26 @@ object Keyboard18Hook {
         module.hook(layoutFactory).intercept { chain ->
             val original = chain.proceed()!!
             val context = layoutContext.get(chain.thisObject) as Context
-            if (KeyboardSelectionHook.selected(context) != KeyboardChoice.KEYBOARD18) return@intercept original
-            val config = runCatching { load(context) }.onFailure {
+            val grouped = groupedKeys(context) ?: return@intercept original
+            val config = runCatching { load(context, grouped) }.onFailure {
                 XposedUtils.logError(module, "18-key layout settings unavailable", it)
                 reportFailure(context, module, "布局设置读取失败", it)
             }.getOrNull()
             val english = chain.getArg(3) == true
-            // English keeps the host's native 26-key QWERTY; only Chinese uses the 18-key grid.
+            // English keeps the host's native 26-key QWERTY; only Chinese uses the grouped grid.
             if (english || config?.dictionary == null || !chineseReady || layoutMode != "PINYIN") original else runCatching {
                 layouts.rebuild(original, english = false,
-                    semicolon = Keyboard18Store.scheme(config.settings)?.usesSemicolon == true).also { rebuilt ->
-                    if (!layoutReported) {
-                        layoutReported = true
+                    semicolon = Keyboard18Store.scheme(config.settings)?.usesSemicolon == true, keys = grouped).also { rebuilt ->
+                    if (reportedLayout !== grouped) {
+                        reportedLayout = grouped
                         report(context, config.settings, if (rebuilt !== original)
-                            "18键布局已替换（中文）"
-                        else "18键未替换：当前不是标准26键布局（分离布局暂不支持）")
+                            "${grouped.title}布局已替换（中文）"
+                        else "${grouped.title}未替换：当前不是标准26键布局（分离布局暂不支持）")
                     }
                 }
             }.onFailure {
-                XposedUtils.logError(module, "18-key layout unavailable; retaining native layout", it)
-                report(context, config.settings, "18键布局接入失败，已保留原布局")
+                XposedUtils.logError(module, "Grouped-key layout unavailable; retaining native layout", it)
+                report(context, config.settings, "${grouped.title}布局接入失败，已保留原布局")
             }.getOrDefault(original)
         }
         module.deoptimize(layoutFactory)
@@ -228,17 +237,25 @@ object Keyboard18Hook {
         XposedUtils.log(module, "18-key keyboard hooks installed (opt-in, resolved ABI)")
     }
 
+    private fun groupedKeys(context: Context): GroupedKeys? = when (KeyboardSelectionHook.selected(context)) {
+        KeyboardChoice.KEYBOARD18 -> Keyboard18Keys
+        KeyboardChoice.KEYBOARD14 -> Keyboard14Keys
+        else -> null
+    }
+
+    /** One dictionary stays resident: switching between 18 and 14 keys rebuilds it for the new grouping. */
     @Synchronized
-    private fun load(context: Context): Loaded {
-        loaded?.let { return it }
+    private fun load(context: Context, keys: GroupedKeys): Loaded {
+        loaded?.takeIf { it.keys === keys }?.let { return it }
+        loaded = null
         val settings = context.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "snapshot", null, null)
-            ?: error("无法读取18键设置")
-        if (!settings.getBoolean(Keyboard18Store.SHOW_IN_PICKER)) return Loaded(settings, null).also { loaded = it }
+            ?: error("无法读取${keys.title}设置")
+        if (!Keyboard18Store.visible(settings, keys)) return Loaded(settings, keys, null).also { loaded = it }
         val dictionary = checkNotNull(context.contentResolver.openInputStream(Keyboard18ContentProvider.DICTIONARY_URI))
-            .use { Keyboard18Dictionary.read(it, Keyboard18Store.scheme(settings)) }
+            .use { Keyboard18Dictionary.read(it, Keyboard18Store.scheme(settings), keys) }
         val latest = context.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "snapshot", null, null)
         check(latest?.getLong(Keyboard18Store.REVISION) == settings.getLong(Keyboard18Store.REVISION)) { "设置已更新，请重启输入法" }
-        return Loaded(settings, dictionary).also { loaded = it }
+        return Loaded(settings, keys, dictionary).also { loaded = it }
     }
     private fun report(context: Context, settings: Bundle, message: String) {
         val app = context.applicationContext ?: context
@@ -252,9 +269,10 @@ object Keyboard18Hook {
             runCatching {
                 val settings = app.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "snapshot", null, null)
                     ?: return@runCatching
-                if (!settings.getBoolean(Keyboard18Store.SHOW_IN_PICKER)) return@runCatching
+                val keys = applicationContext?.let(::groupedKeys) ?: Keyboard18Keys
+                if (!Keyboard18Store.visible(settings, keys)) return@runCatching
                 val cause = generateSequence(failure) { it.cause }.last()
-                val message = "18键未接入：$stage；${cause.javaClass.simpleName}: ${cause.message.orEmpty()}".take(400)
+                val message = "${keys.title}未接入：$stage；${cause.javaClass.simpleName}: ${cause.message.orEmpty()}".take(400)
                 app.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "report", null, Bundle().apply {
                     putLong(Keyboard18Store.REVISION, settings.getLong(Keyboard18Store.REVISION))
                     putString(Keyboard18Store.STATUS, message)

@@ -17,8 +17,9 @@ data class Pinyin18Entry(val text: String, val spelling: String, val weight: Int
 }
 
 /** Project once when loading; each tap walks one trie path, never 2^n letter permutations. */
-class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>, val scheme: ShuangpinScheme?) {
-    fun valid(token: Char) = Keyboard18Keys.valid(token) || (scheme?.usesSemicolon == true && token == ';')
+class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>, val scheme: ShuangpinScheme?,
+    val keys: GroupedKeys) {
+    fun valid(token: Char) = keys.valid(token) || (scheme?.usesSemicolon == true && token == ';')
     private class Node {
         // Most trie nodes are leaves or pass-through; allocate collections only when needed.
         var children: HashMap<Char, Node>? = null
@@ -47,7 +48,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
             var node = root
             entry.code.forEach { letter ->
                 val children = node.children ?: HashMap<Char, Node>().also { node.children = it }
-                node = children.getOrPut(Keyboard18Keys.representative(letter)) { Node() }
+                node = children.getOrPut(keys.representative(letter)) { Node() }
                 val completions = node.completions ?: ArrayList<Pinyin18Entry>().also { node.completions = it }
                 if (completions.size < COMPLETIONS) completions.add(entry)
             }
@@ -58,7 +59,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
                 var initialNode = initialRoot
                 entry.initials.forEach { letter ->
                     val children = initialNode.children ?: HashMap<Char, Node>().also { initialNode.children = it }
-                    initialNode = children.getOrPut(Keyboard18Keys.representative(letter)) { Node() }
+                    initialNode = children.getOrPut(keys.representative(letter)) { Node() }
                 }
                 (initialNode.words ?: ArrayList<Pinyin18Entry>().also { initialNode.words = it }).add(entry)
             }
@@ -75,7 +76,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
                     if (letter <= 0 || letter >= code.length) return false
                 } else if (letter !in entry.boundaries) return false
             } else {
-                if (letter >= code.length || !Keyboard18Keys.matches(token, code[letter])) return false
+                if (letter >= code.length || !keys.matches(token, code[letter])) return false
                 letter++
             }
         }
@@ -98,7 +99,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
         for (position in start until raw.length) {
             if (raw[position] == '\'') continue
             if (++count > maxLength) return emptyList()
-            node = node.children?.get(Keyboard18Keys.projected(raw[position])) ?: return emptyList()
+            node = node.children?.get(keys.projected(raw[position])) ?: return emptyList()
         }
         if (count == 0) return emptyList()
         val result = ArrayList<Pinyin18Entry>()
@@ -119,7 +120,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
             val token = raw[position]
             if (token == '\'') continue
             if (++count > maxLength) break
-            node = node.children?.get(Keyboard18Keys.projected(token)) ?: break
+            node = node.children?.get(keys.projected(token)) ?: break
             var retained = 0
             for (entry in node.words.orEmpty()) {
                 if (compatible(entry, raw, start, position + 1, abbreviated)) {
@@ -137,7 +138,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
         for (position in start until raw.length) {
             if (raw[position] == '\'') continue
             count++
-            node = node.children?.get(Keyboard18Keys.projected(raw[position])) ?: return emptyList()
+            node = node.children?.get(keys.projected(raw[position])) ?: return emptyList()
         }
         if (count == 0) return emptyList()
         return node.completions.orEmpty().filter { it.code.length > count && it.code.length - count <= 6 &&
@@ -149,7 +150,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
         private const val WORDS_PER_CODE = 48
         /** yi alone has 300+ characters; this bounds only two-letter abbreviation nodes. */
         private const val WHOLE_WORDS = 600
-        fun read(input: InputStream, scheme: ShuangpinScheme? = null): Keyboard18Dictionary {
+        fun read(input: InputStream, scheme: ShuangpinScheme? = null, keys: GroupedKeys = Keyboard18Keys): Keyboard18Dictionary {
             val rows = ArrayList<Pinyin18Entry>()
             val encoded = HashMap<String, String?>()
             GZIPInputStream(input).bufferedReader(Charsets.UTF_8).useLines { lines ->
@@ -179,7 +180,7 @@ class Keyboard18Dictionary private constructor(val entries: List<Pinyin18Entry>,
                 }
             }
             require(rows.isNotEmpty() && rows.size <= 300_000) { "拼音词库为空或过大" }
-            return Keyboard18Dictionary(rows.sortedByDescending { it.weight }, scheme)
+            return Keyboard18Dictionary(rows.sortedByDescending { it.weight }, scheme, keys)
         }
     }
 }

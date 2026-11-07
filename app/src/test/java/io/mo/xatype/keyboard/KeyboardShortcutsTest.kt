@@ -11,16 +11,18 @@ class KeyboardShortcutsTest {
     private val adapter = KeyboardShortcutHostLayout(loader, abi)
     private fun key(code: Int, label: String, popup: List<String>? = null) = ka.c(code,
         label, 1f, 36f, 48f, ka.f.CHAR, "-", "-", popup, 1, 5, false, true, false, false, 7, false, 9)
-    private fun layout(english: Boolean, shift: Boolean, split: Boolean): ka.g {
+    private fun layout(english: Boolean, shift: Boolean, split: Boolean, sideGaps: Boolean = false): ka.g {
         val rows = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm").mapIndexed { index, letters ->
             val keys = letters.map { letter -> key((if (shift) letter.uppercaseChar() else letter).code,
                 (if (!english || shift) letter.uppercaseChar() else letter).toString(),
                 listOf(letter.uppercaseChar().toString(), "-", letter.toString())) }.toMutableList()
+            if (index == 2 && sideGaps) { keys.add(0, gap()); keys.add(gap()) }
             if (index == 2) { keys.add(0, ka.c(-1, ka.f.SHIFT)); keys.add(ka.c(-2, ka.f.BACKSPACE)) }
             if (split) ka.e(1f, keys.take(keys.size / 2), keys.drop(keys.size / 2)) else ka.e(1f, keys, null)
         } + ka.e(1f, listOf(ka.c(32, ka.f.SPACE)), null)
         return ka.g("qwerty", "拼音26键", rows, listOf("PINYIN", "ENGLISH"), 8f, 4f, true, 12f, true)
     }
+    private fun gap() = ka.c(-998, "", 0f, 6f, 48f, ka.f.GAP, null, null, null, null, null, false, null, false, false, null, false, null)
     private fun keys(layout: ka.g) = layout.c.flatMap { it.a + it.c.orEmpty() }
 
     @Test fun `native Chinese English shift and split keys all retain independent display casing`() {
@@ -64,6 +66,50 @@ class KeyboardShortcutsTest {
                 }
             }
         }
+    }
+
+    @Test fun `14 key builds paired rows with separator and bottom row shortcuts`() {
+        val builder = Keyboard18HostLayout(loader, abi)
+        for (shift in listOf(false, true)) {
+            val keyboard = builder.rebuild(layout(false, shift, false), english = false,
+                keys = io.mo.xatype.keyboard18.Keyboard14Keys) as ka.g
+            assertEquals("14键", keyboard.b)
+            assertEquals(listOf(5, 5, 6, 1), keyboard.c.map { it.a.size })
+            val bottom = keyboard.c[2].a
+            assertEquals(Keyboard18HostLayout.SEPARATOR_CODE, bottom.first().a)
+            assertEquals(ka.f.FUNCTION, bottom.first().f)
+            assertEquals(-2, bottom.last().a)
+            // Each letter row spans the native first-row width.
+            val widths = keyboard.c.take(3).map { row -> row.a.sumOf { it.d!!.toDouble() } + 4.0 * (row.a.size - 1) }
+            widths.forEach { assertEquals(widths.first(), it, 0.01) }
+            val actions = keys(keyboard).mapNotNull { source ->
+                adapter.action(source, KEYBOARD14)?.let { builder.groupOf(source) to it }
+            }.toMap()
+            assertEquals(mapOf("zx" to "全选", "cv" to "复制", "bn" to "粘贴", "m" to "段尾"), actions)
+            assertFalse(keys(keyboard).any { it.i.orEmpty().any(KeyboardShortcuts.actions::contains) })
+            assertTrue(keys(keyboard).none { adapter.action(it, KEYBOARD18) != null || adapter.action(it, QWERTY) != null })
+            keys(keyboard).forEach { source -> adapter.action(source, KEYBOARD14)?.let { action ->
+                assertEquals(action, (adapter.actionKey(source, action) as ka.c).b)
+            } }
+        }
+        // Native side gaps set the separator and delete apart while the row keeps the full width.
+        val gapped = builder.rebuild(layout(false, false, false, sideGaps = true), english = false,
+            keys = io.mo.xatype.keyboard18.Keyboard14Keys) as ka.g
+        val row = gapped.c[2].a
+        assertEquals(listOf(ka.f.FUNCTION, ka.f.GAP, ka.f.CHAR, ka.f.CHAR, ka.f.CHAR, ka.f.CHAR, ka.f.GAP, ka.f.BACKSPACE), row.map { it.f })
+        assertEquals(listOf(6f, 6f), row.filter { it.f == ka.f.GAP }.map { it.d })
+        val visible = row.filter { it.f != ka.f.GAP }
+        val first = gapped.c[0].a
+        assertEquals(first.sumOf { it.d!!.toDouble() } + 4.0 * (first.size - 1),
+            row.sumOf { it.d!!.toDouble() } + 4.0 * (visible.size - 1), 0.01)
+        assertEquals(0.77f, visible.first().d!! / visible[1].d!!, 0.01f)
+        // Native M keeps its own styling and 26-key shortcut, never the 14-key group.
+        val nativeM = key('m'.code, "M", listOf("M", "?", "m"))
+        assertNull(builder.groupOf(nativeM))
+        assertNull(adapter.action(nativeM, KEYBOARD14))
+        assertEquals(KEYBOARD14, KeyboardShortcutLayout.fromHost("PINYIN", "qwerty", keyboard18 = false, keyboard14 = true))
+        assertEquals(QWERTY, KeyboardShortcutLayout.fromHost("ENGLISH", "qwerty", keyboard18 = false, keyboard14 = true))
+        assertNull(KeyboardShortcutLayout.fromHost("T9", "t9", keyboard18 = false, keyboard14 = true))
     }
 
     @Test fun `18 key switches to native English layout and all five shortcuts survive shift and split`() {

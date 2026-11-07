@@ -465,6 +465,10 @@ class MainActivity : AppCompatActivity() {
             kit.navRow("18 键键盘", null, R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, Keyboard18Activity::class.java))
             },
+            kit.navRow("14 键键盘", null, R.drawable.ic_nav_keyboard) {
+                startActivity(Intent(this, Keyboard18Activity::class.java)
+                    .putExtra(Keyboard18Activity.EXTRA_LAYOUT, Keyboard18Activity.LAYOUT_14))
+            },
             kit.navRow("在线词库", "雾凇拼音 / 万象拼音，二选一", R.drawable.ic_shape_import) {
                 startActivity(Intent(this, OnlineDictActivity::class.java))
             }
@@ -593,7 +597,7 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_Y, y).apply()
         }
         controls.forEach { container.addView(it) }
-        val note = kit.label("文字显示在九键、18键、拼音/英文26键及虎码/五笔快捷键的底部居中；与按键下滑快捷操作同时开启，重启输入法后生效。",
+        val note = kit.label("文字显示在九键、18/14键、拼音/英文26键及虎码/五笔快捷键的底部居中；与按键下滑快捷操作同时开启，重启输入法后生效。",
             12f, R.color.text_secondary)
         val pad = kit.dimen(R.dimen.settings_row_padding)
         note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))

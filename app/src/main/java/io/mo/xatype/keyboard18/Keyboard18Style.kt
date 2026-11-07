@@ -12,6 +12,7 @@ object Keyboard18Style {
     const val PREVIEW_HINT_SCALE = 0.55f
     const val PREVIEW_RADIUS = 8
     const val PREVIEW_GAP = 2
+    const val PREVIEW_SIDE_GAP = 4
     private const val LETTER_SEPARATOR = "\u2009"
 
     fun weight(group: String) = if (group.length == 2) PAIR_WEIGHT else SINGLE_WEIGHT

@@ -24,7 +24,7 @@ object KeyboardSelectionHook {
     private const val PREFS = "xatype_keyboard_choice"
     private const val SELECTED = "selected"
     private data class Visibility(val shape: Boolean, val keyboard18: Boolean,
-                                  val legacyShape: Boolean, val legacy18: Boolean)
+                                  val legacyShape: Boolean, val legacy18: Boolean, val keyboard14: Boolean)
     @Volatile private var visibility: Visibility? = null
     @Volatile private var context: Context? = null
     @Volatile private var ready = false
@@ -38,7 +38,8 @@ object KeyboardSelectionHook {
         val layoutReady = HostSymbols.has(HostSymbols.KEYBOARD_LAYOUT) && HostSymbols.KEYBOARD_LAYOUT !in HostSymbols.missing
         return Visibility(shape.getBoolean(ShapeStore.SHOW_IN_PICKER) && engineReady,
             keyboard18.getBoolean(Keyboard18Store.SHOW_IN_PICKER) && engineReady && layoutReady,
-            shape.getBoolean(ShapeStore.ENABLED), keyboard18.getBoolean(Keyboard18Store.ENABLED)).also { visibility = it }
+            shape.getBoolean(ShapeStore.ENABLED), keyboard18.getBoolean(Keyboard18Store.ENABLED),
+            keyboard18.getBoolean(Keyboard18Store.SHOW14_IN_PICKER) && engineReady && layoutReady).also { visibility = it }
     }
 
     fun selected(ctx: Context): KeyboardChoice {
@@ -48,7 +49,8 @@ object KeyboardSelectionHook {
             val visible = visibility(ctx)
             val sp = ctx.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val saved = sp.getString(SELECTED, null)
-            KeyboardChoice.resolve(saved, visible.shape, visible.keyboard18, visible.legacyShape, visible.legacy18).also {
+            KeyboardChoice.resolve(saved, visible.shape, visible.keyboard18, visible.legacyShape, visible.legacy18,
+                visible.keyboard14).also {
                 // Store migration/fallback so a hidden choice cannot unexpectedly reactivate later.
                 if (saved != it.id) check(sp.edit().putString(SELECTED, it.id).commit())
             }
@@ -80,7 +82,7 @@ object KeyboardSelectionHook {
             val items = chain.getArg(0) as? List<*>
             if (!ready || ctx == null || visible == null || items == null || items.size !in 1..4) chain.proceed()
             else {
-                val extended = picker.extend(items.toTypedArray(), visible.shape, visible.keyboard18)
+                val extended = picker.extend(items.toTypedArray(), visible.shape, visible.keyboard18, visible.keyboard14)
                 if (extended == null) chain.proceed() else chain.proceed(arrayOf(extended, chain.getArg(1)))
             }
         }
@@ -103,6 +105,7 @@ object KeyboardSelectionHook {
                     args[3] = (args[3] as? Set<*>)?.toMutableSet()?.apply {
                         if (visible.shape) add(KeyboardChoice.SHAPE.id)
                         if (visible.keyboard18) add(KeyboardChoice.KEYBOARD18.id)
+                        if (visible.keyboard14) add(KeyboardChoice.KEYBOARD14.id)
                     }
                     chain.proceed(args)
                 }
@@ -178,6 +181,7 @@ object KeyboardSelectionHook {
                     }
                     if (visible.shape) entry(KeyboardChoice.SHAPE, "虎码/五笔")
                     if (visible.keyboard18) entry(KeyboardChoice.KEYBOARD18, "18键")
+                    if (visible.keyboard14) entry(KeyboardChoice.KEYBOARD14, "14键")
                     val original = chain.getArg(4)!!
                     val handler = SelectionCallback(ctx, original, "PINYIN") { target, id ->
                         val result = invoke.invoke(target, id)
@@ -229,14 +233,14 @@ object KeyboardSelectionHook {
             "g" -> {
                 val id = args!![0] as String
                 val visible = visibility(context)
-                val choice = KeyboardChoice.resolve(id, visible.shape, visible.keyboard18)
+                val choice = KeyboardChoice.resolve(id, visible.shape, visible.keyboard18, show14 = visible.keyboard14)
                 val sp = context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 val before = sp.getString(SELECTED, null)
                 check(sp.edit().putString(SELECTED, choice.id).commit())
                 try {
                     // Even PINYIN -> PINYIN recreates the engine through the normal host lifecycle.
-                    invoke(original, if (id == KeyboardChoice.SHAPE.id || id == KeyboardChoice.KEYBOARD18.id)
-                        pinyinId else id)
+                    invoke(original, if (id == KeyboardChoice.SHAPE.id || id == KeyboardChoice.KEYBOARD18.id ||
+                        id == KeyboardChoice.KEYBOARD14.id) pinyinId else id)
                 } catch (failure: Throwable) {
                     sp.edit().putString(SELECTED, before).commit()
                     throw failure

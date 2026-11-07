@@ -22,7 +22,8 @@ object KeyboardShortcutsHook {
      * Keyboards whose visible keys come from the native layouts. The shape (虎码/五笔) keyboard
      * replaces only the PINYIN engine and keeps the native 26-key layout and candidate callbacks.
      */
-    private val shortcutKeyboards = setOf(KeyboardChoice.PINYIN, KeyboardChoice.KEYBOARD18, KeyboardChoice.SHAPE)
+    private val shortcutKeyboards = setOf(KeyboardChoice.PINYIN, KeyboardChoice.KEYBOARD18,
+        KeyboardChoice.KEYBOARD14, KeyboardChoice.SHAPE)
 
     @Volatile private var service: InputMethodService? = null
     @Volatile private var supported: Boolean? = null
@@ -98,9 +99,9 @@ object KeyboardShortcutsHook {
             val target = chain.getArg(1)!!
             val selectedKeyboard = KeyboardSelectionHook.selected(ime)
             val currentMode = (mode.invoke(target) as? Enum<*>)?.name
-            // Chinese 18-key owns its decoder; English uses the native engine and must
+            // Chinese 18/14-key owns its decoder; English uses the native engine and must
             // finish native composition here before dispatching any editor action.
-            if (selectedKeyboard == KeyboardChoice.KEYBOARD18 && currentMode != "ENGLISH")
+            if (selectedKeyboard.grouped && currentMode != "ENGLISH")
                 return@intercept chain.proceed()
             if (supported != true || selectedKeyboard !in shortcutKeyboards ||
                 KeyboardShortcutLayout.fromHost(currentMode,
@@ -142,8 +143,11 @@ object KeyboardShortcutsHook {
         ShortcutSwipeHostHook(floating = ::floating, enabled = {
             supported == true && ConfigManager.isKeyboardShortcutsEnabled() &&
                 service?.let { KeyboardSelectionHook.selected(it) in shortcutKeyboards } == true
-        }, layout = { KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,
-            keyboard18 = service?.let { KeyboardSelectionHook.selected(it) == KeyboardChoice.KEYBOARD18 } == true) })
+        }, layout = {
+            val selected = service?.let { KeyboardSelectionHook.selected(it) }
+            KeyboardShortcutLayout.fromHost(layoutMode, nativeLayoutId,
+                keyboard18 = selected == KeyboardChoice.KEYBOARD18, keyboard14 = selected == KeyboardChoice.KEYBOARD14)
+        })
             .install(module, loader)
         XposedUtils.log(module, "Independent downward swipe shortcut hooks installed (resolved ABI)")
     }
