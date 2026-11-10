@@ -5,6 +5,8 @@ import android.view.View
 import android.widget.LinearLayout
 import io.mo.xatype.R
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.keyboard.KeyboardShortcuts
+import io.mo.xatype.keyboard.ShortcutKeyboard
 import io.mo.xatype.ui.SettingsKit.Detail
 
 /** A plain on/off hook setting: a one-line [summary] under the title, caveats in an optional [detail]. */
@@ -35,7 +37,7 @@ internal object FeatureCatalog {
 
     val keyboardShortcuts = Feature(ConfigManager.KEY_KEYBOARD_SHORTCUTS, "按键下滑快捷操作",
         "按住按键下滑，快速段首、复制、粘贴、剪切、全选", Detail(
-            "按住对应按键向下滑，字母会随距离渐变为功能图标；轻震后松手执行，往回滑可取消。",
+            "按住对应按键向下滑，字母会随距离渐变为功能图标；轻震后松手执行，往回滑可取消。可在「自定义快捷键」中把操作改到任意字母键。",
             notes = listOf("适用于拼音九键、18 键、14 键、拼音/英文 26 键与虎码/五笔。18/14 键切到英文、虎码/五笔均使用 26 键快捷操作。",
                 "复制、剪切优先处理已选文字；没有选区时先全选。剪切使用系统编辑操作。"),
             extra = ::shortcutTable
@@ -68,16 +70,6 @@ internal object FeatureCatalog {
 
     val keyboardFeatures get() = listOf(keyboardShortcuts, shortcutLabels, keyboardHandwriting, emojiCandidates, keyboardHeight, bottomSpacing, t9Shuangpin)
 
-    /** Rows of action, nine-key, 26-key (also shape input), 18-key and 14-key triggers. */
-    private val shortcutKeys = listOf(
-        listOf("段首", "—", "—", "Z", "—"),
-        listOf("复制", "8", "C", "XC", "CV"),
-        listOf("粘贴", "9", "V", "V", "BN"),
-        listOf("剪切", "4", "X", "—", "—"),
-        listOf("全选", "7", "Z", "BN", "ZX"),
-        listOf("段尾", "6", "M", "M", "M")
-    )
-
     private fun shortcutTable(kit: SettingsKit): View {
         val context = kit.context
         val table = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
@@ -90,16 +82,23 @@ internal object FeatureCatalog {
                     index == 0 -> kit.label(text, 14f, R.color.text_primary)
                     else -> kit.label(text, 14f, R.color.primary, bold = true).apply {
                         gravity = Gravity.CENTER
+                        minHeight = kit.dp(32)
+                        val pad = kit.dp(2)
+                        setPadding(pad, pad, pad, pad)
                         setBackgroundResource(R.drawable.bg_key_chip)
                     }
                 }
-                addView(cell, LinearLayout.LayoutParams(0, if (header || index == 0) LinearLayout.LayoutParams.WRAP_CONTENT else kit.dp(32), 1f).apply {
+                addView(cell, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     if (index > 0) marginStart = kit.dimen(R.dimen.space_sm)
                 })
             }
         }
-        table.addView(line(listOf("操作", "九键", "26 键", "18 键", "14 键"), header = true))
-        shortcutKeys.forEach { cells ->
+        table.addView(line(listOf("操作") + ShortcutKeyboard.entries.map { it.title }, header = true))
+        // The user's current assignment; see ShortcutKeysActivity.
+        val rows = KeyboardShortcuts.actionOrder.map { action ->
+            listOf(action) + ShortcutKeyboard.entries.map { ShortcutMappings.keysFor(context, it, action) }
+        }
+        rows.forEach { cells ->
             table.addView(line(cells, header = false), LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = kit.dimen(R.dimen.space_sm) })

@@ -58,6 +58,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var purifyCount: TextView
     private lateinit var keyboardCount: TextView
     private lateinit var appearanceState: TextView
+    private lateinit var updater: AppUpdater
+    private lateinit var updateBanner: LinearLayout
+    private lateinit var updateRow: LinearLayout
 
     private val purifyKeys = FeatureCatalog.purifyGroups.flatMap { (_, features) -> features.map { it.key } }
     private val keyboardKeys = FeatureCatalog.keyboardFeatures.map { it.key }
@@ -75,6 +78,7 @@ class MainActivity : AppCompatActivity() {
             topBar = findViewById(R.id.toolbar), bottomBar = findViewById(R.id.navBar))
         kit = SettingsKit(this)
         prefs = ConfigManager.getLocalPrefs(this)
+        updater = AppUpdater(this, ::refreshUpdate)
 
         initRestartBar()
         // Registered first so the appearance panel's own back handling wins while it is open.
@@ -96,6 +100,7 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState?.getBoolean(STATE_RESTART_PENDING) == true) markRestartNeeded()
         selectTab(savedInstanceState?.getInt(STATE_TAB, TAB_HOME) ?: TAB_HOME, animate = false)
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        refreshUpdate()
         // Only on a fresh launch: rotation and process restore go straight to the page.
         if (savedInstanceState == null && prefs.getBoolean(ConfigManager.KEY_SPLASH_ANIMATION, true) &&
             ValueAnimator.areAnimatorsEnabled()
@@ -109,6 +114,7 @@ class MainActivity : AppCompatActivity() {
         // Reports arrive whenever the input method restarts.
         refreshStatus()
         refreshOverview()
+        updater.maybeAutoCheck()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -121,6 +127,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         appearancePage.destroy()
+        updater.destroy()
         super.onDestroy()
     }
 
@@ -277,6 +284,11 @@ class MainActivity : AppCompatActivity() {
         root.addView(statusCard, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = kit.dimen(R.dimen.space_sm)
         })
+        // Shown only while a newer release is known.
+        updateBanner = kit.card().apply { visibility = View.GONE }
+        root.addView(updateBanner, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = kit.dimen(R.dimen.space_md)
+        })
 
         root.addView(kit.sectionHeader("已开启"))
         val tiles = LinearLayout(this).apply {
@@ -310,6 +322,15 @@ class MainActivity : AppCompatActivity() {
                     if (hide) "已隐藏桌面图标，可在 LSPosed 管理器的模块列表中进入" else "已恢复桌面图标",
                     Toast.LENGTH_SHORT
                 ).show()
+            }.view
+        ))
+
+        updateRow = kit.navRow("检查更新", null, R.drawable.ic_shape_import) { updater.check(manual = true) }
+        kit.group(root, "版本更新", listOf(
+            updateRow,
+            kit.switchRow("自动检查更新", "打开设置时检查 GitHub 上的新版本", updater.autoCheck) { checked ->
+                updater.autoCheck = checked
+                if (checked) updater.maybeAutoCheck()
             }.view
         ))
 
@@ -347,6 +368,29 @@ class MainActivity : AppCompatActivity() {
         })
         tile.contentDescription = title
         return value
+    }
+
+    /** The home banner and the check row follow the latest release found. */
+    private fun refreshUpdate() {
+        if (!::updateBanner.isInitialized) return
+        val release = updater.available()
+        updateBanner.removeAllViews()
+        updateBanner.visibility = if (release == null) View.GONE else View.VISIBLE
+        if (release != null) {
+            updateBanner.addView(kit.navRow("发现新版本 ${release.tag}", "查看更新日志并安装", R.drawable.ic_shape_import) {
+                updater.show(release)
+            })
+        }
+        val subtitle = "当前版本 ${BuildConfig.VERSION_NAME}" + if (release != null) " · 可更新到 ${release.tag}" else ""
+        val parent = updateRow.parent as? ViewGroup ?: return
+        val index = parent.indexOfChild(updateRow)
+        val params = updateRow.layoutParams
+        parent.removeView(updateRow)
+        updateRow = kit.navRow("检查更新", subtitle, R.drawable.ic_shape_import) {
+            val available = updater.available()
+            if (available != null) updater.show(available) else updater.check(manual = true)
+        }
+        parent.addView(updateRow, index, params)
     }
 
     private fun refreshOverview() {
@@ -446,6 +490,9 @@ class MainActivity : AppCompatActivity() {
         // Key shortcuts are independent of experimental keyboards and appearance.
         kit.group(root, "输入增强", listOf(
             featureSwitch(FeatureCatalog.keyboardShortcuts).view,
+            kit.navRow("自定义快捷键", "为每种键盘的任意字母键指定下滑操作", R.drawable.ic_nav_keyboard) {
+                startActivity(Intent(this, ShortcutKeysActivity::class.java))
+            },
             handwritingRow(),
             featureSwitch(FeatureCatalog.emojiCandidates).view,
             predictionModeRow(),

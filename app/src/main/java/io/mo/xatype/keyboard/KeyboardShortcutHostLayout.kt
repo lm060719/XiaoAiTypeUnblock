@@ -7,7 +7,9 @@ import io.mo.xatype.keyboard18.Keyboard14Keys
 import io.mo.xatype.keyboard18.Keyboard18Keys
 
 /** Inspect native/grouped letters and create a release action without mutating visible keys. */
-class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardAbi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_LAYOUT)) {
+class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardAbi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_LAYOUT),
+                                 /** The user's key-to-action mapping per keyboard; defaults when unconfigured. */
+                                 private val mapping: (ShortcutKeyboard) -> Map<String, String> = { it.defaults }) {
     val key = abi.type("ka.c")
     val layout = abi.type("ka.g")
     private val kind = abi.type("ka.f")
@@ -35,27 +37,27 @@ class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardA
         if (layout == KeyboardShortcutLayout.T9) {
             val letters = label(instance).filterNot(Char::isWhitespace).lowercase()
             if (code !in '2'.code..'9'.code || KeyboardShortcuts.t9Letters[code.toChar()] != letters) return null
-            return KeyboardShortcuts.groups9[letters]
+            return mapping(ShortcutKeyboard.NINE)[letters]
         }
         if (layout == KeyboardShortcutLayout.KEYBOARD18) {
             val letters = label(instance).filterNot(Char::isWhitespace).lowercase()
             val group = Keyboard18Keys.group(code) ?: Keyboard18Keys.groups.firstOrNull {
                 it.first() == code.toChar().lowercaseChar() && it == letters
             }
-            return KeyboardShortcuts.groups18[group].takeIf { group == letters }
+            return mapping(ShortcutKeyboard.KEYBOARD18)[group].takeIf { group == letters }
         }
         if (layout == KeyboardShortcutLayout.KEYBOARD14) {
             // Only the generated private codes: native M shares the label of the 14-key M group.
             val letters = label(instance).filterNot(Char::isWhitespace).lowercase()
             val group = Keyboard14Keys.group(code)
-            return KeyboardShortcuts.groups14[group].takeIf { group == letters }
+            return mapping(ShortcutKeyboard.KEYBOARD14)[group].takeIf { group == letters }
         }
         if (code !in 'a'.code..'z'.code && code !in 'A'.code..'Z'.code) return null
         val label = fields[1].get(instance) as? String ?: return null
         // Native key labels can stay uppercase while input codes remain lowercase.
         // Require the same single letter without conflating display case and input case.
         if (label.length != 1 || !label[0].equals(code.toChar(), ignoreCase = true)) return null
-        return KeyboardShortcuts.letters[code.toChar().lowercaseChar()]
+        return mapping(ShortcutKeyboard.QWERTY)[code.toChar().lowercaseChar().toString()]
     }
 
     fun actionKey(source: Any, action: String): Any {

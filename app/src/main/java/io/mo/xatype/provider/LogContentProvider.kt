@@ -40,6 +40,9 @@ class LogContentProvider : ContentProvider() {
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HANDWRITING, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HANDWRITING, false))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, local.getInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, io.mo.xatype.config.ConfigManager.HANDWRITING_SIDE_DISTANCE_DEFAULT).coerceIn(io.mo.xatype.config.ConfigManager.HANDWRITING_SIDE_DISTANCE_RANGE))
                     result.putInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_UP_DISTANCE, local.getInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_UP_DISTANCE, io.mo.xatype.config.ConfigManager.HANDWRITING_UP_DISTANCE_DEFAULT).coerceIn(io.mo.xatype.config.ConfigManager.HANDWRITING_UP_DISTANCE_RANGE))
+                    for (keyboard in io.mo.xatype.keyboard.ShortcutKeyboard.entries) {
+                        local.getString(keyboard.prefKey, null)?.let { result.putString(keyboard.prefKey, it) }
+                    }
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, false))
                     result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, false))
                     result.putString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, local.getString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, "KEEP"))

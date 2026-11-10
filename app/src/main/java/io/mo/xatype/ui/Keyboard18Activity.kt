@@ -22,6 +22,7 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.widget.NestedScrollView
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.KeyboardShortcuts
+import io.mo.xatype.keyboard.ShortcutKeyboard
 import io.mo.xatype.keyboard.ShuangpinScheme
 import io.mo.xatype.keyboard18.Keyboard18Dictionary
 import io.mo.xatype.keyboard18.Keyboard18Engine
@@ -251,7 +252,7 @@ class Keyboard18Activity : AppCompatActivity() {
                     }
                     button.contentDescription = "${letter.uppercaseChar()}键"
                     (button as ShortcutSwipeButton).apply {
-                        shortcut = KeyboardShortcuts.letters[letter]
+                        shortcut = ShortcutMappings.load(this@Keyboard18Activity, ShortcutKeyboard.QWERTY)[letter.toString()]
                         shortcutsEnabled = { ConfigManager.getLocalPrefs(this@Keyboard18Activity)
                             .getBoolean(ConfigManager.KEY_KEYBOARD_SHORTCUTS, false) }
                         executeShortcut = { this@Keyboard18Activity.shortcut(it) }
@@ -287,7 +288,8 @@ class Keyboard18Activity : AppCompatActivity() {
                     }
                     button.contentDescription = "${group.uppercase()}键，长按选择字母和符号；下滑快捷操作由首页开关控制"
                     (button as ShortcutSwipeButton).apply {
-                        shortcut = (if (keys === Keyboard14Keys) KeyboardShortcuts.groups14 else KeyboardShortcuts.groups18)[group]
+                        shortcut = ShortcutMappings.load(this@Keyboard18Activity,
+                            if (keys === Keyboard14Keys) ShortcutKeyboard.KEYBOARD14 else ShortcutKeyboard.KEYBOARD18)[group]
                         shortcutsEnabled = { ConfigManager.getLocalPrefs(this@Keyboard18Activity)
                             .getBoolean(ConfigManager.KEY_KEYBOARD_SHORTCUTS, false) }
                         executeShortcut = { this@Keyboard18Activity.shortcut(it) }

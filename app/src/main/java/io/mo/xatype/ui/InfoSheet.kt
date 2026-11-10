@@ -87,7 +87,16 @@ internal object InfoSheet {
         dialog = present(context, title, body, "取消")
     }
 
-    private fun present(context: Context, title: CharSequence, body: View, action: String): Dialog {
+    /**
+     * A sheet with [body] plus a primary button above the dismiss button. [onPrimary] gets the
+     * button, so long work can show progress on it; the sheet stays open until dismissed.
+     */
+    fun withAction(context: Context, title: CharSequence, body: View, primary: String, dismiss: String,
+                   onPrimary: (Button) -> Unit): Dialog =
+        present(context, title, body, dismiss, primary, onPrimary)
+
+    private fun present(context: Context, title: CharSequence, body: View, action: String,
+                        primary: String? = null, onPrimary: ((Button) -> Unit)? = null): Dialog {
         val kit = SettingsKit(context)
         val sheet = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -112,6 +121,18 @@ internal object InfoSheet {
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         val dialog = Sheet(context, sheet)
+        if (primary != null && onPrimary != null) sheet.addView(Button(context).apply {
+            text = primary
+            textSize = 15f
+            isAllCaps = false
+            setTextColor(kit.color(R.color.on_primary))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setBackgroundResource(R.drawable.bg_button_primary)
+            stateListAnimator = null
+            setOnClickListener { onPrimary(this) }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, kit.dp(48)).apply {
+            topMargin = kit.dimen(R.dimen.space_xl)
+        })
         sheet.addView(Button(context).apply {
             text = action
             textSize = 15f
@@ -122,7 +143,7 @@ internal object InfoSheet {
             stateListAnimator = null
             setOnClickListener { dialog.cancel() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, kit.dp(48)).apply {
-            topMargin = kit.dimen(R.dimen.space_xl)
+            topMargin = kit.dimen(if (primary != null) R.dimen.space_sm else R.dimen.space_xl)
         })
         dialog.show()
         return dialog

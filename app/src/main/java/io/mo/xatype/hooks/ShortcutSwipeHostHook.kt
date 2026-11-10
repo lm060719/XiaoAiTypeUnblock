@@ -55,7 +55,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
 
     fun install(module: XposedInterface, loader: ClassLoader) {
         val abi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_SWIPE)
-        val bridge = ShortcutSwipeHostBridge(loader, abi)
+        val bridge = ShortcutSwipeHostBridge(loader, abi, ConfigManager::getShortcutMapping)
         val renderer = abi.namedMethods(abi.type("z9.w5"), "a").single {
             it.parameterCount >= 30 && it.parameterTypes.first() == bridge.key
         }

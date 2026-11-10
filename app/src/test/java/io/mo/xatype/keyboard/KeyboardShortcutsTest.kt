@@ -136,6 +136,31 @@ class KeyboardShortcutsTest {
         }
     }
 
+    @Test fun `custom mapping binds any letter key and drops unbound defaults`() {
+        val custom = mapOf(ShortcutKeyboard.QWERTY to ShortcutKeyboard.QWERTY.decode("a=复制,q=段首"),
+            ShortcutKeyboard.NINE to ShortcutKeyboard.NINE.decode("abc=粘贴"))
+        val mapped = KeyboardShortcutHostLayout(loader, abi) { custom[it] ?: it.defaults }
+        assertEquals("复制", mapped.action(key('a'.code, "A"), QWERTY))
+        assertEquals("段首", mapped.action(key('Q'.code, "Q"), QWERTY))
+        assertNull(mapped.action(key('c'.code, "C"), QWERTY))
+        assertEquals("粘贴", mapped.action(key('2'.code, "ABC"), T9))
+        assertNull(mapped.action(key('9'.code, "WXYZ"), T9))
+        assertEquals("复制", (mapped.actionKey(key('a'.code, "A"), "复制") as ka.c).b)
+    }
+
+    @Test fun `mapping storage keeps defaults until edited and ignores invalid entries`() {
+        for (keyboard in ShortcutKeyboard.entries) {
+            assertEquals(keyboard.defaults, keyboard.decode(null))
+            assertEquals(keyboard.defaults, keyboard.decode(keyboard.encode(keyboard.defaults)))
+            assertTrue(keyboard.keys.containsAll(keyboard.defaults.keys))
+            assertEquals(keyboard.keys.toSet(), keyboard.rows.flatten().toSet())
+        }
+        assertEquals(emptyMap<String, String>(), ShortcutKeyboard.QWERTY.decode(""))
+        assertEquals(mapOf("b" to "全选"), ShortcutKeyboard.QWERTY.decode("b=全选,bn=复制,c=删除,=,x"))
+        assertEquals(mapOf("bn" to "全选"), ShortcutKeyboard.KEYBOARD18.decode("bn=全选,b=复制"))
+        assertEquals("2 ABC", ShortcutKeyboard.NINE.keyLabel("abc"))
+    }
+
     @Test fun `unrelated labels symbols controls and non shortcut letters are not gestures`() {
         assertNull(adapter.action(key('a'.code, "A"), QWERTY))
         // Cut moved from B to X on the native 26-key layout (pinyin, English, shape input).

@@ -15,9 +15,10 @@ import java.lang.reflect.Proxy
 import kotlin.math.max
 
 /** The resolved Compose ABI. No Compose runtime is bundled with the module. */
-class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: KeyboardAbi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_SWIPE)) {
+class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: KeyboardAbi = KeyboardAbi.require(loader, HostSymbols.KEYBOARD_SWIPE),
+                              mapping: (ShortcutKeyboard) -> Map<String, String> = { it.defaults }) {
     private fun type(name: String) = abi.type(name)
-    private val keys = KeyboardShortcutHostLayout(loader, abi)
+    private val keys = KeyboardShortcutHostLayout(loader, abi, mapping)
     val key = keys.key
     val modifier = type("e1.o")
     val callback = type("bd.b")

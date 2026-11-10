@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.content.res.Configuration
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.keyboard.PredictionMode
+import io.mo.xatype.keyboard.ShortcutKeyboard
 
 object ConfigManager {
     const val PREFS_NAME = "settings"
@@ -26,11 +27,11 @@ object ConfigManager {
     const val KEY_KEYBOARD_HANDWRITING = "pref_keyboard_handwriting"
     /** dp an upward first stroke travels before handwriting claims it; shorter swipes stay the host's symbols. */
     const val KEY_HANDWRITING_UP_DISTANCE = "pref_handwriting_up_distance"
-    const val HANDWRITING_UP_DISTANCE_DEFAULT = 96
+    const val HANDWRITING_UP_DISTANCE_DEFAULT = 150
     val HANDWRITING_UP_DISTANCE_RANGE = 16..200
     /** dp a leftward or rightward first stroke travels before handwriting claims it. */
     const val KEY_HANDWRITING_SIDE_DISTANCE = "pref_handwriting_side_distance"
-    const val HANDWRITING_SIDE_DISTANCE_DEFAULT = 32
+    const val HANDWRITING_SIDE_DISTANCE_DEFAULT = 100
     val HANDWRITING_SIDE_DISTANCE_RANGE = 12..200
     const val KEY_T9_SHUANGPIN = "pref_t9_shuangpin"
     const val KEY_EMOJI_CANDIDATES = "pref_emoji_candidates"
@@ -130,6 +131,9 @@ object ConfigManager {
     @Volatile private var cachedScrimOpacity = DEFAULT_SCRIM_OPACITY
     @Volatile private var cachedRimHighlight = 0
     @Volatile private var cachedRimLight = 0
+    /** Stored swipe-shortcut mappings; a missing entry means the keyboard's defaults. */
+    @Volatile private var cachedShortcutMaps: Map<ShortcutKeyboard, String?> = emptyMap()
+    @Volatile private var decodedShortcutMaps: Map<ShortcutKeyboard, Pair<String?, Map<String, String>>> = emptyMap()
     @Volatile private var hasSyncedFromProvider = false
 
     fun initRemote(module: XposedInterface) {
@@ -210,6 +214,7 @@ object ConfigManager {
                 cachedScrimOpacity = bundle.getInt(KEY_SCRIM_OPACITY, DEFAULT_SCRIM_OPACITY).coerceIn(0, 100)
                 cachedRimHighlight = bundle.getInt(KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100)
                 cachedRimLight = bundle.getInt(KEY_RIM_LIGHT, 0).coerceIn(0, 2)
+                cachedShortcutMaps = ShortcutKeyboard.entries.associateWith { bundle.getString(it.prefKey) }
                 hasSyncedFromProvider = true
             }
         } catch (_: Throwable) {
@@ -291,6 +296,16 @@ object ConfigManager {
         if (hasSyncedFromProvider) return cachedHandwritingSideDistance
         return (remotePrefs?.getInt(KEY_HANDWRITING_SIDE_DISTANCE, HANDWRITING_SIDE_DISTANCE_DEFAULT)
             ?: cachedHandwritingSideDistance).coerceIn(HANDWRITING_SIDE_DISTANCE_RANGE)
+    }
+
+    /** Key-to-action mapping of [keyboard]'s downward-swipe shortcuts. Called for every rendered key. */
+    fun getShortcutMapping(keyboard: ShortcutKeyboard): Map<String, String> {
+        val stored = if (hasSyncedFromProvider) cachedShortcutMaps[keyboard]
+            else remotePrefs?.getString(keyboard.prefKey, null) ?: cachedShortcutMaps[keyboard]
+        decodedShortcutMaps[keyboard]?.let { (raw, mapping) -> if (raw == stored) return mapping }
+        val mapping = keyboard.decode(stored)
+        decodedShortcutMaps = decodedShortcutMaps + (keyboard to (stored to mapping))
+        return mapping
     }
 
     fun isT9ShuangpinEnabled(): Boolean {
