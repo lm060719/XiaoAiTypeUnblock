@@ -39,6 +39,7 @@ object ClipboardPermanentHook {
     private const val PERMANENT_REQUEST_KEY = "xatype_permanent"
     private const val PHRASE_PACKAGE = "com.miui.phrase"
     private const val IME_SERVICE_CLASS = "com.mi.ime.MiInputMethodService"
+    private const val PLUGIN_LOADER_CLASS = "android.inputmethodservice.InputMethodModuleManager"
     private const val POPUP_CLASS = "com.miui.inputmethod.InputMethodClipboardPhrasePopupView"
     private const val POPUP_INIT_TASK_CLASS = "com.miui.inputmethod.InputMethodClipboardPhrasePopupView\$2"
     private const val HEADER_ADAPTER_CLASS = "com.miui.inputmethod.InputMethodClipboardHeaderAdapter"
@@ -118,6 +119,8 @@ object ClipboardPermanentHook {
                 }
             }
 
+        installPluginLoaderHook(module)
+
         Handler::class.java.declaredMethods
             .filter {
                 it.name == "post" && it.parameterTypes.contentEquals(
@@ -132,10 +135,14 @@ object ClipboardPermanentHook {
                         ConfigManager.isClipboardPermanentEnabled() &&
                         task.javaClass.name == popupInitTaskName
                     ) {
+                        task.javaClass.classLoader?.let { attachPluginLoader(module, it, null) }
                         val args = chain.args.toTypedArray()
                         args[0] = Runnable {
+                            // Taken before the host drops expired entries, so the
+                            // restore below never depends on winning that write.
+                            val snapshot = snapshotHistory(module, task)
                             task.run()
-                            restorePopupHistory(module, task)
+                            restorePopupHistory(module, task, snapshot)
                         }
                         return@intercept chain.proceed(args)
                     }
@@ -144,13 +151,78 @@ object ClipboardPermanentHook {
             }
     }
 
-    private fun restorePopupHistory(module: XposedInterface, task: Runnable) {
+    /**
+     * MIUI's InputMethodServiceInjector adds the phrase APK to its own
+     * createPackageContext(com.miui.phrase, 0) loader and resolves the panel
+     * with Class.forName, which neither our package context nor the loadClass
+     * watcher sees. Hook that loader directly so the read/write hooks reach
+     * the classes the IME panel actually runs.
+     */
+    private fun installPluginLoaderHook(module: XposedInterface) {
+        val bootLoader = android.inputmethodservice.InputMethodService::class.java.classLoader ?: return
+        val managerClass = XposedUtils.findClass(PLUGIN_LOADER_CLASS, bootLoader) ?: return
+        val method = managerClass.declaredMethods.firstOrNull {
+            it.name == "loadDex" && it.parameterTypes.contentEquals(
+                arrayOf(ClassLoader::class.java, String::class.java)
+            )
+        } ?: return XposedUtils.logWarn(module, "[Permanent Clipboard] $PLUGIN_LOADER_CLASS.loadDex not found; plugin loader hook skipped")
+        method.isAccessible = true
+        module.hook(method).intercept { chain ->
+            val result = chain.proceed()
+            val loader = chain.getArg(0) as? ClassLoader
+            if (loader != null) attachPluginLoader(module, loader, chain.getArg(1) as? String)
+            result
+        }
+    }
+
+    private fun attachPluginLoader(module: XposedInterface, loader: ClassLoader, apkPath: String?) {
+        val managerClass = XposedUtils.findClass(MANAGER_CLASS, loader) ?: return
+        if (managerClass in installedManagerClasses) return
+        try {
+            installForManagerClass(
+                module,
+                managerClass,
+                apkPath ?: LoadedApkSource.find(loader, MANAGER_CLASS),
+                ownCacheDir ?: applicationCacheDir()
+            )
+            XposedUtils.log(module, "[Permanent Clipboard] Attached to IME plugin class loader")
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "[Permanent Clipboard] Failed to attach to IME plugin class loader", t)
+        }
+    }
+
+    /** Lets the fingerprint cache be found before the IME service's onCreate runs. */
+    private fun applicationCacheDir(): File? = runCatching {
+        val app = Class.forName("android.app.ActivityThread")
+            .getMethod("currentApplication").invoke(null) as? Context
+        app?.applicationInfo?.deviceProtectedDataDir?.let { File(it, "cache") }
+    }.getOrNull()?.also { ownCacheDir = it }
+
+    private fun snapshotHistory(module: XposedInterface, task: Runnable): List<Any>? = try {
+        val popup = XposedUtils.getObjectField(task, "this\$0")
+        val context = popup?.let { XposedUtils.getObjectField(it, "mContext") as? Context }
+        val loader = task.javaClass.classLoader
+        if (context == null || loader == null) null
+        else queryModels(context, Class.forName(MANAGER_CLASS, false, loader))
+    } catch (t: Throwable) {
+        XposedUtils.logError(module, "[Permanent Clipboard] Failed to snapshot history before popup load", t)
+        null
+    }
+
+    private fun restorePopupHistory(module: XposedInterface, task: Runnable, snapshot: List<Any>?) {
         try {
             val popup = XposedUtils.getObjectField(task, "this\$0") ?: return
             val context = XposedUtils.getObjectField(popup, "mContext") as? Context ?: return
             val loader = task.javaClass.classLoader ?: return
             val managerClass = Class.forName(MANAGER_CLASS, false, loader)
-            val complete = queryModels(context, managerClass)
+            val loaded = (XposedUtils.getObjectField(popup, "mAllClipboardList") as? Collection<*>)
+                ?.filterNotNull().orEmpty()
+            val complete = if (snapshot == null) queryModels(context, managerClass) else {
+                ArrayList(LinkedHashSet<Any>().apply {
+                    addAll(loaded)
+                    addAll(snapshot)
+                }.sortedByDescending(::modelTime))
+            }
             val display = managerClass.getDeclaredMethod(
                 "buildRecyclerViewDisplayList",
                 List::class.java
@@ -208,13 +280,11 @@ object ClipboardPermanentHook {
             installPublicReadHook(module, managerClass)
             installReadHooks(module, managerClass)
             installMergeHooks(module, managerClass)
-            installOutboundSaveHook(module, managerClass)
             installDisplayListWriteHook(module, managerClass)
             installProviderCallHook(module, classLoader, managerClass)
             installProviderEntryHook(module, classLoader, managerClass)
             installProviderWriteHook(module, classLoader, managerClass)
             installPopupHooks(module, classLoader)
-            installPopupInitTaskHook(module, classLoader, managerClass)
             installHeaderHook(module, classLoader)
             deoptimizeCallers(module, managerClass, classLoader)
             XposedUtils.log(
@@ -391,53 +461,6 @@ object ClipboardPermanentHook {
                 completeHistory
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "[Permanent Clipboard] Failed to query complete history", t)
-                chain.proceed()
-            }
-        }
-    }
-
-    private fun installOutboundSaveHook(
-        module: XposedInterface,
-        managerClass: Class<*>
-    ) {
-        val method = managerClass.declaredMethods.firstOrNull {
-            it.name == "addClipDataToPhrase" && it.parameterTypes.size == 3 &&
-                it.parameterTypes[0] == Context::class.java &&
-                it.parameterTypes[1] == Boolean::class.javaPrimitiveType
-        } ?: return XposedUtils.logWarn(module, "[Permanent Clipboard] addClipDataToPhrase not found; outbound save hook skipped")
-        method.isAccessible = true
-        module.hook(method).intercept { chain ->
-            val context = chain.getArg(0) as? Context ?: return@intercept chain.proceed()
-            refreshConfig(context)
-            if (!ConfigManager.isClipboardPermanentEnabled()) return@intercept chain.proceed()
-
-            try {
-                val newModel = chain.getArg(2) ?: return@intercept chain.proceed()
-                if (chain.getArg(1) == true) {
-                    val callback = managerClass.getDeclaredField("mClipBoardDataChangeInterface").apply {
-                        isAccessible = true
-                    }.get(null)
-                    callback?.javaClass?.methods?.firstOrNull {
-                        it.name == "updateClipBoardData" && it.parameterTypes.size == 1
-                    }?.invoke(callback, newModel)
-                }
-                val merged = LinkedHashSet<Any>().apply {
-                    add(newModel)
-                    addAll(queryModels(context, managerClass))
-                }.sortedByDescending(::modelTime)
-                val extras = Bundle().apply {
-                    putString("jsonArray", serializeModels(merged))
-                    putBoolean(PERMANENT_REQUEST_KEY, true)
-                }
-                context.contentResolver.call(
-                    Uri.parse(CLIPBOARD_PROVIDER_URI),
-                    SAVE_CLIPBOARD_METHOD,
-                    null,
-                    extras
-                )
-                null
-            } catch (t: Throwable) {
-                XposedUtils.logError(module, "[Permanent Clipboard] Failed to send complete history", t)
                 chain.proceed()
             }
         }
@@ -647,61 +670,6 @@ object ClipboardPermanentHook {
             it.name == "getAdapterList" && it.parameterTypes.isEmpty()
         } ?: return null
         return method.invoke(adapter) as? MutableList<Any>
-    }
-
-    private fun installPopupInitTaskHook(
-        module: XposedInterface,
-        classLoader: ClassLoader,
-        managerClass: Class<*>
-    ) {
-        val taskClass = PhraseSymbols.clazz(PhraseSymbols.POPUP_INIT_TASK)
-            ?: XposedUtils.findClass(POPUP_INIT_TASK_CLASS, classLoader)
-            ?: return XposedUtils.logWarn(module, "[Permanent Clipboard] popup init task not found; popup init hook skipped")
-        taskClass.declaredMethods
-            .filter { it.name == "run" && it.parameterTypes.isEmpty() }
-            .forEach { method ->
-                method.isAccessible = true
-                module.hook(method).intercept { chain ->
-                    val result = chain.proceed()
-                    val popup = XposedUtils.getObjectField(chain.thisObject, "this\$0")
-                        ?: return@intercept result
-                    val context = XposedUtils.getObjectField(popup, "mContext") as? Context
-                        ?: return@intercept result
-                    refreshConfig(context)
-                    if (!ConfigManager.isClipboardPermanentEnabled()) return@intercept result
-
-                    try {
-                        val complete = queryModels(context, managerClass)
-                        val buildDisplay = managerClass.getDeclaredMethod(
-                            "buildRecyclerViewDisplayList",
-                            List::class.java
-                        ).apply { isAccessible = true }
-                        @Suppress("UNCHECKED_CAST")
-                        val display = buildDisplay.invoke(null, complete) as? List<Any> ?: complete
-                        XposedUtils.setObjectField(popup, "mAllClipboardList", complete)
-                        XposedUtils.setObjectField(popup, "mCurrentImeClipboardList", display)
-
-                        managerClass.getDeclaredMethod(
-                            "setClipboardModelList",
-                            Context::class.java,
-                            List::class.java
-                        ).apply { isAccessible = true }.invoke(null, context, display)
-                        if (popupInitHookHitLogged.compareAndSet(false, true)) {
-                            XposedUtils.log(
-                                module,
-                                "[Permanent Clipboard] Popup initialization hook active; preservedCount=${display.size}"
-                            )
-                        }
-                    } catch (t: Throwable) {
-                        XposedUtils.logError(
-                            module,
-                            "[Permanent Clipboard] Failed to restore complete popup history",
-                            t
-                        )
-                    }
-                    result
-                }
-            }
     }
 
     private fun installProviderEntryHook(
