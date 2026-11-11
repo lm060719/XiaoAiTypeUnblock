@@ -1,62 +1,38 @@
 package io.mo.xatype.hooks
 
 import android.os.BaseBundle
-import android.os.PersistableBundle
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
 
 object ClipboardSensitiveHook {
+    private const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"
 
-    fun install(module: XposedInterface, classLoader: ClassLoader) {
-        // Hook PersistableBundle.getBoolean(String, boolean)
-        val methodGetBoolean = XposedUtils.findMethodExact(
-            PersistableBundle::class.java,
-            "getBoolean",
-            String::class.java,
-            Boolean::class.javaPrimitiveType ?: java.lang.Boolean.TYPE
-        )
-        if (methodGetBoolean != null) {
-            try {
-                module.hook(methodGetBoolean).intercept { chain ->
-                    if (!ConfigManager.isClipboardSensitiveEnabled()) return@intercept chain.proceed()
-                    val key = chain.getArg(0) as? String
-                    if ("android.content.extra.IS_SENSITIVE" == key) {
-                        XposedUtils.logDebug(module) { "[Clipboard] Bypassed android.content.extra.IS_SENSITIVE check in PersistableBundle" }
-                        false // Never mark as sensitive
-                    } else {
-                        chain.proceed()
-                    }
-                }
-                XposedUtils.log(module, "[Clipboard] Hooked PersistableBundle.getBoolean(String, boolean)")
-            } catch (t: Throwable) {
-                XposedUtils.logError(module, "Failed to hook PersistableBundle.getBoolean", t)
-            }
-        }
-
-        // Also hook BaseBundle.getBoolean(String, boolean)
-        val methodBaseGetBoolean = XposedUtils.findMethodExact(
+    fun install(module: XposedInterface, @Suppress("UNUSED_PARAMETER") classLoader: ClassLoader) {
+        // ClipDescription extras are a PersistableBundle, which inherits getBoolean
+        // from BaseBundle; hooking the base declaration covers both bundle types.
+        val method = XposedUtils.findMethodExact(
             BaseBundle::class.java,
             "getBoolean",
             String::class.java,
-            Boolean::class.javaPrimitiveType ?: java.lang.Boolean.TYPE
+            java.lang.Boolean.TYPE
         )
-        if (methodBaseGetBoolean != null) {
-            try {
-                module.hook(methodBaseGetBoolean).intercept { chain ->
-                    if (!ConfigManager.isClipboardSensitiveEnabled()) return@intercept chain.proceed()
-                    val key = chain.getArg(0) as? String
-                    if ("android.content.extra.IS_SENSITIVE" == key) {
-                        XposedUtils.logDebug(module) { "[Clipboard] Bypassed android.content.extra.IS_SENSITIVE check in BaseBundle" }
-                        false
-                    } else {
-                        chain.proceed()
-                    }
+        if (method == null) {
+            XposedUtils.logWarn(module, "[Clipboard] BaseBundle.getBoolean(String, boolean) not found; sensitive flag stays")
+            return
+        }
+        try {
+            module.hook(method).intercept { chain ->
+                // Every Bundle read in the process lands here: compare the key before anything else.
+                if (chain.getArg(0) != EXTRA_IS_SENSITIVE || !ConfigManager.isClipboardSensitiveEnabled()) {
+                    return@intercept chain.proceed()
                 }
-                XposedUtils.log(module, "[Clipboard] Hooked BaseBundle.getBoolean(String, boolean)")
-            } catch (t: Throwable) {
-                XposedUtils.logError(module, "Failed to hook BaseBundle.getBoolean", t)
+                XposedUtils.logDebug(module) { "[Clipboard] Bypassed $EXTRA_IS_SENSITIVE" }
+                false
             }
+            XposedUtils.log(module, "[Clipboard] Hooked BaseBundle.getBoolean(String, boolean)")
+        } catch (t: Throwable) {
+            XposedUtils.logError(module, "Failed to hook BaseBundle.getBoolean", t)
         }
     }
 }

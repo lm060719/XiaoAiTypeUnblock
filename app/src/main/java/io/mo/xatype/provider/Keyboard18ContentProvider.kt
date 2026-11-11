@@ -4,21 +4,14 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
-import android.os.Binder
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
-import android.os.Process
 import io.mo.xatype.keyboard18.Keyboard18Store
 import java.io.FileNotFoundException
 
 class Keyboard18ContentProvider : ContentProvider() {
     override fun onCreate() = true
-    private fun caller() {
-        val ctx = checkNotNull(context)
-        val uid = Binder.getCallingUid()
-        if (uid != Process.myUid() && ctx.packageManager.getPackagesForUid(uid)?.contains("com.xiaomi.type") != true)
-            throw SecurityException("18-key data is restricted to the module and input method")
-    }
+    private fun caller() = ProviderAccess.require(context, ProviderAccess.IME_ONLY)
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         caller()
         val ctx = checkNotNull(context)

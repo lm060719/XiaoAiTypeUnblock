@@ -19,6 +19,8 @@
     <queries>
         <package android:name="com.xiaomi.type" />
         <package android:name="com.miui.phrase" />
+        <!-- Provider callers are checked by package; SystemUI reads settings too. -->
+        <package android:name="com.android.systemui" />
     </queries>
 
     <application

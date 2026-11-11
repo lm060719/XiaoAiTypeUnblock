@@ -97,7 +97,8 @@ object ScreenshotClipboardHook {
 
         fun refreshConfig() {
             handler.removeCallbacks(scan)
-            ConfigManager.syncFromProvider(context)
+            // Triggered by its own URI or by unlock; read fresh rather than trust the shared cache.
+            ConfigManager.syncFromProvider(context, force = true)
             enabled = false
             baselineId = Long.MAX_VALUE
             startedAt = System.currentTimeMillis()

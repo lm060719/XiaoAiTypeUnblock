@@ -4,10 +4,8 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
-import android.os.Binder
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
-import android.os.Process
 import io.mo.xatype.dict.OnlineDictStore
 import java.io.FileNotFoundException
 
@@ -15,12 +13,7 @@ import java.io.FileNotFoundException
 class OnlineDictContentProvider : ContentProvider() {
     override fun onCreate() = true
 
-    private fun checkCaller() {
-        val ctx = checkNotNull(context)
-        val uid = Binder.getCallingUid()
-        if (uid != Process.myUid() && ctx.packageManager.getPackagesForUid(uid)
-                ?.contains("com.xiaomi.type") != true) throw SecurityException("Only the input method can read word lists")
-    }
+    private fun checkCaller() = ProviderAccess.require(context, ProviderAccess.IME_ONLY)
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         checkCaller()

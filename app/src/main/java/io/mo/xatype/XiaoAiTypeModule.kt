@@ -48,8 +48,7 @@ class XiaoAiTypeModule : XposedModule() {
             param.packageName != SYSTEM_UI_PACKAGE
         ) return
 
-        // Initialize remote preferences
-        ConfigManager.initRemote(this)
+        ConfigManager.init(this)
         AdaptationReporter.install(this)
         if (param.isFirstPackage) {
             // The process's own storage; phrase classes also load inside the IME.

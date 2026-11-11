@@ -75,13 +75,21 @@ object CloudBlacklistHook {
             val methodFromBundle = XposedUtils.findMethodExact(attachResultClass, "fromBundle", Bundle::class.java)
             if (methodFromBundle != null) {
                 try {
+                    // Clear through the public setter rather than its obfuscated backing field.
+                    var clearFailureLogged = false
                     module.hook(methodFromBundle).intercept { chain ->
                         val result = chain.proceed()
                         if (ConfigManager.isCloudBlacklistEnabled()) {
                             try {
-                                val fieldB = attachResultClass.getDeclaredField("b").apply { isAccessible = true }
-                                fieldB.set(chain.getThisObject(), "")
-                            } catch (_: Throwable) {}
+                                checkNotNull(methodSet) { "setBlackListStr(String) not found" }
+                                    .invoke(chain.getThisObject(), "")
+                            } catch (t: Throwable) {
+                                if (!clearFailureLogged) {
+                                    clearFailureLogged = true
+                                    // getBlackListStr() is still forced empty above; this path is a fallback.
+                                    XposedUtils.logWarn(module, "[Cloud Blacklist] Could not clear blacklist after fromBundle: $t")
+                                }
+                            }
                         }
                         result
                     }

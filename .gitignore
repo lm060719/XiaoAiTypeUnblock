@@ -21,6 +21,8 @@ out/
 build/
 app/build/
 */build/
+# Locally exported release outputs (baseline profiles, output metadata)
+app/release/
 
 # Gradle files
 .gradle/

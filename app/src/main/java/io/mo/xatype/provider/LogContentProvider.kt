@@ -3,14 +3,22 @@ package io.mo.xatype.provider
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
-import android.content.res.Configuration
+import android.os.ParcelFileDescriptor
 import io.mo.xatype.compat.AdaptationStatus
 import io.mo.xatype.config.AppearanceProfiles
+import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.config.ConfigSchema
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileNotFoundException
+
+/** Settings, the keyboard background image and adaptation reports for the hooked processes. */
 class LogContentProvider : ContentProvider() {
 
     companion object {
@@ -19,92 +27,42 @@ class LogContentProvider : ContentProvider() {
 
         const val METHOD_GET_CONFIG = "get_config"
         const val BG_IMAGE_FILENAME = "bg_image.png"
+        private const val BG_IMAGE_PATH = "/$BG_IMAGE_FILENAME"
     }
 
-    override fun onCreate(): Boolean = true
+    /** Held here because SharedPreferences only keeps weak references to listeners. */
+    private var settingsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    override fun onCreate(): Boolean {
+        val ctx = context ?: return true
+        // Every settings write in this process reaches the hooked processes as one notification.
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            ctx.contentResolver.notifyChange(ConfigManager.CONFIG_URI, null)
+        }
+        ctx.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
+            .registerOnSharedPreferenceChangeListener(listener)
+        settingsListener = listener
+        return true
+    }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
-        val result = Bundle()
-        when (method) {
-            AdaptationStatus.METHOD_REPORT -> saveAdaptationReport(extras)
-            METHOD_GET_CONFIG -> {
-                val ctx = context
-                if (ctx != null) {
-                    val local = ctx.getSharedPreferences(io.mo.xatype.config.ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
-                    AppearanceProfiles.initialize(local)
-                    val systemDark = extras?.getBoolean(AppearanceProfiles.EXTRA_DARK)
-                        ?: ((ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES)
-                    val sp = AppearanceProfiles.selected(local, systemDark)
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_SHORTCUTS, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_SHORTCUTS, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HANDWRITING, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_KEYBOARD_HANDWRITING, false))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, local.getInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, io.mo.xatype.config.ConfigManager.HANDWRITING_SIDE_DISTANCE_DEFAULT).coerceIn(io.mo.xatype.config.ConfigManager.HANDWRITING_SIDE_DISTANCE_RANGE))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_UP_DISTANCE, local.getInt(io.mo.xatype.config.ConfigManager.KEY_HANDWRITING_UP_DISTANCE, io.mo.xatype.config.ConfigManager.HANDWRITING_UP_DISTANCE_DEFAULT).coerceIn(io.mo.xatype.config.ConfigManager.HANDWRITING_UP_DISTANCE_RANGE))
-                    for (keyboard in io.mo.xatype.keyboard.ShortcutKeyboard.entries) {
-                        local.getString(keyboard.prefKey, null)?.let { result.putString(keyboard.prefKey, it) }
-                    }
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_EMOJI_CANDIDATES, false))
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, local.getString(io.mo.xatype.config.ConfigManager.KEY_PREDICTION_MODE, "KEEP"))
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN_SCHEME, local.getString(io.mo.xatype.config.ConfigManager.KEY_T9_SHUANGPIN_SCHEME, "XIAOHE") ?: "XIAOHE")
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING_ENABLED, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING_ENABLED, false))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING, local.getInt(io.mo.xatype.config.ConfigManager.KEY_BOTTOM_SPACING, 0).coerceIn(0, 100))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABELS, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABELS, false))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABEL_SIZE, local.getInt(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABEL_SIZE, 11).coerceIn(8, 20))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABEL_X, local.getInt(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABEL_X, 0).coerceIn(-40, 40))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABEL_Y, local.getInt(io.mo.xatype.config.ConfigManager.KEY_SHORTCUT_LABEL_Y, -2).coerceIn(-40, 40))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_SAFETY, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_SAFETY, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_VOICE_MODERATION, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLOUD_BLACKLIST, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_SENSITIVE, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_PERMANENT, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_SCREENSHOT_CLIPBOARD, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_SCREENSHOT_CLIPBOARD, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_OS_VERSION_UNBLOCK, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_ABILITY_UNLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_AI_ABILITY_UNLOCK, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_TELEMETRY_BLOCK, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_TELEMETRY_BLOCK, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_VERBOSE_LOG, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_VERBOSE_LOG, false))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_STYLE_ENABLED, sp.getBoolean(io.mo.xatype.config.ConfigManager.KEY_STYLE_ENABLED, false))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_CORNER_RADIUS, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_CORNER_RADIUS, 16))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_OPACITY, 85))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_BLUR_RADIUS, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_BLUR_RADIUS, 50))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_BG_TYPE, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_BG_TYPE, 0))
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E")
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_TEXT_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_TEXT_COLOR, "") ?: "")
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, "") ?: "")
-                    val menuCardColor = sp.getString(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_COLOR, "") ?: ""
-                    val menuCardOpacity = sp.getInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, 100)
-                    val clipboardCardColor = if (sp.contains(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_COLOR)) {
-                        sp.getString(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_COLOR, "") ?: ""
-                    } else {
-                        menuCardColor
-                    }
-                    val clipboardCardOpacity = if (sp.contains(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY)) {
-                        sp.getInt(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, 100)
-                    } else {
-                        menuCardOpacity
-                    }
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_COLOR, menuCardColor)
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_COLOR, clipboardCardColor)
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_COLOR, "") ?: "")
-                    for (key in listOf(io.mo.xatype.config.ConfigManager.KEY_KEY_POPUP_BACKGROUND,
-                            io.mo.xatype.config.ConfigManager.KEY_KEY_POPUP_SELECTED,
-                            io.mo.xatype.config.ConfigManager.KEY_KEY_POPUP_TEXT)) {
-                        result.putString(key, sp.getString(key, "") ?: "")
-                    }
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY, 100))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_MENU_CARD_OPACITY, menuCardOpacity)
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, clipboardCardOpacity)
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_LETTER_KEYCAP_OPACITY, 100))
-                    result.putBoolean(io.mo.xatype.config.ConfigManager.KEY_SCRIM_ENABLED, local.getBoolean(io.mo.xatype.config.ConfigManager.KEY_SCRIM_ENABLED, true))
-                    result.putString(io.mo.xatype.config.ConfigManager.KEY_SCRIM_COLOR, sp.getString(io.mo.xatype.config.ConfigManager.KEY_SCRIM_COLOR, "") ?: "")
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_SCRIM_OPACITY, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_SCRIM_OPACITY, io.mo.xatype.config.ConfigManager.DEFAULT_SCRIM_OPACITY).coerceIn(0, 100))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_RIM_HIGHLIGHT, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100))
-                    result.putInt(io.mo.xatype.config.ConfigManager.KEY_RIM_LIGHT, sp.getInt(io.mo.xatype.config.ConfigManager.KEY_RIM_LIGHT, 0).coerceIn(0, 2))
-                    result.putLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, sp.getLong(io.mo.xatype.config.ConfigManager.KEY_BG_IMAGE_VERSION, 0L))
-                }
-            }
+        ProviderAccess.require(context, ProviderAccess.SCOPE)
+        return when (method) {
+            AdaptationStatus.METHOD_REPORT -> { saveAdaptationReport(extras); Bundle() }
+            METHOD_GET_CONFIG -> readConfig(extras)
+            else -> super.call(method, arg, extras)
         }
-        return result
+    }
+
+    private fun readConfig(extras: Bundle?): Bundle {
+        val ctx = context ?: return Bundle()
+        val local = ctx.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
+        AppearanceProfiles.initialize(local)
+        val systemDark = extras?.getBoolean(AppearanceProfiles.EXTRA_DARK)
+            ?: ((ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES)
+        val profile = AppearanceProfiles.selected(local, systemDark)
+        return ConfigSchema.toBundle(ConfigSchema.read(local, profile))
     }
 
     private fun saveAdaptationReport(extras: Bundle?) {
@@ -125,17 +83,17 @@ class LogContentProvider : ContentProvider() {
             .edit().putString(reported, json.toString()).apply()
     }
 
-    override fun openFile(uri: Uri, mode: String): android.os.ParcelFileDescriptor? {
-        val ctx = context ?: return null
-        val file = java.io.File(ctx.filesDir, BG_IMAGE_FILENAME)
-        if (file.exists() && file.canRead()) {
-            return android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
-        }
-        return null
+    /** Only the keyboard background image, read-only, and only for the input method. */
+    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        ProviderAccess.require(context, ProviderAccess.IME_ONLY)
+        if (uri.path != BG_IMAGE_PATH || mode != "r") throw FileNotFoundException("Read-only background image URI required")
+        val file = File(checkNotNull(context).filesDir, BG_IMAGE_FILENAME)
+        if (!file.isFile || !file.canRead()) throw FileNotFoundException("No background image")
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
     }
 
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
-    override fun getType(uri: Uri): String? = "image/png"
+    override fun getType(uri: Uri): String? = if (uri.path == BG_IMAGE_PATH) "image/png" else null
     override fun insert(uri: Uri, values: ContentValues?): Uri? = null
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0

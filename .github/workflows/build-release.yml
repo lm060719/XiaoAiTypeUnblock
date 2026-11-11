@@ -1,4 +1,4 @@
-name: 构建正式安装包
+name: 构建安装包
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # 只有 main 分支和手动运行使用正式签名，其余分支构建 Debug 包。
+  RELEASE_BUILD: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
 
 jobs:
   build:
@@ -27,6 +31,7 @@ jobs:
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
       - name: 准备正式签名
+        if: env.RELEASE_BUILD == 'true'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -49,6 +54,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: 运行单元测试并构建签名 Release APK
+        if: env.RELEASE_BUILD == 'true'
         env:
           REQUIRE_RELEASE_SIGNING: "true"
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
@@ -59,13 +65,23 @@ jobs:
           chmod +x ./gradlew
           ./gradlew :app:testReleaseUnitTest :app:assembleRelease --stacktrace
 
+      - name: 运行单元测试并构建 Debug APK
+        if: env.RELEASE_BUILD != 'true'
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --stacktrace
+
       - name: 校验签名并整理安装包
         id: package
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
-          python3 scripts/verify-shape-apk.py app/build/outputs/apk/release/app-release.apk
+          variant=$([[ "$RELEASE_BUILD" == "true" ]] && echo release || echo debug)
+          echo "variant=$variant" >> "$GITHUB_OUTPUT"
+          apk="app/build/outputs/apk/$variant/app-$variant.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+          python3 scripts/verify-shape-apk.py "$apk"
+          export VARIANT="$variant"
           python3 - <<'PY'
           import json
           import os
@@ -73,7 +89,8 @@ jobs:
           import shutil
           from pathlib import Path
 
-          source = Path("app/build/outputs/apk/release")
+          variant = os.environ["VARIANT"]
+          source = Path(f"app/build/outputs/apk/{variant}")
           metadata = json.loads((source / "output-metadata.json").read_text())
           element, = metadata["elements"]
           version = element["versionName"]
@@ -81,7 +98,8 @@ jobs:
           build = os.environ["BUILD_NUMBER"]
           sha = os.environ["GITHUB_SHA"]
           build_id = f"build-{build}-{sha[:8]}"
-          filename = f"XiaoAiTypeUnblock-{safe_version}-{build_id}.apk"
+          suffix = "" if variant == "release" else "-debug"
+          filename = f"XiaoAiTypeUnblock-{safe_version}-{build_id}{suffix}.apk"
           dist = Path("dist")
           dist.mkdir(exist_ok=True)
           shutil.copyfile(source / element["outputFile"], dist / filename)
@@ -91,11 +109,11 @@ jobs:
           cd dist
           sha256sum *.apk > SHA256SUMS.txt
 
-      - name: 上传正式安装包
+      - name: 上传安装包
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: XiaoAiTypeUnblock-${{ steps.package.outputs.build_id }}-release
+          name: XiaoAiTypeUnblock-${{ steps.package.outputs.build_id }}-${{ steps.package.outputs.variant }}
           path: |
             dist/*.apk
             dist/SHA256SUMS.txt
@@ -107,10 +125,10 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         run: |
           {
-            echo "### 正式安装包已构建"
+            echo "### ${{ steps.package.outputs.variant }} 安装包已构建"
             echo "[下载 APK 和 SHA-256 校验文件]($ARTIFACT_URL)（保留 90 天）"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 清理临时签名文件
-        if: always()
+        if: always() && env.RELEASE_BUILD == 'true'
         run: rm -f "$RUNNER_TEMP/release.keystore"

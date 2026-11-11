@@ -50,8 +50,9 @@ object HyperOsVersionHook {
             val methodGet2 = XposedUtils.findMethodExact(sysPropClass, "get", String::class.java, String::class.java)
             if (methodGet2 != null) {
                 module.hook(methodGet2).intercept { chain ->
-                    if (!ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
+                    // SystemProperties is read constantly; filter by key before anything else.
                     val key = chain.getArg(0) as? String
+                    if (!isMockedProperty(key) || !ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
 
                     when (key) {
                         "ro.mi.os.version.code" -> {
@@ -84,8 +85,9 @@ object HyperOsVersionHook {
             val methodGet1 = XposedUtils.findMethodExact(sysPropClass, "get", String::class.java)
             if (methodGet1 != null) {
                 module.hook(methodGet1).intercept { chain ->
-                    if (!ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
+                    // SystemProperties is read constantly; filter by key before anything else.
                     val key = chain.getArg(0) as? String
+                    if (!isMockedProperty(key) || !ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
 
                     when (key) {
                         "ro.mi.os.version.code" -> {
@@ -115,8 +117,9 @@ object HyperOsVersionHook {
             )
             if (methodGetInt != null) {
                 module.hook(methodGetInt).intercept { chain ->
-                    if (!ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
+                    // SystemProperties is read constantly; filter by key before anything else.
                     val key = chain.getArg(0) as? String
+                    if (!isMockedProperty(key) || !ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
                     val def = (chain.getArg(1) as? Number)?.toInt() ?: 0
 
                     when (key) {
@@ -143,8 +146,9 @@ object HyperOsVersionHook {
             )
             if (methodGetLong != null) {
                 module.hook(methodGetLong).intercept { chain ->
-                    if (!ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
+                    // SystemProperties is read constantly; filter by key before anything else.
                     val key = chain.getArg(0) as? String
+                    if (!isMockedProperty(key) || !ConfigManager.isOsVersionUnblockEnabled()) return@intercept chain.proceed()
                     if ("ro.mi.os.version.code" == key) {
                         4L
                     } else {
@@ -156,6 +160,9 @@ object HyperOsVersionHook {
             XposedUtils.logError(module, "Failed to hook SystemProperties", t)
         }
     }
+
+    /** Every property the mock answers starts with this prefix ("ro.mi.os.*", "ro.miui.ui.*"). */
+    private fun isMockedProperty(key: String?): Boolean = key != null && key.startsWith("ro.mi")
 
     private fun logPropertyMock(module: XposedInterface, key: String, mockVal: String) {
         if (!hasLoggedSysProp) {

@@ -2,13 +2,23 @@ package io.mo.xatype.config
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.database.ContentObserver
 import android.net.Uri
 import android.os.Bundle
-import android.content.res.Configuration
+import android.os.Handler
+import android.os.HandlerThread
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.keyboard.PredictionMode
 import io.mo.xatype.keyboard.ShortcutKeyboard
+import io.mo.xatype.util.XposedUtils
 
+/**
+ * Settings as seen by the hooked processes.
+ *
+ * Values come from the settings app through [io.mo.xatype.provider.LogContentProvider]
+ * and are cached here. Types, defaults and ranges are declared in [ConfigSchema].
+ */
 object ConfigManager {
     const val PREFS_NAME = "settings"
 
@@ -28,11 +38,11 @@ object ConfigManager {
     /** dp an upward first stroke travels before handwriting claims it; shorter swipes stay the host's symbols. */
     const val KEY_HANDWRITING_UP_DISTANCE = "pref_handwriting_up_distance"
     const val HANDWRITING_UP_DISTANCE_DEFAULT = 150
-    val HANDWRITING_UP_DISTANCE_RANGE = 16..200
+    val HANDWRITING_UP_DISTANCE_RANGE get() = ConfigSchema.HANDWRITING_UP_DISTANCE_RANGE
     /** dp a leftward or rightward first stroke travels before handwriting claims it. */
     const val KEY_HANDWRITING_SIDE_DISTANCE = "pref_handwriting_side_distance"
     const val HANDWRITING_SIDE_DISTANCE_DEFAULT = 100
-    val HANDWRITING_SIDE_DISTANCE_RANGE = 12..200
+    val HANDWRITING_SIDE_DISTANCE_RANGE get() = ConfigSchema.HANDWRITING_SIDE_DISTANCE_RANGE
     const val KEY_T9_SHUANGPIN = "pref_t9_shuangpin"
     const val KEY_EMOJI_CANDIDATES = "pref_emoji_candidates"
     const val KEY_PREDICTION_MODE = "pref_prediction_mode"
@@ -78,420 +88,166 @@ object ConfigManager {
     const val KEY_RIM_HIGHLIGHT = "pref_rim_highlight" // 0 to 100
     const val KEY_RIM_LIGHT = "pref_rim_light" // Light direction: 0 upper left, 1 top, 2 upper right
 
-    private var remotePrefs: SharedPreferences? = null
-    @Volatile private var remoteStylePrefs: SharedPreferences? = null
+    /** The settings app notifies this URI after every write to the settings file. */
+    val CONFIG_URI: Uri = Uri.parse("content://io.mo.xatype.logprovider/config")
+    private val PROVIDER_URI: Uri = Uri.parse("content://io.mo.xatype.logprovider")
+    private const val METHOD_GET_CONFIG = "get_config"
+    /** Slider drags write many times in a row; refresh once they settle. */
+    private const val CHANGE_DEBOUNCE_MS = 120L
 
-    // In-memory cached synced values (Live synced from Provider)
-    @Volatile private var cachedAiSafety = false
-    @Volatile private var cachedVoiceModeration = false
-    @Volatile private var cachedCloudBlacklist = false
-    @Volatile private var cachedClipboardSensitive = false
-    @Volatile private var cachedClipboardPermanent = false
-    @Volatile private var cachedScreenshotClipboard = false
-    @Volatile private var cachedOsVersionUnblock = false
-    @Volatile private var cachedAiAbilityUnlock = false
-    @Volatile private var cachedTelemetryBlock = false
-    @Volatile private var cachedKeyboardHeightUnblock = false
-    @Volatile private var cachedKeyboardShortcuts = false
-    @Volatile private var cachedKeyboardHandwriting = false
-    @Volatile private var cachedHandwritingUpDistance = HANDWRITING_UP_DISTANCE_DEFAULT
-    @Volatile private var cachedHandwritingSideDistance = HANDWRITING_SIDE_DISTANCE_DEFAULT
-    @Volatile private var cachedT9Shuangpin = false
-    @Volatile private var cachedEmojiCandidates = false
-    @Volatile private var cachedPredictionMode = PredictionMode.KEEP.name
-    @Volatile private var cachedT9ShuangpinScheme = "XIAOHE"
-    @Volatile private var cachedBottomSpacingEnabled = false
-    @Volatile private var cachedBottomSpacing = 0
-    @Volatile private var cachedShortcutLabels = false
-    @Volatile private var cachedShortcutLabelSize = 11
-    @Volatile private var cachedShortcutLabelX = 0
-    @Volatile private var cachedShortcutLabelY = -2
-    @Volatile private var cachedVerboseLog = false
-    @Volatile private var cachedStyleEnabled = false
-    @Volatile private var cachedCornerRadius = 16
-    @Volatile private var cachedOpacity = 85
-    @Volatile private var cachedBlurRadius = 50
-    @Volatile private var cachedBgType = 0
-    @Volatile private var cachedBgColor = "#1E1E2E"
-    @Volatile private var cachedTextColor = ""
-    @Volatile private var cachedFunctionKeycapColor = ""
-    @Volatile private var cachedMenuCardColor = ""
-    @Volatile private var cachedClipboardCardColor = ""
-    @Volatile private var cachedLetterKeycapColor = ""
-    @Volatile private var cachedKeyPopupBackground = ""
-    @Volatile private var cachedKeyPopupSelected = ""
-    @Volatile private var cachedKeyPopupText = ""
-    @Volatile private var cachedFunctionKeycapOpacity = 100
-    @Volatile private var cachedMenuCardOpacity = 100
-    @Volatile private var cachedClipboardCardOpacity = 100
-    @Volatile private var cachedLetterKeycapOpacity = 100
-    @Volatile private var cachedBgImageVersion = 0L
-    @Volatile private var cachedScrimEnabled = true
-    @Volatile private var cachedScrimColor = ""
-    @Volatile private var cachedScrimOpacity = DEFAULT_SCRIM_OPACITY
-    @Volatile private var cachedRimHighlight = 0
-    @Volatile private var cachedRimLight = 0
-    /** Stored swipe-shortcut mappings; a missing entry means the keyboard's defaults. */
-    @Volatile private var cachedShortcutMaps: Map<ShortcutKeyboard, String?> = emptyMap()
+    @Volatile private var module: XposedInterface? = null
+    /** Latest values from the provider; null until the first sync succeeds. */
+    @Volatile private var values: Map<String, Any?>? = null
+    /** Dark-mode state [values] were resolved for. */
+    @Volatile private var syncedDark: Boolean? = null
+    /** Bumped by every change notification; a sync records the generation it started at. */
+    @Volatile private var changeGeneration = 0L
+    @Volatile private var syncedGeneration = -1L
+    @Volatile private var observing = false
+    @Volatile private var observerAttempted = false
+    @Volatile private var failureLogged = false
     @Volatile private var decodedShortcutMaps: Map<ShortcutKeyboard, Pair<String?, Map<String, String>>> = emptyMap()
-    @Volatile private var hasSyncedFromProvider = false
 
-    fun initRemote(module: XposedInterface) {
+    fun init(module: XposedInterface) {
+        this.module = module
+    }
+
+    /**
+     * Makes sure the cached settings are current. Cheap after the first call: it only
+     * calls into the settings app when nothing is cached yet, the dark/light state
+     * changed, or a change notification arrived that the background refresh has not
+     * handled yet. Without a working change observer it falls back to syncing every time.
+     *
+     * [force] reads regardless; for callers reacting to their own change signal, which can
+     * arrive before this object's observer has counted the change.
+     */
+    fun syncFromProvider(context: Context, force: Boolean = false) {
+        val dark = isSystemDark(context)
+        if (!observerAttempted) registerObserver(context)
+        if (!force && values != null && syncedDark == dark && observing &&
+            syncedGeneration == changeGeneration) return
+        fetch(context, dark)
+    }
+
+    private fun isSystemDark(context: Context): Boolean =
+        (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    @Synchronized
+    private fun fetch(context: Context, dark: Boolean) {
+        val generation = changeGeneration
         try {
-            remotePrefs = module.getRemotePreferences(PREFS_NAME)
-            remoteStylePrefs = remotePrefs?.let { AppearanceProfiles.selected(it, false) }
-        } catch (_: Throwable) {
-            remotePrefs = null
-            remoteStylePrefs = null
+            val extras = Bundle().apply { putBoolean(AppearanceProfiles.EXTRA_DARK, dark) }
+            val bundle = context.contentResolver.call(PROVIDER_URI, METHOD_GET_CONFIG, null, extras)
+                ?: error("provider returned no settings")
+            values = ConfigSchema.fromBundle(bundle)
+            syncedDark = dark
+            syncedGeneration = generation
+            if (failureLogged) {
+                failureLogged = false
+                module?.let { XposedUtils.log(it, "[Config] Settings sync recovered") }
+            }
+        } catch (t: Throwable) {
+            if (!failureLogged) {
+                failureLogged = true
+                val using = if (values == null) "defaults (all features off)" else "last synced values"
+                module?.let { XposedUtils.logWarn(it, "[Config] Settings sync failed, using $using: $t") }
+            }
         }
     }
 
-    fun syncFromProvider(context: Context) {
+    /** One observer per process. Changes are fetched on its own thread, after a short debounce. */
+    @Synchronized
+    private fun registerObserver(context: Context) {
+        if (observerAttempted) return
+        observerAttempted = true
+        val app = context.applicationContext ?: context
+        val thread = HandlerThread("xatype-config").apply { start() }
+        val handler = Handler(thread.looper)
+        val refresh = Runnable { fetch(app, isSystemDark(app)) }
+        val observer = object : ContentObserver(handler) {
+            override fun onChange(selfChange: Boolean) {
+                changeGeneration++
+                handler.removeCallbacks(refresh)
+                handler.postDelayed(refresh, CHANGE_DEBOUNCE_MS)
+            }
+        }
         try {
-            val systemDark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
-            remoteStylePrefs = remotePrefs?.let { AppearanceProfiles.selected(it, systemDark) }
-            val uri = Uri.parse("content://io.mo.xatype.logprovider")
-            val extras = Bundle().apply {
-                putBoolean(AppearanceProfiles.EXTRA_DARK, systemDark)
-            }
-            val bundle = context.contentResolver.call(uri, "get_config", null, extras)
-            if (bundle != null) {
-                cachedAiSafety = bundle.getBoolean(KEY_AI_SAFETY, false)
-                cachedVoiceModeration = bundle.getBoolean(KEY_VOICE_MODERATION, false)
-                cachedCloudBlacklist = bundle.getBoolean(KEY_CLOUD_BLACKLIST, false)
-                cachedClipboardSensitive = bundle.getBoolean(KEY_CLIPBOARD_SENSITIVE, false)
-                cachedClipboardPermanent = bundle.getBoolean(KEY_CLIPBOARD_PERMANENT, false)
-                cachedScreenshotClipboard = bundle.getBoolean(KEY_SCREENSHOT_CLIPBOARD, false)
-                cachedOsVersionUnblock = bundle.getBoolean(KEY_OS_VERSION_UNBLOCK, false)
-                cachedAiAbilityUnlock = bundle.getBoolean(KEY_AI_ABILITY_UNLOCK, false)
-                cachedTelemetryBlock = bundle.getBoolean(KEY_TELEMETRY_BLOCK, false)
-                cachedKeyboardHeightUnblock = bundle.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false)
-                cachedKeyboardShortcuts = bundle.getBoolean(KEY_KEYBOARD_SHORTCUTS, false)
-                cachedKeyboardHandwriting = bundle.getBoolean(KEY_KEYBOARD_HANDWRITING, false)
-                cachedHandwritingUpDistance = bundle.getInt(KEY_HANDWRITING_UP_DISTANCE, HANDWRITING_UP_DISTANCE_DEFAULT)
-                    .coerceIn(HANDWRITING_UP_DISTANCE_RANGE)
-                cachedHandwritingSideDistance = bundle.getInt(KEY_HANDWRITING_SIDE_DISTANCE, HANDWRITING_SIDE_DISTANCE_DEFAULT)
-                    .coerceIn(HANDWRITING_SIDE_DISTANCE_RANGE)
-                cachedT9Shuangpin = bundle.getBoolean(KEY_T9_SHUANGPIN, false)
-                cachedEmojiCandidates = bundle.getBoolean(KEY_EMOJI_CANDIDATES, false)
-                cachedPredictionMode = bundle.getString(KEY_PREDICTION_MODE, PredictionMode.KEEP.name) ?: PredictionMode.KEEP.name
-                cachedT9ShuangpinScheme = bundle.getString(KEY_T9_SHUANGPIN_SCHEME, "XIAOHE") ?: "XIAOHE"
-                cachedBottomSpacingEnabled = bundle.getBoolean(KEY_BOTTOM_SPACING_ENABLED, false)
-                cachedBottomSpacing = bundle.getInt(KEY_BOTTOM_SPACING, 0).coerceIn(0, 100)
-                cachedShortcutLabels = bundle.getBoolean(KEY_SHORTCUT_LABELS, false)
-                cachedShortcutLabelSize = bundle.getInt(KEY_SHORTCUT_LABEL_SIZE, 11).coerceIn(8, 20)
-                cachedShortcutLabelX = bundle.getInt(KEY_SHORTCUT_LABEL_X, 0).coerceIn(-40, 40)
-                cachedShortcutLabelY = bundle.getInt(KEY_SHORTCUT_LABEL_Y, -2).coerceIn(-40, 40)
-                cachedVerboseLog = bundle.getBoolean(KEY_VERBOSE_LOG, false)
-                cachedStyleEnabled = bundle.getBoolean(KEY_STYLE_ENABLED, false)
-                cachedCornerRadius = bundle.getInt(KEY_CORNER_RADIUS, 16)
-                cachedOpacity = bundle.getInt(KEY_OPACITY, 85)
-                cachedBlurRadius = bundle.getInt(KEY_BLUR_RADIUS, 50)
-                cachedBgType = bundle.getInt(KEY_BG_TYPE, 0)
-                cachedBgColor = bundle.getString(KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E"
-                cachedTextColor = bundle.getString(KEY_TEXT_COLOR, "") ?: ""
-                cachedFunctionKeycapColor = bundle.getString(KEY_FUNCTION_KEYCAP_COLOR, "") ?: ""
-                cachedMenuCardColor = bundle.getString(KEY_MENU_CARD_COLOR, "") ?: ""
-                cachedClipboardCardColor = bundle.getString(
-                    KEY_CLIPBOARD_CARD_COLOR,
-                    cachedMenuCardColor
-                ) ?: cachedMenuCardColor
-                cachedLetterKeycapColor = bundle.getString(KEY_LETTER_KEYCAP_COLOR, "") ?: ""
-                cachedKeyPopupBackground = bundle.getString(KEY_KEY_POPUP_BACKGROUND, "") ?: ""
-                cachedKeyPopupSelected = bundle.getString(KEY_KEY_POPUP_SELECTED, "") ?: ""
-                cachedKeyPopupText = bundle.getString(KEY_KEY_POPUP_TEXT, "") ?: ""
-                cachedFunctionKeycapOpacity = bundle.getInt(KEY_FUNCTION_KEYCAP_OPACITY, 100).coerceIn(0, 100)
-                cachedMenuCardOpacity = bundle.getInt(KEY_MENU_CARD_OPACITY, 100).coerceIn(0, 100)
-                cachedClipboardCardOpacity = bundle.getInt(
-                    KEY_CLIPBOARD_CARD_OPACITY,
-                    cachedMenuCardOpacity
-                ).coerceIn(0, 100)
-                cachedLetterKeycapOpacity = bundle.getInt(KEY_LETTER_KEYCAP_OPACITY, 100).coerceIn(0, 100)
-                cachedBgImageVersion = bundle.getLong(KEY_BG_IMAGE_VERSION, 0L)
-                cachedScrimEnabled = bundle.getBoolean(KEY_SCRIM_ENABLED, true)
-                cachedScrimColor = bundle.getString(KEY_SCRIM_COLOR, "") ?: ""
-                cachedScrimOpacity = bundle.getInt(KEY_SCRIM_OPACITY, DEFAULT_SCRIM_OPACITY).coerceIn(0, 100)
-                cachedRimHighlight = bundle.getInt(KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100)
-                cachedRimLight = bundle.getInt(KEY_RIM_LIGHT, 0).coerceIn(0, 2)
-                cachedShortcutMaps = ShortcutKeyboard.entries.associateWith { bundle.getString(it.prefKey) }
-                hasSyncedFromProvider = true
-            }
-        } catch (_: Throwable) {
+            app.contentResolver.registerContentObserver(CONFIG_URI, false, observer)
+            observing = true
+        } catch (t: Throwable) {
+            thread.quitSafely()
+            module?.let { XposedUtils.logWarn(it, "[Config] Change observer unavailable, syncing on every show: $t") }
         }
     }
 
-    fun isAiSafetyEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedAiSafety
-        return remotePrefs?.getBoolean(KEY_AI_SAFETY, false) ?: cachedAiSafety
-    }
+    private fun current(): Map<String, Any?> = values ?: ConfigSchema.defaults
+    private fun bool(key: String): Boolean = current()[key] as? Boolean ?: false
+    private fun int(key: String): Int = current()[key] as? Int ?: ConfigSchema.defaults[key] as Int
+    private fun long(key: String): Long = current()[key] as? Long ?: 0L
+    private fun string(key: String): String =
+        current()[key] as? String ?: (ConfigSchema.defaults[key] as? String).orEmpty()
 
-    fun isVoiceModerationEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedVoiceModeration
-        return remotePrefs?.getBoolean(KEY_VOICE_MODERATION, false) ?: cachedVoiceModeration
-    }
+    fun isAiSafetyEnabled() = bool(KEY_AI_SAFETY)
+    fun isVoiceModerationEnabled() = bool(KEY_VOICE_MODERATION)
+    fun isCloudBlacklistEnabled() = bool(KEY_CLOUD_BLACKLIST)
+    fun isClipboardSensitiveEnabled() = bool(KEY_CLIPBOARD_SENSITIVE)
+    fun isClipboardPermanentEnabled() = bool(KEY_CLIPBOARD_PERMANENT)
+    fun isScreenshotClipboardEnabled() = bool(KEY_SCREENSHOT_CLIPBOARD)
+    fun isOsVersionUnblockEnabled() = bool(KEY_OS_VERSION_UNBLOCK)
+    fun isAiAbilityUnlockEnabled() = bool(KEY_AI_ABILITY_UNLOCK)
+    fun isTelemetryBlockEnabled() = bool(KEY_TELEMETRY_BLOCK)
+    fun isVerboseLogEnabled() = bool(KEY_VERBOSE_LOG)
 
-    fun isCloudBlacklistEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedCloudBlacklist
-        return remotePrefs?.getBoolean(KEY_CLOUD_BLACKLIST, false) ?: cachedCloudBlacklist
-    }
-
-    fun isClipboardSensitiveEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedClipboardSensitive
-        return remotePrefs?.getBoolean(KEY_CLIPBOARD_SENSITIVE, false) ?: cachedClipboardSensitive
-    }
-
-    fun isClipboardPermanentEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedClipboardPermanent
-        return remotePrefs?.getBoolean(KEY_CLIPBOARD_PERMANENT, false) ?: cachedClipboardPermanent
-    }
-
-    fun isScreenshotClipboardEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedScreenshotClipboard
-        return remotePrefs?.getBoolean(KEY_SCREENSHOT_CLIPBOARD, false) ?: cachedScreenshotClipboard
-    }
-
-    fun isOsVersionUnblockEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedOsVersionUnblock
-        return remotePrefs?.getBoolean(KEY_OS_VERSION_UNBLOCK, false) ?: cachedOsVersionUnblock
-    }
-
-    fun isAiAbilityUnlockEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedAiAbilityUnlock
-        return remotePrefs?.getBoolean(KEY_AI_ABILITY_UNLOCK, false) ?: cachedAiAbilityUnlock
-    }
-
-    fun isTelemetryBlockEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedTelemetryBlock
-        return remotePrefs?.getBoolean(KEY_TELEMETRY_BLOCK, false) ?: cachedTelemetryBlock
-    }
-
-    fun isStyleEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedStyleEnabled
-        return remoteStylePrefs?.getBoolean(KEY_STYLE_ENABLED, cachedStyleEnabled) ?: cachedStyleEnabled
-    }
-
-    fun isKeyboardHeightUnblockEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedKeyboardHeightUnblock
-        return remotePrefs?.getBoolean(KEY_KEYBOARD_HEIGHT_UNBLOCK, false) ?: cachedKeyboardHeightUnblock
-    }
-
-    fun isKeyboardShortcutsEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedKeyboardShortcuts
-        return remotePrefs?.getBoolean(KEY_KEYBOARD_SHORTCUTS, false) ?: cachedKeyboardShortcuts
-    }
-
-    fun isKeyboardHandwritingEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedKeyboardHandwriting
-        return remotePrefs?.getBoolean(KEY_KEYBOARD_HANDWRITING, false) ?: cachedKeyboardHandwriting
-    }
-
-    fun getHandwritingUpDistance(): Int {
-        if (hasSyncedFromProvider) return cachedHandwritingUpDistance
-        return (remotePrefs?.getInt(KEY_HANDWRITING_UP_DISTANCE, HANDWRITING_UP_DISTANCE_DEFAULT)
-            ?: cachedHandwritingUpDistance).coerceIn(HANDWRITING_UP_DISTANCE_RANGE)
-    }
-
-    fun getHandwritingSideDistance(): Int {
-        if (hasSyncedFromProvider) return cachedHandwritingSideDistance
-        return (remotePrefs?.getInt(KEY_HANDWRITING_SIDE_DISTANCE, HANDWRITING_SIDE_DISTANCE_DEFAULT)
-            ?: cachedHandwritingSideDistance).coerceIn(HANDWRITING_SIDE_DISTANCE_RANGE)
-    }
+    fun isKeyboardHeightUnblockEnabled() = bool(KEY_KEYBOARD_HEIGHT_UNBLOCK)
+    fun isKeyboardShortcutsEnabled() = bool(KEY_KEYBOARD_SHORTCUTS)
+    fun isKeyboardHandwritingEnabled() = bool(KEY_KEYBOARD_HANDWRITING)
+    fun getHandwritingUpDistance() = int(KEY_HANDWRITING_UP_DISTANCE)
+    fun getHandwritingSideDistance() = int(KEY_HANDWRITING_SIDE_DISTANCE)
+    fun isT9ShuangpinEnabled() = bool(KEY_T9_SHUANGPIN)
+    fun getT9ShuangpinScheme() = string(KEY_T9_SHUANGPIN_SCHEME)
+    fun isEmojiCandidatesEnabled() = bool(KEY_EMOJI_CANDIDATES)
+    fun getPredictionMode(): PredictionMode = PredictionMode.resolve(string(KEY_PREDICTION_MODE))
+    fun isBottomSpacingEnabled() = bool(KEY_BOTTOM_SPACING_ENABLED)
+    fun getBottomSpacing() = int(KEY_BOTTOM_SPACING)
+    fun isShortcutLabelsEnabled() = bool(KEY_SHORTCUT_LABELS)
+    fun getShortcutLabelSize() = int(KEY_SHORTCUT_LABEL_SIZE)
+    fun getShortcutLabelX() = int(KEY_SHORTCUT_LABEL_X)
+    fun getShortcutLabelY() = int(KEY_SHORTCUT_LABEL_Y)
 
     /** Key-to-action mapping of [keyboard]'s downward-swipe shortcuts. Called for every rendered key. */
     fun getShortcutMapping(keyboard: ShortcutKeyboard): Map<String, String> {
-        val stored = if (hasSyncedFromProvider) cachedShortcutMaps[keyboard]
-            else remotePrefs?.getString(keyboard.prefKey, null) ?: cachedShortcutMaps[keyboard]
+        val stored = current()[keyboard.prefKey] as? String
         decodedShortcutMaps[keyboard]?.let { (raw, mapping) -> if (raw == stored) return mapping }
         val mapping = keyboard.decode(stored)
         decodedShortcutMaps = decodedShortcutMaps + (keyboard to (stored to mapping))
         return mapping
     }
 
-    fun isT9ShuangpinEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedT9Shuangpin
-        return remotePrefs?.getBoolean(KEY_T9_SHUANGPIN, false) ?: cachedT9Shuangpin
-    }
-
-    fun isEmojiCandidatesEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedEmojiCandidates
-        return remotePrefs?.getBoolean(KEY_EMOJI_CANDIDATES, false) ?: cachedEmojiCandidates
-    }
-
-    fun getPredictionMode(): PredictionMode = PredictionMode.resolve(
-        if (hasSyncedFromProvider) cachedPredictionMode
-        else remotePrefs?.getString(KEY_PREDICTION_MODE, cachedPredictionMode) ?: cachedPredictionMode)
-
-    fun getT9ShuangpinScheme(): String {
-        if (hasSyncedFromProvider) return cachedT9ShuangpinScheme
-        return remotePrefs?.getString(KEY_T9_SHUANGPIN_SCHEME, "XIAOHE") ?: cachedT9ShuangpinScheme
-    }
-
-    fun getCornerRadius(): Int {
-        if (hasSyncedFromProvider) return cachedCornerRadius
-        return remoteStylePrefs?.getInt(KEY_CORNER_RADIUS, cachedCornerRadius) ?: cachedCornerRadius
-    }
-
-    fun isBottomSpacingEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedBottomSpacingEnabled
-        return remotePrefs?.getBoolean(KEY_BOTTOM_SPACING_ENABLED, false) ?: cachedBottomSpacingEnabled
-    }
-
-    fun getBottomSpacing(): Int {
-        if (hasSyncedFromProvider) return cachedBottomSpacing
-        return (remotePrefs?.getInt(KEY_BOTTOM_SPACING, 0) ?: cachedBottomSpacing).coerceIn(0, 100)
-    }
-
-    fun isShortcutLabelsEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedShortcutLabels
-        return remotePrefs?.getBoolean(KEY_SHORTCUT_LABELS, false) ?: cachedShortcutLabels
-    }
-
-    fun getShortcutLabelSize(): Int {
-        if (hasSyncedFromProvider) return cachedShortcutLabelSize
-        return (remotePrefs?.getInt(KEY_SHORTCUT_LABEL_SIZE, 11) ?: cachedShortcutLabelSize).coerceIn(8, 20)
-    }
-
-    fun getShortcutLabelX(): Int {
-        if (hasSyncedFromProvider) return cachedShortcutLabelX
-        return (remotePrefs?.getInt(KEY_SHORTCUT_LABEL_X, 0) ?: cachedShortcutLabelX).coerceIn(-40, 40)
-    }
-
-    fun getShortcutLabelY(): Int {
-        if (hasSyncedFromProvider) return cachedShortcutLabelY
-        return (remotePrefs?.getInt(KEY_SHORTCUT_LABEL_Y, -2) ?: cachedShortcutLabelY).coerceIn(-40, 40)
-    }
-
-    fun getOpacity(): Int {
-        if (hasSyncedFromProvider) return cachedOpacity
-        return remoteStylePrefs?.getInt(KEY_OPACITY, cachedOpacity) ?: cachedOpacity
-    }
-
-    fun getBlurRadius(): Int {
-        if (hasSyncedFromProvider) return cachedBlurRadius
-        return remoteStylePrefs?.getInt(KEY_BLUR_RADIUS, cachedBlurRadius) ?: cachedBlurRadius
-    }
-
-    fun getBgType(): Int {
-        if (hasSyncedFromProvider) return cachedBgType
-        return remoteStylePrefs?.getInt(KEY_BG_TYPE, cachedBgType) ?: cachedBgType
-    }
-
-    fun getBgColor(): String {
-        if (hasSyncedFromProvider) return cachedBgColor
-        return remoteStylePrefs?.getString(KEY_BG_COLOR, cachedBgColor) ?: cachedBgColor
-    }
-
-    fun getTextColor(): String {
-        if (hasSyncedFromProvider) return cachedTextColor
-        return remoteStylePrefs?.getString(KEY_TEXT_COLOR, cachedTextColor) ?: cachedTextColor
-    }
-
-    fun getFunctionKeycapColor(): String {
-        if (hasSyncedFromProvider) return cachedFunctionKeycapColor
-        return remoteStylePrefs?.getString(KEY_FUNCTION_KEYCAP_COLOR, cachedFunctionKeycapColor)
-            ?: cachedFunctionKeycapColor
-    }
-
-    fun getMenuCardColor(): String {
-        if (hasSyncedFromProvider) return cachedMenuCardColor
-        return remoteStylePrefs?.getString(KEY_MENU_CARD_COLOR, cachedMenuCardColor)
-            ?: cachedMenuCardColor
-    }
-
-    fun getClipboardCardColor(): String {
-        if (hasSyncedFromProvider) return cachedClipboardCardColor
-
-        val prefs = remoteStylePrefs
-        return if (prefs != null && prefs.contains(KEY_CLIPBOARD_CARD_COLOR)) {
-            prefs.getString(KEY_CLIPBOARD_CARD_COLOR, cachedClipboardCardColor)
-                ?: cachedClipboardCardColor
-        } else {
-            prefs?.getString(KEY_MENU_CARD_COLOR, cachedMenuCardColor)
-                ?: cachedClipboardCardColor
-        }
-    }
-
-    fun getLetterKeycapColor(): String {
-        if (hasSyncedFromProvider) return cachedLetterKeycapColor
-        return remoteStylePrefs?.getString(KEY_LETTER_KEYCAP_COLOR, cachedLetterKeycapColor)
-            ?: cachedLetterKeycapColor
-    }
-
-    fun getKeyPopupBackground(): String = if (hasSyncedFromProvider) cachedKeyPopupBackground else
-        remoteStylePrefs?.getString(KEY_KEY_POPUP_BACKGROUND, cachedKeyPopupBackground) ?: cachedKeyPopupBackground
-
-    fun getKeyPopupSelected(): String = if (hasSyncedFromProvider) cachedKeyPopupSelected else
-        remoteStylePrefs?.getString(KEY_KEY_POPUP_SELECTED, cachedKeyPopupSelected) ?: cachedKeyPopupSelected
-
-    fun getKeyPopupText(): String = if (hasSyncedFromProvider) cachedKeyPopupText else
-        remoteStylePrefs?.getString(KEY_KEY_POPUP_TEXT, cachedKeyPopupText) ?: cachedKeyPopupText
-
-    fun getFunctionKeycapOpacity(): Int {
-        if (hasSyncedFromProvider) return cachedFunctionKeycapOpacity
-        return (remoteStylePrefs?.getInt(KEY_FUNCTION_KEYCAP_OPACITY, cachedFunctionKeycapOpacity)
-            ?: cachedFunctionKeycapOpacity).coerceIn(0, 100)
-    }
-
-    fun getMenuCardOpacity(): Int {
-        if (hasSyncedFromProvider) return cachedMenuCardOpacity
-        return (remoteStylePrefs?.getInt(KEY_MENU_CARD_OPACITY, cachedMenuCardOpacity)
-            ?: cachedMenuCardOpacity).coerceIn(0, 100)
-    }
-
-    fun getClipboardCardOpacity(): Int {
-        if (hasSyncedFromProvider) return cachedClipboardCardOpacity
-
-        val prefs = remoteStylePrefs
-        val value = if (prefs != null && prefs.contains(KEY_CLIPBOARD_CARD_OPACITY)) {
-            prefs.getInt(KEY_CLIPBOARD_CARD_OPACITY, cachedClipboardCardOpacity)
-        } else {
-            prefs?.getInt(KEY_MENU_CARD_OPACITY, cachedMenuCardOpacity)
-                ?: cachedClipboardCardOpacity
-        }
-        return value.coerceIn(0, 100)
-    }
-
-    fun getLetterKeycapOpacity(): Int {
-        if (hasSyncedFromProvider) return cachedLetterKeycapOpacity
-        return (remoteStylePrefs?.getInt(KEY_LETTER_KEYCAP_OPACITY, cachedLetterKeycapOpacity)
-            ?: cachedLetterKeycapOpacity).coerceIn(0, 100)
-    }
-
-    fun getBgImageVersion(): Long {
-        if (hasSyncedFromProvider) return cachedBgImageVersion
-        return remoteStylePrefs?.getLong(KEY_BG_IMAGE_VERSION, cachedBgImageVersion) ?: cachedBgImageVersion
-    }
-
-    fun isScrimEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedScrimEnabled
-        return remotePrefs?.getBoolean(KEY_SCRIM_ENABLED, cachedScrimEnabled) ?: cachedScrimEnabled
-    }
-
-    fun getScrimColor(): String {
-        if (hasSyncedFromProvider) return cachedScrimColor
-        return remoteStylePrefs?.getString(KEY_SCRIM_COLOR, cachedScrimColor) ?: cachedScrimColor
-    }
-
-    fun getScrimOpacity(): Int {
-        if (hasSyncedFromProvider) return cachedScrimOpacity
-        return (remoteStylePrefs?.getInt(KEY_SCRIM_OPACITY, cachedScrimOpacity) ?: cachedScrimOpacity).coerceIn(0, 100)
-    }
-
-    fun getRimHighlight(): Int {
-        if (hasSyncedFromProvider) return cachedRimHighlight
-        return (remoteStylePrefs?.getInt(KEY_RIM_HIGHLIGHT, cachedRimHighlight) ?: cachedRimHighlight).coerceIn(0, 100)
-    }
-
-    fun getRimLight(): Int {
-        if (hasSyncedFromProvider) return cachedRimLight
-        return (remoteStylePrefs?.getInt(KEY_RIM_LIGHT, cachedRimLight) ?: cachedRimLight).coerceIn(0, 2)
-    }
-
-    fun isVerboseLogEnabled(): Boolean {
-        if (hasSyncedFromProvider) return cachedVerboseLog
-        return remotePrefs?.getBoolean(KEY_VERBOSE_LOG, cachedVerboseLog) ?: cachedVerboseLog
-    }
+    fun isStyleEnabled() = bool(KEY_STYLE_ENABLED)
+    fun getCornerRadius() = int(KEY_CORNER_RADIUS)
+    fun getOpacity() = int(KEY_OPACITY)
+    fun getBlurRadius() = int(KEY_BLUR_RADIUS)
+    fun getBgType() = int(KEY_BG_TYPE)
+    fun getBgColor() = string(KEY_BG_COLOR)
+    fun getTextColor() = string(KEY_TEXT_COLOR)
+    fun getFunctionKeycapColor() = string(KEY_FUNCTION_KEYCAP_COLOR)
+    fun getMenuCardColor() = string(KEY_MENU_CARD_COLOR)
+    fun getClipboardCardColor() = string(KEY_CLIPBOARD_CARD_COLOR)
+    fun getLetterKeycapColor() = string(KEY_LETTER_KEYCAP_COLOR)
+    fun getKeyPopupBackground() = string(KEY_KEY_POPUP_BACKGROUND)
+    fun getKeyPopupSelected() = string(KEY_KEY_POPUP_SELECTED)
+    fun getKeyPopupText() = string(KEY_KEY_POPUP_TEXT)
+    fun getFunctionKeycapOpacity() = int(KEY_FUNCTION_KEYCAP_OPACITY)
+    fun getMenuCardOpacity() = int(KEY_MENU_CARD_OPACITY)
+    fun getClipboardCardOpacity() = int(KEY_CLIPBOARD_CARD_OPACITY)
+    fun getLetterKeycapOpacity() = int(KEY_LETTER_KEYCAP_OPACITY)
+    fun getBgImageVersion() = long(KEY_BG_IMAGE_VERSION)
+    fun isScrimEnabled() = bool(KEY_SCRIM_ENABLED)
+    fun getScrimColor() = string(KEY_SCRIM_COLOR)
+    fun getScrimOpacity() = int(KEY_SCRIM_OPACITY)
+    fun getRimHighlight() = int(KEY_RIM_HIGHLIGHT)
+    fun getRimLight() = int(KEY_RIM_LIGHT)
 
     fun getLocalPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

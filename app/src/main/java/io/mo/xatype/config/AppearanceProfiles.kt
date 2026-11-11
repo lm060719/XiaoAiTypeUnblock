@@ -9,33 +9,11 @@ object AppearanceProfiles {
     const val EXTRA_DARK = "appearance_dark"
     private const val MIGRATED = "pref_style_profiles_initialized"
 
-    private val defaults: Map<String, Any> = linkedMapOf(
-        ConfigManager.KEY_CORNER_RADIUS to 16,
-        ConfigManager.KEY_OPACITY to 85,
-        ConfigManager.KEY_BLUR_RADIUS to 50,
-        ConfigManager.KEY_BG_TYPE to 0,
-        ConfigManager.KEY_BG_COLOR to "#1E1E2E",
-        ConfigManager.KEY_TEXT_COLOR to "",
-        ConfigManager.KEY_FUNCTION_KEYCAP_COLOR to "",
-        ConfigManager.KEY_MENU_CARD_COLOR to "",
-        ConfigManager.KEY_CLIPBOARD_CARD_COLOR to "",
-        ConfigManager.KEY_LETTER_KEYCAP_COLOR to "",
-        ConfigManager.KEY_KEY_POPUP_BACKGROUND to "",
-        ConfigManager.KEY_KEY_POPUP_SELECTED to "",
-        ConfigManager.KEY_KEY_POPUP_TEXT to "",
-        ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY to 100,
-        ConfigManager.KEY_MENU_CARD_OPACITY to 100,
-        ConfigManager.KEY_CLIPBOARD_CARD_OPACITY to 100,
-        ConfigManager.KEY_LETTER_KEYCAP_OPACITY to 100,
-        ConfigManager.KEY_SCRIM_COLOR to "",
-        ConfigManager.KEY_SCRIM_OPACITY to ConfigManager.DEFAULT_SCRIM_OPACITY,
-        ConfigManager.KEY_RIM_HIGHLIGHT to 0,
-        ConfigManager.KEY_RIM_LIGHT to 0,
-        ConfigManager.KEY_BG_IMAGE_VERSION to 0L
-    )
+    /** Per-profile keys and defaults come from [ConfigSchema]'s PROFILE entries. */
+    private val defaults: Map<String, Any> get() = ConfigSchema.profileDefaults
 
     /** Appearance values that can be carried between named schemes. Image version stays device-local. */
-    val portableKeys: Set<String> = defaults.keys - ConfigManager.KEY_BG_IMAGE_VERSION
+    val portableKeys: Set<String> by lazy { defaults.keys - ConfigManager.KEY_BG_IMAGE_VERSION }
 
     fun defaultValue(key: String): Any = defaults.getValue(key)
 
