@@ -41,7 +41,7 @@ class Keyboard18Activity : AppCompatActivity() {
     private lateinit var keys: GroupedKeys
     private lateinit var style: ShapeUiStyle
     private lateinit var enabled: SwitchCompat
-    private lateinit var status: TextView
+    private lateinit var restartButton: AppCompatButton
     private lateinit var progress: TextView
     private lateinit var composing: TextView
     private lateinit var output: EditText
@@ -49,7 +49,6 @@ class Keyboard18Activity : AppCompatActivity() {
     private lateinit var languageButton: AppCompatButton
     private lateinit var shiftButton: AppCompatButton
     private lateinit var schemeButton: AppCompatButton
-    private lateinit var inputHelp: TextView
     private lateinit var keypad: LinearLayout
     private val letterButtons = LinkedHashMap<String, AppCompatButton>()
     private val englishButtons = LinkedHashMap<Char, AppCompatButton>()
@@ -88,11 +87,6 @@ class Keyboard18Activity : AppCompatActivity() {
 
         body.addView(text(if (keys === Keyboard14Keys) "字母两两成对，按键更大" else "更宽的按键，更轻松地输入",
             ShapeUiStyle.TITLE, strong = true))
-        body.addView(text((if (keys === Keyboard14Keys)
-            "按 5 · 5 · 4 布局，QWERTY 字母两两一键，底排左侧为分隔键（'），输入拼音时用于划分音节。"
-        else "按图片的 7 · 6 · 5 布局，三排同宽。") +
-            "中文点按分组键，长按选择准确字母和数字；切到英文自动换成 26 键。开启首页「字母下滑快捷操作」后，底排字母下滑渐变为功能图标，轻震后松手执行。",
-            ShapeUiStyle.BODY, secondary = true), spaced())
         val settings = card()
         enabled = SwitchCompat(this).apply {
             text = "在键盘选择中显示${keys.title}"
@@ -130,15 +124,9 @@ class Keyboard18Activity : AppCompatActivity() {
             }
         }
         settings.addView(schemeButton, spaced())
-        settings.addView(text("重启应用设置后，在小爱「键盘选择」中选择「${keys.title}」。可直接切换拼音26键、18键、14键、虎码/五笔；此开关只控制入口显示。18键与14键共用双拼设置和学习记录，词库和输入均在本地。",
-            ShapeUiStyle.CAPTION, secondary = true), spaced())
-        status = text("", ShapeUiStyle.CAPTION, secondary = true)
-        settings.addView(status, spaced())
         body.addView(settings, spaced())
 
         body.addView(text("试试${keys.title}", ShapeUiStyle.HEADING, strong = true), spaced())
-        inputHelp = text("", ShapeUiStyle.CAPTION, secondary = true)
-        body.addView(inputHelp, spaced())
         val preview = card()
         output = EditText(this).apply {
             hint = "输入的文字显示在这里"
@@ -151,7 +139,7 @@ class Keyboard18Activity : AppCompatActivity() {
             setSelection(text.length)
         }
         preview.addView(output, LinearLayout.LayoutParams(-1, -2))
-        composing = text("", ShapeUiStyle.BODY)
+        composing = text("", ShapeUiStyle.BODY).apply { visibility = View.GONE }
         preview.addView(composing, spaced())
         candidateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         preview.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false
@@ -163,22 +151,21 @@ class Keyboard18Activity : AppCompatActivity() {
         preview.addView(progress, spaced())
         preview.addView(button("清空预览") { engine?.clear(); output.text.clear(); showCandidates() }, spaced())
         body.addView(preview, spaced())
-        body.addView(text("按宿主接口自动适配，具体结果见首页状态。使用独立离线候选；平板分离布局暂保留原布局。",
-            ShapeUiStyle.CAPTION, secondary = true), spaced())
         body.addView(button("重新读取词库") { prepareDictionary() }, spaced())
 
         val footer = column().apply { setPadding(style.dp(ShapeUiStyle.LG), style.dp(ShapeUiStyle.SM),
             style.dp(ShapeUiStyle.LG), style.dp(ShapeUiStyle.SM)); setBackgroundColor(style.surface) }
-        footer.addView(button("重启输入法并应用", accent = true) {
+        restartButton = button("重启输入法并应用", accent = true) {
             ImeRestarter.restart(this) { if (!isDestroyed && !isFinishing) updateStatus() }
-        }, LinearLayout.LayoutParams(-1, -2))
+        }
+        footer.addView(restartButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(footer)
         setContentView(root)
         SettingsWindow.apply(window, root, topBar = toolbar, bottomBar = footer)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         labels(); updateStatus(); prepareDictionary()
     }
-    override fun onResume() { super.onResume(); if (::status.isInitialized) updateStatus() }
+    override fun onResume() { super.onResume(); if (::restartButton.isInitialized) updateStatus() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("text", output.text.toString()); outState.putString("raw", engine?.raw ?: restoreRaw)
         outState.putBoolean("english", english); outState.putBoolean("uppercase", uppercase)
@@ -194,11 +181,7 @@ class Keyboard18Activity : AppCompatActivity() {
         engine = null
         candidateRow.removeAllViews()
         composing.text = ""
-        inputHelp.text = if (selectedScheme == null)
-            "支持全拼和首字母简拼，例如「为什么」简拼 wsm：依次点 ${example("、")}。" +
-                (if (keys.separatorKey) "音节有歧义时点 ' 分隔。" else "") else
-            "${selectedScheme.title}：按双拼编码依次点对应的分组键；长按可选择准确字母。" +
-                if (selectedScheme.usesSemicolon) "分号韵母共用 L 键，也可长按 L 选择分号。" else ""
+        composing.visibility = View.GONE
         worker.execute {
             val loaded = runCatching { Keyboard18Store.dictionaryFile(this).inputStream()
                 .use { Keyboard18Dictionary.read(it, selectedScheme, keys) } }
@@ -229,7 +212,7 @@ class Keyboard18Activity : AppCompatActivity() {
     private fun updateStatus() {
         val snapshot = Keyboard18Store.snapshot(this)
         if (snapshot.getLong(Keyboard18Store.STATUS_TIME) > 0) pendingRestart = false
-        status.text = if (pendingRestart) "设置已保存，请重启输入法应用。" else snapshot.getString(Keyboard18Store.STATUS)
+        restartButton.text = if (pendingRestart) "重启并应用更改" else "重启输入法并应用"
     }
     private fun buildKeypad() {
         keypad.removeAllViews()
@@ -347,13 +330,8 @@ class Keyboard18Activity : AppCompatActivity() {
     private fun showResult(result: io.mo.xatype.keyboard18.Pinyin18Result) { result.commit?.let(::insert); showCandidates() }
     private fun showCandidates() {
         val decoder = engine
-        composing.text = decoder?.display?.ifEmpty {
-            when {
-                english -> "英文：26键，点按输入字母"
-                decoder.scheme != null -> "${decoder.scheme!!.title}：按双拼编码输入"
-                else -> "全拼 / 简拼：为什么 → ${example(" · ")}"
-            }
-        }
+        composing.text = decoder?.display.orEmpty()
+        composing.visibility = if (composing.text.isEmpty()) View.GONE else View.VISIBLE
         candidateRow.removeAllViews()
         decoder?.candidates?.take(40)?.forEachIndexed { index, candidate ->
             candidateRow.addView(button(candidate.text) { decoder.select(index)?.let(::insert); showCandidates() },
@@ -378,9 +356,6 @@ class Keyboard18Activity : AppCompatActivity() {
                 engine?.input(selected.single())?.let(::showResult) else literal(selected)
         }
     }
-    /** Simple pinyin of 为什么 (wsm) spelled with this layout's key groups. */
-    private fun example(separator: String) = "wsm".map { letter -> keys.groups.first { letter in it }.uppercase() }
-        .joinToString(separator)
     private fun separator() {
         val decoder = engine ?: return
         // As on the host's segmentation key, the separator only splits syllables while composing.

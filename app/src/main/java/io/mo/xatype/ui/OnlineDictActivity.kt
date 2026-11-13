@@ -77,17 +77,12 @@ class OnlineDictActivity : AppCompatActivity() {
         val current = OnlineDictSource.byId(state.getString(OnlineDictStore.SOURCE))
         body.removeAllViews()
 
-        body.addView(kit.label(
-            "从上游 Rime 词库下载常用词，导入小爱输入法的用户词库，作为联想与候选的补充。两个来源只能选一个，切换时会先移除上一来源导入的词，不影响你自己输入过的词。",
-            13f, R.color.text_secondary).apply { setLineSpacing(kit.dp(3).toFloat(), 1f)
-            setPadding(kit.dimen(R.dimen.space_xs), kit.dimen(R.dimen.space_sm), kit.dimen(R.dimen.space_xs), 0) })
-
         val busy = busyMessage != null
         kit.group(body, "词库来源", OnlineDictSource.entries.map { source ->
-            kit.navRow(source.title + if (source == current) "（当前）" else "", source.summary, R.drawable.ic_text_fields) {
+            kit.navRow(source.title + if (source == current) "（当前）" else "", null, R.drawable.ic_text_fields) {
                 if (!busy) confirmSwitch(source, current)
             }
-        })
+        }, first = true)
 
         kit.group(body, "状态", listOf(statusRow(state, current)))
 
@@ -97,31 +92,31 @@ class OnlineDictActivity : AppCompatActivity() {
             val installed = state.getString(OnlineDictStore.VERSION).orEmpty()
             val hasUpdate = latest.isNotEmpty() && latest != installed
             rows += kit.navRow(if (hasUpdate) "下载并导入更新" else "检查更新",
-                if (hasUpdate) "新版本 ${state.getString(OnlineDictStore.LATEST_LABEL)}" else "对比 GitHub 上的最新发布",
+                null,
                 R.drawable.ic_restart) {
                 if (busy) return@navRow
                 if (hasUpdate) install(current) else checkNow(current, manual = true)
             }
             if (!pending(state) && state.getInt(OnlineDictStore.HOST_IMPORTED) == 0 &&
                 state.getString(OnlineDictStore.HOST_STATUS).orEmpty().isNotEmpty() && OnlineDictStore.hasWords(this)) {
-                rows += kit.navRow("重新导入", "使用已下载的词库再试一次，重启输入法后生效", R.drawable.ic_shape_import) {
+                rows += kit.navRow("重新导入", null, R.drawable.ic_shape_import) {
                     if (busy) return@navRow
                     runCatching { OnlineDictStore.requeue(this) }.onFailure { toast(it.message ?: "无法保存导入请求") }
                     render()
                 }
             }
-            rows += kit.navRow("清除导入的词", "只删除由本功能导入的词", R.drawable.ic_shape_restore) {
+            rows += kit.navRow("清除导入的词", null, R.drawable.ic_shape_restore) {
                 if (!busy) confirmClear()
             }
         }
         val cap = state.getInt(OnlineDictStore.MAX_WORDS)
-        rows += kit.navRow("词条数量上限", "$cap 条 · 高频词优先", R.drawable.ic_shape_import,
+        rows += kit.navRow("词条数量上限（$cap 条）", null, R.drawable.ic_shape_import,
             detail = SettingsKit.Detail("小爱输入法的用户词库总共只能存约 1.6 万个词，与你自己输入、学习的词和联系人共用，存满后会挤掉旧词。",
                 notes = listOf("导入后用户词库总数不超过 1.2 万，给你自己的新词留出空间；不够时会少导入，不会挤掉原有的词。",
                     "修改后需重新下载并导入才会生效。", "仅保留 2–7 个汉字的词条，单字与带字母数字的词不导入。"))) {
             if (!busy) chooseCap(cap, current)
         }
-        rows += kit.switchRow("打开页面时自动更新", "发现新版本时自动下载并排队导入",
+        rows += kit.switchRow("打开页面时自动更新", null,
             state.getBoolean(OnlineDictStore.AUTO_UPDATE), R.drawable.ic_restart) { value ->
             runCatching { OnlineDictStore.setAutoUpdate(this, value) }
                 .onFailure { toast(it.message ?: "无法保存设置") }
@@ -130,7 +125,7 @@ class OnlineDictActivity : AppCompatActivity() {
         kit.group(body, "更新与管理", rows)
 
         if (pending(state)) {
-            kit.group(body, null, listOf(kit.navRow("重启输入法使其生效", "需要 Root 权限；也可手动重启输入法",
+            kit.group(body, null, listOf(kit.navRow("重启输入法使其生效", null,
                 R.drawable.ic_restart) { ImeRestarter.restart(this) { if (!isDestroyed) render() } }))
         }
     }

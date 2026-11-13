@@ -19,7 +19,6 @@ import io.mo.xatype.R
 import io.mo.xatype.shape.ShapeStore
 import io.mo.xatype.ui.ShapeUiStyle.Companion.BODY
 import io.mo.xatype.ui.ShapeUiStyle.Companion.BUTTON
-import io.mo.xatype.ui.ShapeUiStyle.Companion.CAPTION
 import io.mo.xatype.ui.ShapeUiStyle.Companion.DISABLED_ALPHA
 import io.mo.xatype.ui.ShapeUiStyle.Companion.HEADING
 import io.mo.xatype.ui.ShapeUiStyle.Companion.ICON
@@ -61,7 +60,6 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
     private var busy = false
     private var hasDictionary = false
     private lateinit var name: TextView
-    private lateinit var badge: TextView
     private lateinit var count: TextView
     private lateinit var longest: TextView
     private lateinit var metrics: LinearLayout
@@ -69,7 +67,6 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
     private lateinit var hostStatus: TextView
     private lateinit var maxCode: TextView
     private lateinit var restart: AppCompatButton
-    private lateinit var footerHint: TextView
     private lateinit var errorCard: LinearLayout
     private lateinit var errorMessage: TextView
     private lateinit var errorTitle: TextView
@@ -114,7 +111,7 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
             visibility = GONE
             errorTitle = text("操作未完成", HEADING, style.errorText, true)
             addView(errorTitle)
-            errorMessage = text("", CAPTION, style.errorText)
+            errorMessage = text("", BODY, style.errorText)
             addView(errorMessage, spaced(top = SM))
             addView(text("重新读取码表", BODY, style.errorText, true).apply {
                 minHeight = style.dp(TOUCH)
@@ -127,14 +124,6 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
 
         val hero = column().apply { background = style.surface(); pad(XL) }
         body.addView(hero)
-        hero.addView(row().apply {
-            addView(text("当前方案", CAPTION, style.secondary), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-            badge = text("未开启", CAPTION, style.secondary, true).apply {
-                setPadding(style.dp(MD), style.dp(XS), style.dp(MD), style.dp(XS))
-                background = style.surface(style.background, SMALL_RADIUS)
-            }
-            addView(badge)
-        })
         name = text("准备码表", TITLE, style.primary, true)
         hero.addView(name, spaced(top = SM))
         skeleton = column().apply {
@@ -155,45 +144,30 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         }
         hero.addView(metrics, spaced(top = LG, bottom = SM))
         hero.addView(toggleRow("在键盘选择中显示虎码/五笔", "显示入口后，在小爱键盘面板中选择使用", ShapeStore.SHOW_IN_PICKER, inset = false), spaced(top = SM))
-        hero.addView(text("实验功能 · 按宿主接口自动适配", CAPTION, style.secondary), spaced(top = SM))
 
-        body.addView(row().apply {
-            background = style.surface(style.accentSurface)
-            setPadding(style.dp(LG), style.dp(MD), style.dp(LG), style.dp(MD))
-            addView(icon(R.drawable.ic_shape_keyboard, style.accent), LayoutParams(style.dp(ICON), style.dp(ICON)))
-            addView(text("重启应用设置后，在小爱「键盘选择」中选择「虎码/五笔」。可随时切回拼音或18键。", CAPTION, style.accentText),
-                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = style.dp(MD) })
-        }, spaced(top = LG))
+        val tables = group(body, "码表管理")
+        tables.addView(actionRow("导入码表", R.drawable.ic_shape_import, action = actions.importTable))
+        tables.addView(actionRow("恢复内置虎码", R.drawable.ic_shape_restore, action = actions.restore))
 
-        val tables = group(body, "码表管理", "虎码、五笔，或你自己的字母编码方案")
-        tables.addView(actionRow("导入码表", "选择 UTF-8 文件，替换当前方案", R.drawable.ic_shape_import, action = actions.importTable))
-        tables.addView(actionRow("恢复内置虎码", "使用随模块提供的虎码字词码表", R.drawable.ic_shape_restore, action = actions.restore))
-
-        val rules = group(body, "输入规则", "决定何时上屏，以及候选如何排序")
+        val rules = group(body, "输入规则")
         maxCode = text("—", BODY, style.accentText, true)
-        rules.addView(actionRow("最大码长", "不能短于码表中的最长编码", value = maxCode, needsDictionary = true, action = actions.maxCode))
+        rules.addView(actionRow("最大码长", value = maxCode, needsDictionary = true, action = actions.maxCode))
         rules.addView(toggleRow("唯一候选自动上屏", "达到最大码长，且只有一个候选时提交", ShapeStore.AUTO_COMMIT))
         rules.addView(toggleRow("满码顶屏", "继续输入时提交首选，再开始下一组编码", ShapeStore.OVERFLOW))
         rules.addView(toggleRow("按权重排序", "关闭时保留码表中的原始候选顺序", ShapeStore.SORT_WEIGHT))
 
-        val selection = group(body, "快捷选词", "只在有编码时生效")
+        val selection = group(body, "快捷选词")
         selection.addView(toggleRow("数字选词", "按 1–9 选择对应候选", ShapeStore.DIGITS))
         selection.addView(toggleRow("分号选二", "用半角分号 ; 选择第二候选", ShapeStore.SEMICOLON))
         selection.addView(toggleRow("引号选三", "用半角单引号 ' 选择第三候选", ShapeStore.QUOTE))
 
-        val runtime = group(body, "运行状态", "返回本页时刷新输入法报告")
+        val runtime = group(body, "运行状态")
         runtime.pad(LG)
         hostStatus = text("正在准备内置码表…", BODY, style.secondary).apply {
             setTextIsSelectable(true)
             accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
         }
         runtime.addView(hostStatus)
-        body.addView(text("码表格式、使用步骤与功能限制", CAPTION, style.accentText).apply {
-            gravity = Gravity.CENTER
-            minHeight = style.dp(TOUCH)
-            background = style.ripple(style.background, SMALL_RADIUS)
-            setOnClickListener { actions.help() }
-        }, spaced(top = MD))
 
         val footerContent = column().apply {
             setPadding(style.dp(LG), style.dp(MD), style.dp(LG), style.dp(MD))
@@ -211,8 +185,6 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
             }
             interactive.add(restart)
             addView(restart, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-            footerHint = text("通过 Root 重启，也可在系统设置中强制停止", CAPTION, style.secondary).apply { gravity = Gravity.CENTER }
-            addView(footerHint, spaced(top = SM))
         }
         footer = FrameLayout(context).apply {
             setBackgroundColor(style.surface)
@@ -235,14 +207,9 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         toggles.forEach { (key, toggle) ->
             toggle.isChecked = snapshot.getBoolean(key, key != ShapeStore.SORT_WEIGHT)
         }
-        val enabled = snapshot.getBoolean(ShapeStore.SHOW_IN_PICKER)
-        badge.text = if (enabled) "入口已显示" else "入口已隐藏"
-        badge.setTextColor(if (enabled) style.accentText else style.secondary)
-        badge.background = style.surface(if (enabled) style.accentSurface else style.background, SMALL_RADIUS)
         hostStatus.text = if (pendingRestart) "设置已保存，重启输入法后生效。" else
             snapshot.getString(ShapeStore.STATUS, "尚未收到输入法运行结果")
         restart.text = if (pendingRestart) "重启并应用更改" else "重启输入法"
-        footerHint.text = if (pendingRestart) "更改已保存 · 重启后使用新设置" else "通过 Root 重启，也可在系统设置中强制停止"
         errorCard.visibility = GONE
         binding = false
         updateEnabled()
@@ -272,11 +239,10 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         }
     }
 
-    private fun group(body: LinearLayout, title: String, subtitle: String): LinearLayout {
+    private fun group(body: LinearLayout, title: String): LinearLayout {
         body.addView(column().apply {
             setPadding(style.dp(XS), 0, style.dp(XS), 0)
             addView(text(title, HEADING, style.primary, true))
-            addView(text(subtitle, CAPTION, style.secondary), spaced(top = XS))
         }, spaced(top = XL, bottom = MD))
         return column().apply {
             background = style.surface()
@@ -289,14 +255,13 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         val value = text("—", METRIC, style.primary, true)
         return column().apply {
             addView(value)
-            addView(text(label, CAPTION, style.secondary), spaced(top = XS))
+            addView(text(label, BODY, style.primary), spaced(top = XS))
         } to value
     }
 
-    private fun labels(title: String, subtitle: String, accessible: Boolean = true) = column().apply {
+    private fun labels(title: String, accessible: Boolean = true) = column().apply {
         if (!accessible) importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         addView(text(title, BODY, style.primary, true))
-        addView(text(subtitle, CAPTION, style.secondary), spaced(top = XS))
     }
 
     private fun toggleRow(title: String, subtitle: String, key: String, inset: Boolean = true): View {
@@ -320,13 +285,13 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
             setPadding(if (inset) style.dp(LG) else 0, style.dp(MD), if (inset) style.dp(LG) else 0, style.dp(MD))
             background = style.ripple()
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
-            addView(labels(title, subtitle, false), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+            addView(labels(title, false), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             addView(toggle, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = style.dp(MD) })
             setOnClickListener { if (toggle.isEnabled) toggle.toggle() }
         }
     }
 
-    private fun actionRow(title: String, subtitle: String, icon: Int? = null, value: TextView? = null,
+    private fun actionRow(title: String, icon: Int? = null, value: TextView? = null,
                           needsDictionary: Boolean = false, action: () -> Unit): View = row().apply {
         setPadding(style.dp(LG), style.dp(LG), style.dp(LG), style.dp(LG))
         minimumHeight = style.dp(TOUCH)
@@ -335,7 +300,7 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
             background = style.surface(style.accentSurface, SMALL_RADIUS)
             pad(MD)
         }, LayoutParams(style.dp(ICON_TILE), style.dp(ICON_TILE)).apply { marginEnd = style.dp(MD) })
-        addView(labels(title, subtitle), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        addView(labels(title), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         value?.let { addView(it, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = style.dp(SM) }) }
         addView(icon(R.drawable.ic_shape_chevron, style.secondary),
             LayoutParams(style.dp(ICON), style.dp(ICON)).apply { marginStart = style.dp(SM) })

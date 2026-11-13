@@ -490,7 +490,7 @@ class MainActivity : AppCompatActivity() {
         // Key shortcuts are independent of experimental keyboards and appearance.
         kit.group(root, "输入增强", listOf(
             featureSwitch(FeatureCatalog.keyboardShortcuts).view,
-            kit.navRow("自定义快捷键", "为每种键盘的任意字母键指定下滑操作", R.drawable.ic_nav_keyboard) {
+            kit.navRow("自定义快捷键", null, R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, ShortcutKeysActivity::class.java))
             },
             handwritingRow(),
@@ -645,11 +645,6 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_Y, y).apply()
         }
         controls.forEach { container.addView(it) }
-        val note = kit.label("文字显示在九键、18/14键、拼音/英文26键及虎码/五笔快捷键的底部居中；与按键下滑快捷操作同时开启，重启输入法后生效。",
-            12f, R.color.text_secondary)
-        val pad = kit.dimen(R.dimen.settings_row_padding)
-        note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))
-        container.addView(note)
         refresh(toggle.switch.isChecked)
         return container
     }
@@ -680,11 +675,6 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putInt(ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, distance).apply()
         }
         sliders.forEach { container.addView(it) }
-        val note = kit.label("向上划不足上滑距离仍交给输入法输入数字和符号（输入法约需 64 dp）；左右划不足左右距离仍是按键。向下起笔划过约 12 dp 即开始手写。",
-            12f, R.color.text_secondary)
-        val pad = kit.dimen(R.dimen.settings_row_padding)
-        note.setPadding(pad, kit.dimen(R.dimen.space_xs), pad, kit.dimen(R.dimen.space_sm))
-        container.addView(note)
         refresh(toggle.switch.isChecked)
         return container
     }
@@ -747,7 +737,7 @@ class MainActivity : AppCompatActivity() {
     private fun prefSwitch(
         key: String,
         title: String,
-        summary: String,
+        summary: String?,
         detail: SettingsKit.Detail? = null,
         needsRestart: Boolean = true,
         onChange: ((Boolean) -> Unit)? = null
