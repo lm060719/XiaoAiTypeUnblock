@@ -1,6 +1,7 @@
 package io.mo.xatype.hooks
 
 import android.annotation.SuppressLint
+import android.graphics.drawable.Drawable
 import android.view.View
 import android.view.ViewTreeObserver
 import io.github.libxposed.api.XposedModule
@@ -15,6 +16,7 @@ internal class CompositorGlassSurface(
 ) {
     @Volatile private var dynamicGlassSurfacePrimer: Any? = null
     @Volatile private var dynamicGlassSurfacePrimerParent: Any? = null
+    private var blurRegionTemplate: FloatArray? = null
     private var dynamicGlassTrackedMaterial: View? = null
     private var dynamicGlassGeometryObserver: ViewTreeObserver? = null
     private var dynamicGlassPreDrawListener: ViewTreeObserver.OnPreDrawListener? = null
@@ -98,7 +100,7 @@ internal class CompositorGlassSurface(
     // Intentional non-SDK access inside the Xposed-injected IME process.
     // Public SDK APIs cannot configure this child blur surface. Availability
     // is checked at runtime; failures retain the native material fallback.
-    @SuppressLint("BlockedPrivateApi")
+    @SuppressLint("BlockedPrivateApi", "PrivateApi")
     fun ensure(
         module: XposedModule,
         service: android.inputmethodservice.InputMethodService,
@@ -149,11 +151,13 @@ internal class CompositorGlassSurface(
             val location = IntArray(2)
             material.getLocationInWindow(location)
             val cornerRadiusPx = ConfigManager.getCornerRadius() * material.resources.displayMetrics.density
-            // Docked keyboards only round their top corners. Move the lower
-            // corners below the window edge; floating materials keep all four.
-            val cropHeight = material.height + if (!roundBottom && location[1] + material.height >= decor.height) {
-                kotlin.math.ceil(cornerRadiusPx.toDouble()).toInt()
-            } else 0
+            val docked = !popupWindow && !roundBottom && location[1] + material.height >= decor.height
+            val visibleHeight = if (docked) minOf(material.height, decor.height - location[1]).coerceAtLeast(0) else material.height
+            val bottomRadius = if (docked) ImeWindowCornerGuard.bottomRadius(decor) else 0f
+            val roundDisplayBottom = docked && bottomRadius > 0f
+            // Keep the original rendering for popups and floating keyboards.
+            val cropHeight = if (roundDisplayBottom) visibleHeight else material.height +
+                if (docked) kotlin.math.ceil(cornerRadiusPx.toDouble()).toInt() else 0
             val transactionClass = Class.forName("android.view.SurfaceControl\$Transaction")
             val transaction = transactionClass.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
             // ViewRootImpl reuses the Java SurfaceControl wrapper when its
@@ -191,7 +195,7 @@ internal class CompositorGlassSurface(
             ).apply { isAccessible = true }.invoke(
                 transaction,
                 primer,
-                cornerRadiusPx
+                if (roundDisplayBottom) 0f else cornerRadiusPx
             )
             transactionClass.getDeclaredMethod(
                 "setBackgroundBlurRadius",
@@ -200,9 +204,34 @@ internal class CompositorGlassSurface(
             ).apply { isAccessible = true }.invoke(
                 transaction,
                 primer,
-                (ConfigManager.getBlurRadius() * material.resources.displayMetrics.density + 0.5f)
+                if (roundDisplayBottom) 0 else (ConfigManager.getBlurRadius() * material.resources.displayMetrics.density + 0.5f)
                     .toInt().coerceIn(0, 400)
             )
+            val blurRadius = (ConfigManager.getBlurRadius() * material.resources.displayMetrics.density + 0.5f)
+                .toInt().coerceIn(0, 400)
+            if (roundDisplayBottom) {
+                val template = blurRegionTemplate ?: run {
+                    val drawable = viewRoot.javaClass.getDeclaredMethod("createBackgroundBlurDrawable").invoke(viewRoot) as Drawable
+                    // This is only a serializer template; never register another visible blur region.
+                    drawable.setVisible(false, false)
+                    drawable.javaClass.getDeclaredMethod("setCornerRadius", Float::class.javaPrimitiveType,
+                        Float::class.javaPrimitiveType, Float::class.javaPrimitiveType, Float::class.javaPrimitiveType)
+                        .invoke(drawable, 11f, 22f, 33f, 44f)
+                    val regionClass = Class.forName("com.android.internal.graphics.drawable.BackgroundBlurDrawable\$BlurRegion")
+                    val region = regionClass.declaredConstructors.first().apply { isAccessible = true }.newInstance(drawable)
+                    (regionClass.getDeclaredMethod("toFloatArray").apply { isAccessible = true }
+                        .invoke(region) as FloatArray).also { blurRegionTemplate = it }
+                }
+                // Unlike backgroundBlurRadius, explicit regions keep their four corner shapes
+                // when the IME is attached to a shrinking Recents task. Bounds use window coordinates.
+                val region = GlassBlurRegion.encode(template, blurRadius, location[0], location[1],
+                    material.width, visibleHeight, cornerRadiusPx, bottomRadius)
+                transactionClass.getDeclaredMethod("setBlurRegions", surfaceClass, Array<FloatArray>::class.java)
+                    .apply { isAccessible = true }.invoke(transaction, primer, arrayOf(region))
+            } else if (blurRegionTemplate != null) {
+                transactionClass.getDeclaredMethod("setBlurRegions", surfaceClass, Array<FloatArray>::class.java)
+                    .apply { isAccessible = true }.invoke(transaction, primer, emptyArray<FloatArray>())
+            }
             transactionClass.getDeclaredMethod(
                 if (material.isShown && material.width > 0 && material.height > 0) "show" else "hide",
                 surfaceClass
@@ -223,7 +252,8 @@ internal class CompositorGlassSurface(
             if (geometry != dynamicGlassGeometry) XposedUtils.logDebug(module) {
                 "[BottomDiag] glass Surface geometry " +
                     "bounds=${material.width}x${material.height}@${location[0]},${location[1]} " +
-                    "shown=${material.isShown} drawSync=$syncWithDraw"
+                    "shown=${material.isShown} drawSync=$syncWithDraw decor=${decor.width}x${decor.height} " +
+                    "visibleHeight=$visibleHeight bottomRadius=$bottomRadius"
             }
             dynamicGlassGeometry = geometry
             (transaction as? AutoCloseable)?.close()

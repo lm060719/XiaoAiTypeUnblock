@@ -3,6 +3,7 @@ package io.mo.xatype.dict
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
+import java.io.FilterInputStream
 import java.util.zip.ZipInputStream
 
 /**
@@ -46,34 +47,118 @@ object RimeWordExtractor {
         onProgress: (Int) -> Unit = {},
         isCancelled: () -> Boolean = { false }
     ): List<Entry> {
-        require(maxWords > 0)
-        val best = HashMap<String, Int>(maxWords.coerceAtMost(1 shl 20))
-        var floor = 0 // Words lighter than this were already pruned and cannot make the cut again.
+        val collector = Collector(maxWords, onProgress, isCancelled)
+        readArchive(zip, entryNames, collector)
+        return collector.result()
+    }
+
+    /** Local tables share one collector so duplicates and the cap apply across all selected files. */
+    class LocalFile(val name: String, val open: () -> InputStream)
+
+    fun extractLocal(
+        files: List<LocalFile>, source: OnlineDictSource, maxWords: Int,
+        onProgress: (Int) -> Unit = {}, isCancelled: () -> Boolean = { false }
+    ): List<Entry> {
+        require(files.isNotEmpty()) { "请选择词库文件" }
+        val collector = Collector(maxWords, onProgress, isCancelled)
+        files.forEach { file ->
+            check(!isCancelled()) { "已取消" }
+            val name = file.name.lowercase()
+            require(name.endsWith(".zip") || name.endsWith(".dict.yaml")) {
+                "请选择 ZIP 压缩包或 UTF-8 .dict.yaml 词库文件"
+            }
+            file.open().use { input ->
+                if (name.endsWith(".zip")) readArchive(input, source.dictFiles, collector)
+                else collector.readTable(input)
+            }
+        }
+        return collector.result().also {
+            check(it.isNotEmpty()) { "没有可导入的词条，请选择包含实际词条的 UTF-8 词库文件，不能只选择引用其他词表的配置文件" }
+        }
+    }
+
+    private fun readArchive(zip: InputStream, entryNames: Collection<String>, collector: Collector) {
         var seenEntries = 0
-        var lines = 0L
-        ZipInputStream(zip).use { archive ->
+        ZipInputStream(zip.buffered()).use { archive ->
             while (true) {
+                collector.checkCancelled()
                 val item = archive.nextEntry ?: break
-                if (item.isDirectory || item.name.substringAfterLast('/') !in entryNames) continue
-                seenEntries++
-                val reader = BufferedReader(InputStreamReader(archive, Charsets.UTF_8), 1 shl 16)
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    if (++lines and 0x3FFFF == 0L) {
-                        check(!isCancelled()) { "已取消" }
-                        onProgress(best.size)
-                    }
-                    val entry = parseLine(line) ?: continue
-                    if (entry.weight < floor) continue
-                    val old = best[entry.word]
-                    if (old == null || old < entry.weight) best[entry.word] = entry.weight
-                    if (best.size > maxWords * 2) floor = prune(best, maxWords)
+                if (!item.isDirectory && item.name.substringAfterLast('/') in entryNames) {
+                    seenEntries++
+                    collector.readTable(archive)
+                } else {
+                    // Drain through the same budget; skipped ZIP members can also be enormous.
+                    collector.drain(archive)
                 }
             }
         }
         check(seenEntries > 0) { "压缩包中没有找到所需词库文件" }
-        return best.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
-            .take(maxWords).map { Entry(it.key, it.value) }
+    }
+
+    private class Collector(
+        val maxWords: Int, val onProgress: (Int) -> Unit, val isCancelled: () -> Boolean
+    ) {
+        init { require(maxWords > 0 && maxWords <= 1_000_000) }
+        val best = HashMap<String, Int>(maxWords)
+        var floor = 0
+        var bytes = 0L
+        var lines = 0L
+
+        fun checkCancelled() = check(!isCancelled()) { "已取消" }
+
+        private fun bounded(input: InputStream) = object : FilterInputStream(input) {
+            private fun count(n: Int): Int {
+                checkCancelled()
+                if (n > 0) bytes += n
+                check(bytes <= 512L * 1024 * 1024) { "词库内容过大，请解压后仅选择需要的词库文件" }
+                return n
+            }
+            override fun read(): Int = super.read().also { count(if (it < 0) 0 else 1) }
+            override fun read(b: ByteArray, off: Int, len: Int): Int = count(`in`.read(b, off, len))
+            override fun close() = Unit // The archive/file owner closes the underlying stream.
+        }
+
+        fun drain(input: InputStream) {
+            val stream = bounded(input)
+            val buffer = ByteArray(1 shl 16)
+            while (stream.read(buffer) >= 0) { /* Count skipped entries too. */ }
+        }
+
+        fun readTable(input: InputStream) {
+            val reader = BufferedReader(InputStreamReader(bounded(input), Charsets.UTF_8), 1 shl 16)
+            val line = StringBuilder()
+            val chunk = CharArray(1 shl 14)
+            while (true) {
+                val count = reader.read(chunk)
+                if (count < 0) break
+                for (index in 0 until count) {
+                    val char = chunk[index]
+                    if (char == '\n') {
+                        accept(line.toString().removePrefix("\uFEFF").trimEnd('\r'))
+                        line.setLength(0)
+                    } else {
+                        check(line.length < 16_384) { "词库单行过长，请检查文件格式" }
+                        line.append(char)
+                    }
+                }
+            }
+            if (line.isNotEmpty()) accept(line.toString().removePrefix("\uFEFF").trimEnd('\r'))
+        }
+
+        private fun accept(line: String) {
+            if (++lines % 262_144 == 0L) { checkCancelled(); onProgress(best.size.coerceAtMost(maxWords)) }
+            val entry = parseLine(line) ?: return
+            if (entry.weight < floor) return
+            val old = best[entry.word]
+            if (old == null || old < entry.weight) best[entry.word] = entry.weight
+            if (best.size > maxWords * 2) floor = prune(best, maxWords)
+        }
+
+        fun result(): List<Entry> {
+            checkCancelled()
+            return best.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+                .take(maxWords).map { Entry(it.key, it.value) }
+        }
     }
 
     /** Drops everything below the [keep]-th heaviest weight and returns that weight. */

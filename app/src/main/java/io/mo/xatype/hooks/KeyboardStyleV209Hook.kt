@@ -1656,6 +1656,7 @@ object KeyboardStyleV209Hook
         ConfigManager.syncFromProvider(service)
         if (!ConfigManager.isStyleEnabled()) return
 
+        service.window?.window?.decorView?.let(ImeWindowCornerGuard::track)
         applyWindowStyle(service)
         rootView.background = null
 

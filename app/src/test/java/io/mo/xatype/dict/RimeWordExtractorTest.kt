@@ -56,4 +56,57 @@ class RimeWordExtractorTest {
             RimeWordExtractor.extract(zip("x.txt" to "a"), listOf("base.dict.yaml"), 5)
         }
     }
+
+    private fun table(name: String, text: String) = RimeWordExtractor.LocalFile(name) {
+        ByteArrayInputStream(text.toByteArray(Charsets.UTF_8))
+    }
+
+    @Test fun `local ice tables merge duplicates and apply a shared weighted cap`() {
+        val files = listOf(table("base.dict.yaml", "\uFEFF阿爸\ta ba\t10\n阿坝\ta ba\t30\r\n"),
+            table("ext.dict.yaml", "阿爸\ta ba\t50\n阿巴桑\ta ba sang\t20\n"))
+        val words = RimeWordExtractor.extractLocal(files, OnlineDictSource.RIME_ICE, 2)
+        assertEquals(listOf("阿爸" to 50, "阿坝" to 30), words.map { it.word to it.weight })
+    }
+
+    @Test fun `local upstream release and repository zip layouts are supported`() {
+        OnlineDictSource.entries.forEach { source ->
+            val words = RimeWordExtractor.extractLocal(listOf(RimeWordExtractor.LocalFile("词库.ZIP") {
+                zip("project/cn_dicts/${source.dictFiles.first()}" to "万象拼音\twan xiang pin yin\t90\n",
+                    "project/en_dicts/en.dict.yaml" to "不应导入\t999\n")
+            }), source, 5)
+            assertEquals(listOf("万象拼音"), words.map { it.word })
+        }
+    }
+
+    @Test fun `local wanxiang table and mixed archive selections share ranking`() {
+        val files = listOf(table("jichu.dict.yaml", "万象拼音\t100\n"),
+            RimeWordExtractor.LocalFile("dicts.zip") { zip("dicts/jichu.dict.yaml" to "测试词库\t200\n") })
+        assertEquals(listOf("测试词库"), RimeWordExtractor.extractLocal(files, OnlineDictSource.WANXIANG, 1).map { it.word })
+    }
+
+    @Test fun `wrong source invalid empty and configuration files fail without a result`() {
+        listOf(
+            listOf(table("x.txt", "词库\t100")),
+            listOf(table("rime_ice.dict.yaml", "import_tables:\n  - cn_dicts/base\n")),
+            listOf(RimeWordExtractor.LocalFile("dicts.zip") { zip("jichu.dict.yaml" to "词库\t100") }),
+            listOf(table("empty.dict.yaml", "")),
+            listOf(table("long.dict.yaml", "一".repeat(16_385)))
+        ).forEach { files ->
+            assertThrows(IllegalArgumentException::class.java.takeIf { files[0].name == "x.txt" }
+                ?: IllegalStateException::class.java) {
+                RimeWordExtractor.extractLocal(files, OnlineDictSource.RIME_ICE, 5)
+            }
+        }
+    }
+
+    @Test fun `cancelled import stops before opening local files`() {
+        var opened = false
+        assertThrows(IllegalStateException::class.java) {
+            RimeWordExtractor.extractLocal(listOf(RimeWordExtractor.LocalFile("base.dict.yaml") {
+                opened = true
+                ByteArrayInputStream(byteArrayOf())
+            }), OnlineDictSource.RIME_ICE, 5, isCancelled = { true })
+        }
+        assertFalse(opened)
+    }
 }

@@ -2582,6 +2582,7 @@ object KeyboardStyleHook {
         ConfigManager.syncFromProvider(service)
         if (!ConfigManager.isStyleEnabled()) return
 
+        service.window?.window?.decorView?.let(ImeWindowCornerGuard::track)
         applyBottomBarAppearanceImmediately(service)
 
         rootView.post {

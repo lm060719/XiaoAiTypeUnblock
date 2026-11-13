@@ -28,6 +28,7 @@ object OnlineDictStore {
     const val LATEST_VERSION = "latest_version"
     const val LATEST_LABEL = "latest_label"
     const val CHECK_TIME = "check_time"
+    const val LOCAL = "local_import"
 
     const val ACTION_IMPORT = "import"
     const val ACTION_CLEAR = "clear"
@@ -68,6 +69,7 @@ object OnlineDictStore {
             putString(LATEST_VERSION, sp.getString(LATEST_VERSION, "").orEmpty())
             putString(LATEST_LABEL, sp.getString(LATEST_LABEL, "").orEmpty())
             putLong(CHECK_TIME, sp.getLong(CHECK_TIME, 0))
+            putBoolean(LOCAL, sp.getBoolean(LOCAL, false))
         }
     }
 
@@ -87,7 +89,7 @@ object OnlineDictStore {
     /** Queues [words] from [source]; the host replaces whatever the previous import added. */
     @Synchronized
     fun install(context: Context, source: OnlineDictSource, release: OnlineDictClient.Release,
-                words: List<RimeWordExtractor.Entry>) {
+                words: List<RimeWordExtractor.Entry>, local: Boolean = false) {
         require(words.isNotEmpty()) { "没有可导入的词条" }
         val file = wordsFile(context)
         val stream = file.startWrite()
@@ -105,8 +107,13 @@ object OnlineDictStore {
         val sp = prefs(context)
         check(sp.edit().putString(SOURCE, source.id).putString(VERSION, release.version)
             .putString(LABEL, release.label).putInt(COUNT, words.size)
+            .putBoolean(LOCAL, local)
             .putString(ACTION, ACTION_IMPORT).putLong(REVISION, sp.getLong(REVISION, 0) + 1)
             .putString(LATEST_VERSION, release.version).putString(LATEST_LABEL, release.label)
+            .apply { if (local) {
+                putBoolean(AUTO_UPDATE, false)
+                remove(LATEST_VERSION); remove(LATEST_LABEL); remove(CHECK_TIME)
+            } }
             .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存导入请求" }
     }
 
@@ -114,7 +121,7 @@ object OnlineDictStore {
     @Synchronized
     fun requeue(context: Context) {
         val sp = prefs(context)
-        check(hasWords(context) && sp.getString(SOURCE, "").orEmpty().isNotEmpty()) { "没有已下载的词库，请重新下载" }
+        check(hasWords(context) && sp.getString(SOURCE, "").orEmpty().isNotEmpty()) { "没有已保存的词库，请重新导入" }
         check(sp.edit().putString(ACTION, ACTION_IMPORT).putLong(REVISION, sp.getLong(REVISION, 0) + 1)
             .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存导入请求" }
     }
@@ -125,6 +132,7 @@ object OnlineDictStore {
         wordsFile(context).delete()
         val sp = prefs(context)
         check(sp.edit().putString(SOURCE, "").putString(VERSION, "").putString(LABEL, "").putInt(COUNT, 0)
+            .remove(LOCAL).remove(LATEST_VERSION).remove(LATEST_LABEL).remove(CHECK_TIME)
             .putString(ACTION, ACTION_CLEAR).putLong(REVISION, sp.getLong(REVISION, 0) + 1)
             .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存清除请求" }
     }
