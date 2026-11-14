@@ -43,6 +43,8 @@ internal object HostFingerprints {
         }
         collector.put(HostSymbols.BOTTOM_SPACING, HostSymbols.BOTTOM_SPACING_CONSUME,
             HostSymbols.BOTTOM_SPACING_CALLERS) { bottomSpacing(bridge, loader) }
+        collector.put(HostSymbols.TOOLBAR_HEIGHT, HostSymbols.TOOLBAR_TOTAL_HEIGHT,
+            HostSymbols.TOOLBAR_HEIGHT_CONSUME, HostSymbols.TOOLBAR_HEIGHT_CALLERS) { toolbarHeight(bridge, loader) }
         collector.put(HostSymbols.CLOUD_BLACKLIST) { listOf(listOf(cloudBlacklistAttach(bridge))) }
         collector.put(HostSymbols.PANEL_EXPANSION, HostSymbols.PANEL_SNAP, HostSymbols.PANEL_ANIMATE,
             HostSymbols.PANEL_SPRING) { panelExpansion(bridge, loader) }
@@ -169,6 +171,38 @@ internal object HostFingerprints {
         val callers = gap.callers.map { it.descriptor }.distinct()
         check(callers.isNotEmpty()) { "bottom margin callers" }
         return listOf(listOf(gap.descriptor), listOf(consume.descriptor), callers)
+    }
+
+    /** Top-bar and unified heights must change together, keeping the key rows the same size. */
+    private fun toolbarHeight(bridge: DexKitBridge, loader: ClassLoader): List<List<String>> {
+        val bar = single(bridge.findMethod {
+            matcher {
+                modifiers(Modifier.STATIC)
+                returnType("float")
+                paramCount(1)
+                addUsingField(FieldMatcher().name("keyboard_top_bar_height"))
+                addUsingField(FieldMatcher().name("pad_top_bar_height"))
+            }
+        }, "keyboard top bar height")
+        val composer = bar.getMethodInstance(loader).parameterTypes.single()
+        val base = single(bridge.findMethod {
+            matcher {
+                modifiers(Modifier.STATIC)
+                returnType("float")
+                paramCount(2)
+                addUsingField(FieldMatcher().name("keyboard_unified_height_portrait"))
+                addUsingField(FieldMatcher().name("unified_keyboard_height_min"))
+            }
+        }.filter { it.paramTypeNames.contains(composer.name) }, "keyboard unified height")
+        val consume = single(bar.invokes.filter {
+            it.className == composer.name && it.paramCount == 1 &&
+                it.returnTypeName == "java.lang.Object" &&
+                it.paramTypeNames.single() !in listOf("java.lang.Object", "int", "boolean")
+        }.distinctBy { it.descriptor }, "top bar Compose consume")
+        val callers = (bar.callers + base.callers).map { it.descriptor }.distinct()
+        check(callers.isNotEmpty()) { "top bar height callers" }
+        return listOf(listOf(bar.descriptor), listOf(base.descriptor),
+            listOf(consume.descriptor), callers)
     }
 
     /** JSON parsers of AI smart replies; their input carries `safety_blocked`. */

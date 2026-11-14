@@ -504,6 +504,7 @@ class MainActivity : AppCompatActivity() {
 
         kit.group(root, "尺寸与布局", listOf(
             featureSwitch(FeatureCatalog.keyboardHeight).view,
+            toolbarHeightRow(),
             bottomSpacingRow()
         ))
 
@@ -568,6 +569,51 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return row
+    }
+
+    private fun toolbarHeightRow(): View {
+        val range = ConfigManager.TOOLBAR_HEIGHT_RANGE
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val value = kit.label("", 13f, R.color.primary, bold = true)
+        val initial = prefs.getInt(ConfigManager.KEY_TOOLBAR_HEIGHT, ConfigManager.TOOLBAR_HEIGHT_DEFAULT)
+            .coerceIn(range)
+        val seek = kit.seekBar(range.last - range.first, initial - range.first,
+            "顶部功能栏高度，${range.first} 到 ${range.last} dp")
+        val toggle = featureSwitch(FeatureCatalog.toolbarHeight) { checked ->
+            seek.isEnabled = checked
+            value.text = if (checked) "${range.first + seek.progress} dp" else "原生高度"
+        }
+        container.addView(toggle.view)
+        val sliderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val pad = kit.dimen(R.dimen.settings_row_padding)
+            setPadding(pad - kit.dimen(R.dimen.space_sm), 0, pad, kit.dimen(R.dimen.space_sm))
+        }
+        sliderRow.addView(seek, LinearLayout.LayoutParams(0, kit.dimen(R.dimen.settings_touch_height), 1f))
+        sliderRow.addView(value, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            marginStart = kit.dimen(R.dimen.space_sm)
+        })
+        value.gravity = Gravity.END
+        container.addView(sliderRow)
+        seek.isEnabled = toggle.switch.isChecked
+        value.text = if (seek.isEnabled) "$initial dp" else "原生高度"
+        var lastTick = seek.progress / 4
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (toggle.switch.isChecked) value.text = "${range.first + progress} dp"
+                if (!fromUser) return
+                prefs.edit().putInt(ConfigManager.KEY_TOOLBAR_HEIGHT, range.first + progress).apply()
+                if (progress / 4 != lastTick) {
+                    lastTick = progress / 4
+                    SettingsKit.tickHaptic(seekBar)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) = markRestartNeeded()
+        })
+        return container
     }
 
     /** Keyboard bottom spacing is independent of appearance profiles. */

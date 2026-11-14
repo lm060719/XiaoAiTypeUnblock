@@ -16,6 +16,7 @@ import io.mo.xatype.hooks.InputDiagnosticsHook
 import io.mo.xatype.hooks.EmojiCandidateHook
 import io.mo.xatype.hooks.Keyboard18Hook
 import io.mo.xatype.hooks.KeyboardBottomSpacingHook
+import io.mo.xatype.hooks.KeyboardToolbarHeightHook
 import io.mo.xatype.hooks.KeyboardHeightUnblockHook
 import io.mo.xatype.hooks.KeyboardSelectionHook
 import io.mo.xatype.hooks.KeyboardShortcutsHook
@@ -219,6 +220,12 @@ class XiaoAiTypeModule : XposedModule() {
             KeyboardBottomSpacingHook.install(this)
         } catch (t: Throwable) {
             XposedUtils.logError(this, "Error installing KeyboardBottomSpacingHook", t)
+        }
+
+        try {
+            KeyboardToolbarHeightHook.install(this)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error installing KeyboardToolbarHeightHook", t)
         }
 
         AdaptationReporter.report(this, TARGET_PACKAGE, HostSymbols)

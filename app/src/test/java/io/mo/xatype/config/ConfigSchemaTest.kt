@@ -17,6 +17,8 @@ class ConfigSchemaTest {
         assertEquals(16, values[ConfigManager.KEY_CORNER_RADIUS])
         assertEquals("#1E1E2E", values[ConfigManager.KEY_BG_COLOR])
         assertEquals(0L, values[ConfigManager.KEY_BG_IMAGE_VERSION])
+        assertEquals(false, values[ConfigManager.KEY_TOOLBAR_HEIGHT_ENABLED])
+        assertEquals(48, values[ConfigManager.KEY_TOOLBAR_HEIGHT])
         ShortcutKeyboard.entries.forEach { assertNull(values[it.prefKey]) }
     }
 
@@ -39,10 +41,12 @@ class ConfigSchemaTest {
     @Test fun storedValuesAreClampedToTheirRange() {
         val prefs = memoryPreferences()
         prefs.edit().putInt(ConfigManager.KEY_BOTTOM_SPACING, 500)
+            .putInt(ConfigManager.KEY_TOOLBAR_HEIGHT, 500)
             .putInt(ConfigManager.KEY_SHORTCUT_LABEL_SIZE, 2)
             .putInt(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, 999).apply()
         val values = ConfigSchema.read(prefs, prefs)
         assertEquals(100, values[ConfigManager.KEY_BOTTOM_SPACING])
+        assertEquals(80, values[ConfigManager.KEY_TOOLBAR_HEIGHT])
         assertEquals(8, values[ConfigManager.KEY_SHORTCUT_LABEL_SIZE])
         assertEquals(ConfigSchema.HANDWRITING_UP_DISTANCE_RANGE.last, values[ConfigManager.KEY_HANDWRITING_UP_DISTANCE])
     }

@@ -126,7 +126,16 @@ public final class HostSymbolsProbe {
             {"keyboard.swipe", "io.mo.xatype.keyboard.ShortcutSwipeHostBridge"}
         };
         for (String[] bridge : bridges) if ((boolean) has.invoke(instance, bridge[0])) {
-            Class.forName(bridge[1]).getConstructor(ClassLoader.class, abiType).newInstance(target, abi);
+            Class<?> type = Class.forName(bridge[1]);
+            if (bridge[1].equals("io.mo.xatype.keyboard.KeyboardShortcutHostLayout") ||
+                    bridge[1].equals("io.mo.xatype.keyboard.ShortcutSwipeHostBridge")) {
+                // The mapping argument was added with custom shortcuts; use its Kotlin default.
+                type.getConstructor(ClassLoader.class, abiType, Class.forName("kotlin.jvm.functions.Function1"),
+                        int.class, Class.forName("kotlin.jvm.internal.DefaultConstructorMarker"))
+                        .newInstance(target, abi, null, 4, null);
+            } else {
+                type.getConstructor(ClassLoader.class, abiType).newInstance(target, abi);
+            }
             System.out.println("  BINDINGS OK " + bridge[1]);
         }
         if ((boolean) has.invoke(instance, "keyboard.surfaceText")) {

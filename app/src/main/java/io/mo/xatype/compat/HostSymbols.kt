@@ -1,7 +1,7 @@
 package io.mo.xatype.compat
 
 /** Members of the input method (com.xiaomi.type), located by [HostFingerprints]. */
-object HostSymbols : SymbolTable(11, HostFingerprints::resolve) {
+object HostSymbols : SymbolTable(12, HostFingerprints::resolve) {
     const val KEYBOARD_KEY_PREVIEW = "keyboard.keyPreview"
     /** The bubble's background color field where it draws from a cached bitmap (0.2.1358); empty before. */
     const val KEYBOARD_KEY_PREVIEW_FILL = "keyboard.keyPreviewFill"
@@ -54,6 +54,10 @@ object HostSymbols : SymbolTable(11, HostFingerprints::resolve) {
     const val BOTTOM_SPACING = "keyboard.bottomSpacing"
     const val BOTTOM_SPACING_CONSUME = "keyboard.bottomSpacingConsume"
     const val BOTTOM_SPACING_CALLERS = "keyboard.bottomSpacingCallers"
+    const val TOOLBAR_HEIGHT = "keyboard.toolbarHeight"
+    const val TOOLBAR_TOTAL_HEIGHT = "keyboard.toolbarTotalHeight"
+    const val TOOLBAR_HEIGHT_CONSUME = "keyboard.toolbarHeightConsume"
+    const val TOOLBAR_HEIGHT_CALLERS = "keyboard.toolbarHeightCallers"
 
     override val keys = listOf(
         KEYBOARD_KEY_PREVIEW, KEYBOARD_KEY_PREVIEW_FILL, KOTLIN_COROUTINES,
@@ -61,6 +65,7 @@ object HostSymbols : SymbolTable(11, HostFingerprints::resolve) {
         OS_VERSION_GATE, HEIGHT_RECT, HEIGHT_CLAMP, HEIGHT_RECT_GETTER, HEIGHT_LAYOUT,
         HEIGHT_DRAG, HEIGHT_DRAG_KIND, MODERN_KEYBOARD,
         BOTTOM_SPACING, BOTTOM_SPACING_CONSUME, BOTTOM_SPACING_CALLERS,
+        TOOLBAR_HEIGHT, TOOLBAR_TOTAL_HEIGHT, TOOLBAR_HEIGHT_CONSUME, TOOLBAR_HEIGHT_CALLERS,
         KEYBOARD_ENGINE, KEYBOARD_LAYOUT, KEYBOARD_ACTIONS, KEYBOARD_PICKER,
         KEYBOARD_SETTINGS, KEYBOARD_SWIPE, KEYBOARD_LETTER_APPEARANCE, KEYBOARD_SURFACE_TEXT,
         T9_SHUANGPIN_INIT, T9_SHUANGPIN_BOOLEAN, T9_SHUANGPIN_STRING, CLOUD_BLACKLIST,
@@ -79,6 +84,7 @@ object HostSymbols : SymbolTable(11, HostFingerprints::resolve) {
         }.getOrDefault(false)
         key == AI_SAFETY_PARSERS -> values.size >= 2 && super.validateValues(key, values)
         key == BOTTOM_SPACING_CALLERS -> super.validateValues(key, values)
+        key == TOOLBAR_HEIGHT_CALLERS -> values.isNotEmpty() && super.validateValues(key, values)
         key == PANEL_CLOSE || key == KEYBOARD_KEY_PREVIEW_FILL ->
             values.isEmpty() || (values.size == 1 && super.validateValues(key, values))
         key == KOTLIN_COROUTINES -> values.size == 3 && super.validateValues(key, values)

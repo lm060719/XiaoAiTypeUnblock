@@ -52,6 +52,10 @@ object ConfigManager {
     const val KEY_T9_SHUANGPIN_SCHEME = "pref_t9_shuangpin_scheme"
     const val KEY_BOTTOM_SPACING_ENABLED = "pref_bottom_spacing_enabled"
     const val KEY_BOTTOM_SPACING = "pref_bottom_spacing" // 0 to 100 dp; global geometry
+    const val KEY_TOOLBAR_HEIGHT_ENABLED = "pref_toolbar_height_enabled"
+    const val KEY_TOOLBAR_HEIGHT = "pref_toolbar_height"
+    const val TOOLBAR_HEIGHT_DEFAULT = 48
+    val TOOLBAR_HEIGHT_RANGE get() = ConfigSchema.TOOLBAR_HEIGHT_RANGE
     // Action text drawn on keys that carry a downward-swipe shortcut.
     const val KEY_SHORTCUT_LABELS = "pref_shortcut_labels"
     const val KEY_SHORTCUT_LABEL_SIZE = "pref_shortcut_label_size" // sp, 8 to 20
@@ -222,6 +226,8 @@ object ConfigManager {
     fun getPredictionMode(): PredictionMode = PredictionMode.resolve(string(KEY_PREDICTION_MODE))
     fun isBottomSpacingEnabled() = bool(KEY_BOTTOM_SPACING_ENABLED)
     fun getBottomSpacing() = int(KEY_BOTTOM_SPACING)
+    fun isToolbarHeightEnabled() = bool(KEY_TOOLBAR_HEIGHT_ENABLED)
+    fun getToolbarHeight() = int(KEY_TOOLBAR_HEIGHT)
     fun isShortcutLabelsEnabled() = bool(KEY_SHORTCUT_LABELS)
     fun getShortcutLabelSize() = int(KEY_SHORTCUT_LABEL_SIZE)
     fun getShortcutLabelX() = int(KEY_SHORTCUT_LABEL_X)

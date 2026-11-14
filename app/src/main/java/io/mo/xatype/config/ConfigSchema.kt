@@ -80,6 +80,7 @@ object ConfigSchema {
     // Ranges live here, not in ConfigManager, so the table loads without Android framework classes.
     val HANDWRITING_UP_DISTANCE_RANGE = 16..200
     val HANDWRITING_SIDE_DISTANCE_RANGE = 12..200
+    val TOOLBAR_HEIGHT_RANGE = 48..80
 
     private val P = Scope.PROFILE
     private val PERCENT = 0..100
@@ -113,6 +114,8 @@ object ConfigSchema {
         add(Text(ConfigManager.KEY_PREDICTION_MODE, PredictionMode.KEEP.name))
         add(Bool(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, false))
         add(Int32(ConfigManager.KEY_BOTTOM_SPACING, 0, PERCENT))
+        add(Bool(ConfigManager.KEY_TOOLBAR_HEIGHT_ENABLED, false))
+        add(Int32(ConfigManager.KEY_TOOLBAR_HEIGHT, ConfigManager.TOOLBAR_HEIGHT_DEFAULT, TOOLBAR_HEIGHT_RANGE))
         add(Bool(ConfigManager.KEY_SHORTCUT_LABELS, false))
         add(Int32(ConfigManager.KEY_SHORTCUT_LABEL_SIZE, 11, 8..20))
         add(Int32(ConfigManager.KEY_SHORTCUT_LABEL_X, 0, -40..40))

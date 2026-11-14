@@ -1,0 +1,32 @@
+日期：2026-11-15（Asia/Shanghai）
+模块：2.2.3.3，versionCode 63，Debug 构建
+设备：ADB 连接的真实 Android 手机；未使用模拟器。
+
+Gradle :app:testDebugUnitTest :app:assembleDebug
+BUILD SUCCESSFUL
+254 tests, 0 failures, 0 errors
+
+新接口扫描及缓存重载（四组接口全部存在）：
+0.2.1053: keyboard.toolbarHeight = Lma/v;->u0(Ls0/p;)F
+          keyboard.toolbarTotalHeight = Lma/v;->e(ILs0/p;)F
+0.2.1246: keyboard.toolbarHeight = Lva/u;->w0(Ls0/p;)F
+          keyboard.toolbarTotalHeight = Lva/u;->e(ILs0/p;)F
+0.2.1358: keyboard.toolbarHeight = Lra/v;->x0(Lp0/r;)F
+          keyboard.toolbarTotalHeight = Lra/v;->e(ILp0/r;)F
+0.2.1363: keyboard.toolbarHeight = Lra/v;->x0(Lp0/r;)F
+          keyboard.toolbarTotalHeight = Lra/v;->e(ILp0/r;)F
+keyboard.toolbarHeightConsume 与 keyboard.toolbarHeightCallers 均通过检查。
+探针最终输出：DONE
+
+真机宿主：0.2.1363.60772063 (21363)
+开启新开关并重启输入法后：顶部功能栏高度设为 48 dp。
+输入 mi，拼音与候选正常显示；点选首候选后，测试搜索框内显示“米”。
+前后截图分辨率均为 1440x3200；取首排 T 键键帽内 x=680 处白色像素：
+原生高度：纵向区间 [2009, 2225)
+48 dp：   纵向区间 [2009, 2225)
+顶部区域缩小后，首排键帽位置和高度均保持一致。
+关闭新开关并重启输入法：恢复原生高度。
+测试后 pref_toolbar_height_enabled=false，个人字典开关保持测试前状态。
+
+Android Lint：34 个既有错误、231 个警告；本次未新增错误。
+本次设置页新增的偏好写入与文本格式风格警告仍保留。
