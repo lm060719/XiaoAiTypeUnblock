@@ -29,6 +29,7 @@ object HostSymbols : SymbolTable(11, HostFingerprints::resolve) {
     const val KEYBOARD_ENGINE = "keyboard.engine"
     /** Status only: emoji candidates bind through [KEYBOARD_ENGINE] and add no scan group. */
     const val KEYBOARD_EMOJI = "keyboard.emoji"
+    const val KEYBOARD_PERSONAL_DICTIONARY = "keyboard.personal_dictionary"
     /** Status only: post-commit prediction uses the same native engine ABI. */
     const val KEYBOARD_PREDICTION = "keyboard.prediction"
     const val KEYBOARD_LAYOUT = "keyboard.layout"

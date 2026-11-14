@@ -63,6 +63,9 @@ class HostEngine(val abi: KeyboardAbi) {
 
     fun commitOf(result: Any): String? = resultFields[3].get(result) as String?
 
+    @Suppress("UNCHECKED_CAST")
+    fun candidatesOf(result: Any): List<Any> = resultFields[2].get(result) as List<Any>
+
     fun consumedOf(result: Any): Boolean = resultFields[0].get(result) == true
 
     fun composing(raw: String, display: String, cursor: Int = 8): Any =

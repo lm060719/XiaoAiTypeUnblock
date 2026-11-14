@@ -1,0 +1,36 @@
+个人字典 2.2.3.2 验证日志
+验证日期：2026-11-15（Asia/Shanghai）
+说明：本文件为本次验证的精简摘录；省略时间戳、进程号、设备标识、个人词条和无关日志。
+
+[环境]
+module versionName=2.2.3.2 versionCode=62
+host package=com.xiaomi.type versionName=0.2.1363.60772063 versionCode=21363
+framework=LSPosed 2.2.1 libxposed API 102
+test device=physical (ADB)
+
+[构建与单元测试]
+command: .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --console=plain
+> Task :app:assembleDebug
+> Task :app:testDebugUnitTest
+BUILD SUCCESSFUL in 16s
+46 actionable tasks: 17 executed, 29 up-to-date
+JUnit XML 汇总：tests=247 failures=0 errors=0 skipped=0
+
+[真机运行日志摘录]
+[Emoji] personal lookup: mode=PINYIN inputLength=3 boundaries=1 matches=1
+[Emoji] candidate enhancements: native=20 personal=1 emoji=0
+[Emoji] custom candidate selected: native composition cleared
+
+[真机交互结果]
+完整快捷码：个人短语首位显示。
+点选个人候选：EditText 内容与保存短语一致，组合状态清空。
+按空格：EditText 内容与保存短语一致，无快捷码残留。
+额外字母：不插入个人候选；退格后恢复首位个人候选。
+点选原生候选：EditText 内容与所点原生候选一致。
+更新安装：成功覆盖安装，保留已有个人字典配置。
+
+[静态检查]
+git diff --check: passed
+此前 :app:lintDebug: failed (34 errors, 228 warnings)
+既有问题包含 KeyboardStyleHook 中 RuntimeShader 的 NewApi 检查。
+个人字典新增文件无 Lint 诊断；本次未扩大范围修复全库既有问题。

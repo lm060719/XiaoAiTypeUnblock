@@ -493,6 +493,9 @@ class MainActivity : AppCompatActivity() {
             kit.navRow("自定义快捷键", null, R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, ShortcutKeysActivity::class.java))
             },
+            kit.navRow("个人字典", null, R.drawable.ic_text_fields) {
+                startActivity(Intent(this, PersonalDictionaryActivity::class.java))
+            },
             handwritingRow(),
             featureSwitch(FeatureCatalog.emojiCandidates).view,
             predictionModeRow(),

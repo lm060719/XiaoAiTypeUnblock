@@ -108,6 +108,8 @@ object ConfigSchema {
         add(Bool(ConfigManager.KEY_T9_SHUANGPIN, false))
         add(Text(ConfigManager.KEY_T9_SHUANGPIN_SCHEME, "XIAOHE"))
         add(Bool(ConfigManager.KEY_EMOJI_CANDIDATES, false))
+        add(Bool(ConfigManager.KEY_PERSONAL_DICTIONARY, false))
+        add(Text(ConfigManager.KEY_PERSONAL_DICTIONARY_ENTRIES, null))
         add(Text(ConfigManager.KEY_PREDICTION_MODE, PredictionMode.KEEP.name))
         add(Bool(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, false))
         add(Int32(ConfigManager.KEY_BOTTOM_SPACING, 0, PERCENT))

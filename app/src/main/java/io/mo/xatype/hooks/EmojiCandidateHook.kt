@@ -12,6 +12,7 @@ import io.mo.xatype.keyboard.EmojiHostBridge
 import io.mo.xatype.keyboard.HostEngine
 import io.mo.xatype.keyboard.HostEngineFactory
 import io.mo.xatype.keyboard.PredictionMode
+import io.mo.xatype.keyboard.PersonalDictionary
 import io.mo.xatype.keyboard.ShuangpinScheme
 import io.mo.xatype.util.XposedUtils
 import java.util.concurrent.CompletableFuture
@@ -47,16 +48,19 @@ object EmojiCandidateHook {
                 val service = serviceField.get(engines.manager(chain)) as InputMethodService
                 // Disabled users keep the unwrapped native engine; enabling takes effect after an IME restart.
                 ConfigManager.syncFromProvider(service)
-                if (!ConfigManager.isEmojiCandidatesEnabled() && ConfigManager.getPredictionMode() == PredictionMode.KEEP)
+                if (!ConfigManager.isEmojiCandidatesEnabled() && !ConfigManager.isPersonalDictionaryEnabled() &&
+                    ConfigManager.getPredictionMode() == PredictionMode.KEEP)
                     return@intercept original
                 if (ConfigManager.isEmojiCandidatesEnabled()) dictionary.getNow(null) // Load only for emoji enhancement.
-                bridge.create(original, { dictionary.getNow(null) }, {
+                fun textEditor(): Boolean {
                     val inputType = service.currentInputEditorInfo?.inputType ?: InputType.TYPE_NULL
                     val variation = inputType and InputType.TYPE_MASK_VARIATION
-                    ConfigManager.isEmojiCandidatesEnabled() &&
-                        (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
+                    return (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
                         variation !in setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD,
                             InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
+                }
+                bridge.create(original, { dictionary.getNow(null) }, {
+                    ConfigManager.isEmojiCandidatesEnabled() && textEditor()
                 }, scheme = {
                     if (kind == "T9" && ConfigManager.isT9ShuangpinEnabled()) {
                         ShuangpinScheme.resolve(ConfigManager.getT9ShuangpinScheme())
@@ -68,6 +72,11 @@ object EmojiCandidateHook {
                     XposedUtils.logError(module, "Post-commit prediction control disabled for this session", failure)
                 }, observe = { message ->
                     if (BuildConfig.DEBUG) XposedUtils.log(module, "[Emoji] $message")
+                }, personal = {
+                    if (textEditor()) ConfigManager.personalDictionary() else PersonalDictionary.EMPTY
+                }, personalFailed = { failure ->
+                    HostSymbols.markUnavailable(HostSymbols.KEYBOARD_PERSONAL_DICTIONARY, failure)
+                    XposedUtils.logError(module, "Personal dictionary disabled for this session", failure)
                 }, failed = { failure ->
                     HostSymbols.markUnavailable(HostSymbols.KEYBOARD_EMOJI, failure)
                     XposedUtils.logError(module, "Emoji candidates disabled for this session", failure)
@@ -75,6 +84,7 @@ object EmojiCandidateHook {
             }.onFailure {
                 HostSymbols.markUnavailable(HostSymbols.KEYBOARD_EMOJI, it)
                 HostSymbols.markUnavailable(HostSymbols.KEYBOARD_PREDICTION, it)
+                HostSymbols.markUnavailable(HostSymbols.KEYBOARD_PERSONAL_DICTIONARY, it)
                 XposedUtils.logError(module, "Emoji bridge unavailable; keeping native engine", it)
             }.getOrDefault(original)
         }

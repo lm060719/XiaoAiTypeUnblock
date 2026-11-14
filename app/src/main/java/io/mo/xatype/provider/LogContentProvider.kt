@@ -62,7 +62,13 @@ class LogContentProvider : ContentProvider() {
             ?: ((ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES)
         val profile = AppearanceProfiles.selected(local, systemDark)
-        return ConfigSchema.toBundle(ConfigSchema.read(local, profile))
+        return ConfigSchema.toBundle(ConfigSchema.read(local, profile)).apply {
+            // Personal phrases are shared only with the input method and our own process.
+            if (android.os.Binder.getCallingUid() != android.os.Process.myUid() &&
+                !ProviderAccess.isAllowed(ctx, android.os.Binder.getCallingUid(), ProviderAccess.IME_ONLY)) {
+                remove(ConfigManager.KEY_PERSONAL_DICTIONARY_ENTRIES)
+            }
+        }
     }
 
     private fun saveAdaptationReport(extras: Bundle?) {

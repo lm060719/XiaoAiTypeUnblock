@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.keyboard.PredictionMode
+import io.mo.xatype.keyboard.PersonalDictionary
 import io.mo.xatype.keyboard.ShortcutKeyboard
 import io.mo.xatype.util.XposedUtils
 
@@ -45,6 +46,8 @@ object ConfigManager {
     val HANDWRITING_SIDE_DISTANCE_RANGE get() = ConfigSchema.HANDWRITING_SIDE_DISTANCE_RANGE
     const val KEY_T9_SHUANGPIN = "pref_t9_shuangpin"
     const val KEY_EMOJI_CANDIDATES = "pref_emoji_candidates"
+    const val KEY_PERSONAL_DICTIONARY = "pref_personal_dictionary"
+    const val KEY_PERSONAL_DICTIONARY_ENTRIES = "pref_personal_dictionary_entries"
     const val KEY_PREDICTION_MODE = "pref_prediction_mode"
     const val KEY_T9_SHUANGPIN_SCHEME = "pref_t9_shuangpin_scheme"
     const val KEY_BOTTOM_SPACING_ENABLED = "pref_bottom_spacing_enabled"
@@ -107,6 +110,7 @@ object ConfigManager {
     @Volatile private var observerAttempted = false
     @Volatile private var failureLogged = false
     @Volatile private var decodedShortcutMaps: Map<ShortcutKeyboard, Pair<String?, Map<String, String>>> = emptyMap()
+    @Volatile private var decodedPersonalDictionary: Pair<String?, PersonalDictionary>? = null
 
     fun init(module: XposedInterface) {
         this.module = module
@@ -207,6 +211,14 @@ object ConfigManager {
     fun isT9ShuangpinEnabled() = bool(KEY_T9_SHUANGPIN)
     fun getT9ShuangpinScheme() = string(KEY_T9_SHUANGPIN_SCHEME)
     fun isEmojiCandidatesEnabled() = bool(KEY_EMOJI_CANDIDATES)
+    fun isPersonalDictionaryEnabled() = bool(KEY_PERSONAL_DICTIONARY)
+
+    fun personalDictionary(): PersonalDictionary {
+        if (!isPersonalDictionaryEnabled()) return PersonalDictionary.EMPTY
+        val stored = string(KEY_PERSONAL_DICTIONARY_ENTRIES)
+        decodedPersonalDictionary?.takeIf { it.first == stored }?.let { return it.second }
+        return PersonalDictionary.decode(stored).also { decodedPersonalDictionary = stored to it }
+    }
     fun getPredictionMode(): PredictionMode = PredictionMode.resolve(string(KEY_PREDICTION_MODE))
     fun isBottomSpacingEnabled() = bool(KEY_BOTTOM_SPACING_ENABLED)
     fun getBottomSpacing() = int(KEY_BOTTOM_SPACING)
