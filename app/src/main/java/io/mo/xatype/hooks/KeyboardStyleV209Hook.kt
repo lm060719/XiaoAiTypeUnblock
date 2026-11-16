@@ -42,6 +42,7 @@ object KeyboardStyleV209Hook
     private val clipboardSwipeHooks = ConcurrentHashMap.newKeySet<Class<*>>()
     private val clipboardAppliedBackgrounds = WeakHashMap<View, AppliedClipboardBackground>()
     private val preserveDynamicGlassCleanup = ThreadLocal<Boolean>()
+    private val hiddenGlassRetention = HiddenGlassRetention()
     private val compositorGlass by lazy { CompositorGlassSurface(profile.helperMaterialField) }
     private val floatingGlass by lazy {
         CompositorGlassSurface(profile.helperMaterialField, popupWindow = true)
@@ -83,7 +84,8 @@ object KeyboardStyleV209Hook
 
         installLifecycleHooks(module, serviceClass)
         AppearanceConfigurationHook.install(module, serviceClass,
-            onConfigurationApplied = { service -> refreshClipboardPopups(module, service) }
+            onConfigurationApplied = { service -> refreshClipboardPopups(module, service) },
+            onConfigurationChanging = { hiddenGlassRetention.release() }
         ) { service, root ->
             applyStyle(module, service, root)
         }
@@ -110,6 +112,7 @@ object KeyboardStyleV209Hook
     {
         XposedUtils.findMethodExact(serviceClass, "onCreateInputView")?.let { method ->
             module.hook(method).intercept { chain ->
+                hiddenGlassRetention.release()
                 val service = chain.thisObject as? android.inputmethodservice.InputMethodService
                 service?.let(ConfigManager::syncFromProvider)
 
@@ -131,6 +134,7 @@ object KeyboardStyleV209Hook
             Boolean::class.javaPrimitiveType ?: java.lang.Boolean.TYPE
         )?.let { method ->
             module.hook(method).intercept { chain ->
+                hiddenGlassRetention.release()
                 val service = chain.thisObject as? android.inputmethodservice.InputMethodService
                 service?.let(ConfigManager::syncFromProvider)
                 val result = chain.proceed()
@@ -150,6 +154,7 @@ object KeyboardStyleV209Hook
 
         XposedUtils.findMethodExact(serviceClass, "onWindowShown")?.let { method ->
             module.hook(method).intercept { chain ->
+                hiddenGlassRetention.release()
                 val service = chain.thisObject as? android.inputmethodservice.InputMethodService
                 service?.let(ConfigManager::syncFromProvider)
                 val result = chain.proceed()
@@ -176,6 +181,22 @@ object KeyboardStyleV209Hook
                     ConfigManager.isStyleEnabled() &&
                         ConfigManager.getBgType() == 0
 
+                // 0.2.1363 posts f()/p()/q(false) 48 ms after onWindowHidden.
+                // The ThreadLocal below expires before that callback runs. Retain
+                // only the attached, compositor-owned main material across calls.
+                hiddenGlassRetention.release()
+                if (service != null && usesCompositorGlass()) {
+                    val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+                    val material = helper?.let {
+                        XposedUtils.getObjectField(it, profile.helperMaterialField) as? View
+                    }
+                    if (helper != null && material != null && material.isAttachedToWindow &&
+                        compositorGlass.owns(material) && !isPopupMaterial(service, material)) {
+                        hiddenGlassRetention.retain(helper, material)
+                        XposedUtils.logDebug(module) { "[AppearanceDiag] retaining docked glass after hide" }
+                    }
+                }
+
                 if (preserve)
                 {
                     preserveDynamicGlassCleanup.set(true)
@@ -194,6 +215,22 @@ object KeyboardStyleV209Hook
                 }
             }
         }
+
+        // Release before the host's own onDestroy, which may detach the helper
+        // before reaching InputMethodService.onDestroy.
+        XposedUtils.findMethodExact(serviceClass, "onDestroy")?.let { method ->
+            module.hook(method).intercept { chain ->
+                hiddenGlassRetention.release()
+                chain.proceed()
+            }
+        }
+    }
+
+    private fun preserveHiddenGlass(helper: Any): Boolean {
+        if (preserveDynamicGlassCleanup.get() == true) return true
+        val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View
+        return hiddenGlassRetention.shouldPreserve(helper, material, usesCompositorGlass(),
+            material?.isAttachedToWindow == true, compositorGlass.owns(material))
     }
 
     private fun installHyperMaterialHooks(module: XposedModule, classLoader: ClassLoader)
@@ -208,8 +245,9 @@ object KeyboardStyleV209Hook
                 method.isAccessible = true
 
                 module.hook(method).intercept { chain ->
-                    if (preserveDynamicGlassCleanup.get() == true)
+                    if (preserveHiddenGlass(chain.thisObject))
                     {
+                        XposedUtils.logDebug(module) { "[AppearanceDiag] retained glass: skipped ${method.name}" }
                         null
                     }
                     else
@@ -303,8 +341,7 @@ object KeyboardStyleV209Hook
                 val hideRequested = chain.getArg(0) == false
 
                 if (
-                    preserveDynamicGlassCleanup.get() == true &&
-                    hideRequested
+                    hideRequested && preserveHiddenGlass(chain.thisObject)
                 )
                 {
                     null
@@ -363,6 +400,7 @@ object KeyboardStyleV209Hook
                 method.isAccessible = true
 
                 module.hook(method).intercept { chain ->
+                    if (method.name == profile.helperAttachMethod) hiddenGlassRetention.release()
                     val result = chain.proceed()
                     val helper = chain.thisObject
                     val service = XposedUtils.getObjectField(helper, profile.helperServiceField) as?
@@ -1780,6 +1818,7 @@ object KeyboardStyleV209Hook
         ).forEach { method ->
             module.hook(method).intercept { chain ->
                 val service = chain.thisObject as? android.inputmethodservice.InputMethodService
+                if (method.name == "showWindow") hiddenGlassRetention.release()
                 fun prepare() {
                     if (service == null) return
                     ConfigManager.syncFromProvider(service)
@@ -1802,6 +1841,7 @@ object KeyboardStyleV209Hook
         }
         XposedUtils.findMethodExact(serviceClass, "onDestroy")?.let { method ->
             module.hook(method).intercept { chain ->
+                hiddenGlassRetention.release()
                 removeKeyboardGlass()
                 clipboardGlass.values.toList().forEach { it.remove() }
                 clipboardGlass.clear()

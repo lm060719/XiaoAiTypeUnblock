@@ -13,6 +13,7 @@ object AppearanceConfigurationHook {
         module: XposedModule,
         serviceClass: Class<*>,
         onConfigurationApplied: (InputMethodService) -> Unit = {},
+        onConfigurationChanging: (InputMethodService) -> Unit = {},
         applyStyle: (InputMethodService, View) -> Unit
     ) {
         val method = generateSequence(serviceClass) { it.superclass }
@@ -21,7 +22,10 @@ object AppearanceConfigurationHook {
         module.hook(method).intercept { chain ->
             val service = (chain.thisObject as? InputMethodService)
                 ?.takeIf { serviceClass.isInstance(it) }
-            if (service != null) ConfigManager.syncFromProvider(service)
+            if (service != null) {
+                onConfigurationChanging(service)
+                ConfigManager.syncFromProvider(service)
+            }
             val result = chain.proceed()
             if (service != null) {
                 ConfigManager.syncFromProvider(service)
