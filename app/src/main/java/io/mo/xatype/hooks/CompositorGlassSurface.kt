@@ -233,7 +233,13 @@ internal class CompositorGlassSurface(
                     .apply { isAccessible = true }.invoke(transaction, primer, emptyArray<FloatArray>())
             }
             transactionClass.getDeclaredMethod(
-                if (material.isShown && material.width > 0 && material.height > 0) "show" else "hide",
+                // isShown also observes the decor's visibility. hideWindow can
+                // hide that hierarchy while WM still displays the last buffer
+                // in the Recents/exit leash; retain its blur until the parent
+                // surface hides. Explicit material hiding and detach still win.
+                if (GlassTransitionPolicy.showSurface(popupWindow,
+                        material.visibility == View.VISIBLE, material.isShown,
+                        material.width, material.height)) "show" else "hide",
                 surfaceClass
             )
                 .apply { isAccessible = true }

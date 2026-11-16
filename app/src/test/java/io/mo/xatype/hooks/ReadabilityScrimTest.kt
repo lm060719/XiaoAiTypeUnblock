@@ -4,6 +4,32 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ReadabilityScrimTest {
+    @Test fun glassScrimSliderHasDistinctZeroMiddleAndFullStrength() {
+        val base = 0x00000000
+        val tint = 0xff123456.toInt()
+        assertEquals(0, ReadabilityScrim.glassColor(base, null))
+        assertEquals(0x7f123456, ReadabilityScrim.glassColor(base, BackgroundOpacity.argb(tint, 50)))
+        assertEquals(tint, ReadabilityScrim.glassColor(base, tint))
+    }
+
+    @Test fun glassOpacitySurvivesWithScrimDisabledAndScrimIsAppliedOnlyOnce() {
+        val base = BackgroundOpacity.argb(0xffeeeeee.toInt(), 50)
+        assertEquals(base, ReadabilityScrim.glassColor(base, null))
+        val scrim = BackgroundOpacity.argb(0xffeeeeee.toInt(), 50)
+        // Two independent 50% layers produce about 75%, not the 87.5% of
+        // adding the scrim to background and then drawing it again in foreground.
+        val actual = ReadabilityScrim.glassColor(base, scrim)
+        assertEquals(190, actual ushr 24)
+        assertEquals(0xeeeeee, actual and 0xffffff)
+    }
+
+    @Test fun fullGlassScrimUsesItsColorOverNativeTintLikeThePreview() {
+        val native = 0xffeeeeee.toInt()
+        val scrim = 0xff123456.toInt()
+        assertEquals(scrim, ReadabilityScrim.glassColor(native, scrim))
+        assertEquals(native, ReadabilityScrim.glassColor(native, 0x00123456))
+    }
+
     @Test fun autoColorContrastsWithLabels() {
         assertEquals(ReadabilityScrim.DARK, ReadabilityScrim.autoColor(0xffffffff.toInt(), false))
         assertEquals(ReadabilityScrim.LIGHT, ReadabilityScrim.autoColor(0xe6000000.toInt(), true))

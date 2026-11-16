@@ -2625,7 +2625,10 @@ object KeyboardStyleHook {
                         val radius = ConfigManager.getCornerRadius().coerceAtLeast(0) *
                             targetView.resources.displayMetrics.density
                         val surface = GradientDrawable().apply {
-                            setColor(resolveNativeBackgroundColor(service))
+                            // The material foreground owns the readability tint.
+                            // Adding it here too makes translucent glass too opaque.
+                            setColor(BackgroundOpacity.argb(nativePaletteColor(service, "a")
+                                ?: Color.TRANSPARENT, ConfigManager.getOpacity()))
                             cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
                         }
                         LayerDrawable(arrayOf(surface)).apply {

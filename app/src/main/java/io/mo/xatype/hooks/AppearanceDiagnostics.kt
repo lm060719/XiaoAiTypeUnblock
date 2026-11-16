@@ -38,13 +38,15 @@ internal object AppearanceDiagnostics {
             XposedUtils.log(module, "[AppearanceDiag] $stage: " +
                 "style=${ConfigManager.isStyleEnabled()} bg=${ConfigManager.getBgType()} " +
                 "opacity=${ConfigManager.getOpacity()} blur=${ConfigManager.getBlurRadius()} " +
+                "scrim=${ConfigManager.isScrimEnabled()}/${ConfigManager.getScrimOpacity()} " +
                 "orientation=${configuration.orientation} sw=${configuration.smallestScreenWidthDp} " +
                 "widthDp=${configuration.screenWidthDp} density=${configuration.densityDpi} " +
                 "night=${configuration.uiMode and 48} nativeState=$nativeState " +
                 "material=${material?.javaClass?.name ?: "null"} " +
                 "size=${material?.width}x${material?.height} attached=${material?.isAttachedToWindow} " +
                 "mainWindow=${material != null && material.rootView === window?.decorView} " +
-                "shown=${material?.isShown} passBlur=$passBlur compositor=$compositor " +
+                "shown=${material?.isShown} visibility=${material?.visibility} " +
+                "windowVisibility=${material?.windowVisibility} passBlur=$passBlur compositor=$compositor " +
                 "windowFormat=${window?.attributes?.format}")
         }.onFailure { XposedUtils.logError(module, "[AppearanceDiag] Observation failed", it) }
     }

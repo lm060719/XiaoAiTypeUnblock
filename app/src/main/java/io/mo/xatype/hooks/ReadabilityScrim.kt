@@ -10,9 +10,8 @@ import android.view.View
 import io.mo.xatype.config.ConfigManager
 
 /**
- * A tint layer kept under the keyboard background. Labels, candidates and
- * toolbar icons then keep contrast whatever app content shows through glass.
- * An opaque background covers it completely, so only translucent setups change.
+ * A readability tint beneath solid/image backgrounds, or over the native glass
+ * tint. Labels, candidates and toolbar icons are drawn above the combined surface.
  */
 internal object ReadabilityScrim {
     const val DARK = 0xff121212.toInt()
@@ -62,6 +61,10 @@ internal object ReadabilityScrim {
     fun apply(context: Context, base: Int): Int =
         current(context)?.let { under(base, it, 100) } ?: base
 
+    /** Glass draws the readability tint over the native tint, exactly once. */
+    fun glassColor(base: Int, scrim: Int?): Int =
+        scrim?.let { under(it, base, 100) } ?: base
+
     /** Image backgrounds keep their own alpha; the scrim sits beneath the bitmap. */
     fun behind(context: Context, drawable: Drawable): Drawable =
         current(context)?.let { LayerDrawable(arrayOf(ColorDrawable(it), drawable)) } ?: drawable
@@ -69,13 +72,19 @@ internal object ReadabilityScrim {
     /**
      * The keyboard material's foreground. Dynamic glass: Xiaomi's material
      * apply clears the material background about 20 ms later, so the scrim
-     * lives here instead. The edge highlight ([GlassRim]) joins it for every
+     * and optional [glassBase] live here instead. The edge highlight ([GlassRim]) joins it for every
      * background type. The material sits below the key layer, so labels still
      * draw above both.
      */
-    fun overlay(material: View, roundBottom: Boolean = false) {
+    fun overlay(material: View, roundBottom: Boolean = false, glassBase: (() -> Int)? = null) {
         fun apply() {
-            val scrim = if (ConfigManager.getBgType() == 0) current(material.context) else null
+            // The modern host clears background after applying native material. Keep
+            // both glass tints here so that clear cannot discard the opacity setting.
+            // Legacy hosts draw the native tint on a separate container instead.
+            val scrim = if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
+                glassColor(glassBase?.invoke() ?: Color.TRANSPARENT, current(material.context))
+                    .takeIf { it ushr 24 != 0 }
+            } else null
             val rim = GlassRim.spec(material, roundBottom)
             val existing = material.foreground
             material.foreground = when {

@@ -220,14 +220,11 @@ class KeyboardPreviewView @JvmOverloads constructor(
     private fun drawSurface(canvas: Canvas, w: Float, h: Float, top: Float, glass: Boolean) {
         val scrim = scrimColor()
         var surface = surfaceColor()
-        // Solid colors sit over the scrim; glass gets it as a foreground layer.
-        if (!glass && scrim != null) surface = ReadabilityScrim.under(surface, scrim, 100)
+        // Use the same single composition as the live glass material.
+        if (glass) surface = ReadabilityScrim.glassColor(surface, scrim)
+        else if (scrim != null) surface = ReadabilityScrim.under(surface, scrim, 100)
         fill.color = shade(surface, Focus.BACKGROUND, Focus.SCRIM)
         canvas.drawRect(0f, top, w, h, fill)
-        if (glass && scrim != null) {
-            fill.color = shade(scrim, Focus.SCRIM, Focus.BACKGROUND)
-            canvas.drawRect(0f, top, w, h, fill)
-        }
     }
 
     private fun drawLabel(

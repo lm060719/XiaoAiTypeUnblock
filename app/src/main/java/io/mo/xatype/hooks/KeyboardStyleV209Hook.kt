@@ -243,8 +243,7 @@ object KeyboardStyleV209Hook
                         android.inputmethodservice.InputMethodService
                     if (service != null) useCompositorGlass(module, service, helper, material)
                     if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
-                        ReadabilityScrim.overlay(material,
-                            roundBottom = service != null && isPopupMaterial(service, material))
+                        if (service != null) applyGlassOverlay(service, material)
                     }
                 }
                 result
@@ -1899,9 +1898,9 @@ object KeyboardStyleV209Hook
                 0 ->
                 {
                     updateCachedGlassTokens(helper, ConfigManager.getBlurRadius())
-                    material.background = ColorDrawable(
-                        nativeBackgroundColor(service, ConfigManager.getOpacity())
-                    )
+                    // Native b(View) clears this background again after 20 ms.
+                    // The complete tint lives in foreground, alongside the rim.
+                    material.background = null
                     material.alpha = 1f
                     invokeHelper(helper, profile.helperApplyMethod, material)
                 }
@@ -1955,7 +1954,9 @@ object KeyboardStyleV209Hook
             )
             // Glass scrim (dynamic glass only) and edge highlight. Also clears
             // a glass scrim left behind after switching to a solid or image background.
-            ReadabilityScrim.overlay(material, roundBottom = floating)
+            applyGlassOverlay(service, material)
+
+            AppearanceDiagnostics.record(module, service, "material-style", material, ownsKeyboardGlass(material))
 
             XposedUtils.logDebug(module) {
                 "KeyboardStyleV209Hook: material refreshed, type=" +
@@ -2055,9 +2056,18 @@ object KeyboardStyleV209Hook
         return updated
     }
 
+    private fun applyGlassOverlay(
+        service: android.inputmethodservice.InputMethodService,
+        material: View
+    ) {
+        ReadabilityScrim.overlay(material, roundBottom = isPopupMaterial(service, material),
+            glassBase = { nativeBackgroundColor(service, ConfigManager.getOpacity(), includeScrim = false) })
+    }
+
     private fun nativeBackgroundColor(
         service: android.inputmethodservice.InputMethodService,
-        opacity: Int
+        opacity: Int,
+        includeScrim: Boolean = true
     ): Int
     {
         val palette = activePalette ?: staticNativePalette(service)
@@ -2073,7 +2083,8 @@ object KeyboardStyleV209Hook
             ?.let { (it ushr 32).toInt() }
             ?: Color.TRANSPARENT
 
-        return ReadabilityScrim.apply(service, BackgroundOpacity.argb(color, opacity))
+        val base = BackgroundOpacity.argb(color, opacity)
+        return if (includeScrim) ReadabilityScrim.glassColor(base, ReadabilityScrim.current(service)) else base
     }
 
     private fun staticNativePalette(service: android.inputmethodservice.InputMethodService): Any?
