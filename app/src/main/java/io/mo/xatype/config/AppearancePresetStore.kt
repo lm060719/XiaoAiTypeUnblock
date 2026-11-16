@@ -14,6 +14,7 @@ import java.util.UUID
  */
 object AppearancePresetStore
 {
+    const val OFFICIAL = "official"
     const val STORAGE_KEY = "pref_appearance_saved_schemes_v1"
     private const val SNAPSHOT_VERSION = 1
     private const val MAX_NAME_LENGTH = 30
@@ -28,6 +29,11 @@ object AppearancePresetStore
     data class Scheme(val id: String, val name: String, val snapshot: JSONObject)
 
     val presets = listOf(
+        Preset(OFFICIAL, "官方", "保留输入法原始样式，仅可调整圆角与边缘高光", mapOf(
+            ConfigManager.KEY_APPEARANCE_MODE to OFFICIAL,
+            ConfigManager.KEY_OPACITY to 100,
+            ConfigManager.KEY_SCRIM_OPACITY to 0
+        )),
         Preset("native", "清爽原生", "", mapOf(
             ConfigManager.KEY_CORNER_RADIUS to 16,
             ConfigManager.KEY_OPACITY to 95,
@@ -87,6 +93,9 @@ object AppearancePresetStore
             ConfigManager.KEY_SCRIM_OPACITY to 35
         ))
     )
+
+    fun isOfficial(profile: SharedPreferences): Boolean =
+        profile.getString(ConfigManager.KEY_APPEARANCE_MODE, "") == OFFICIAL
 
     /** Applying a built-in theme edits only the current light or dark profile. */
     fun applyPreset(prefs: SharedPreferences, dark: Boolean, id: String): Boolean

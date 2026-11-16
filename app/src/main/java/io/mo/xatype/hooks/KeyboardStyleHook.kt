@@ -97,7 +97,7 @@ object KeyboardStyleHook {
                     ConfigManager.syncFromProvider(service)
                 }
                 val resultView = chain.proceed() as? View
-                if (resultView != null && ConfigManager.isStyleEnabled() && service != null) {
+                if (resultView != null && ConfigManager.isAppearanceEnabled() && service != null) {
                     applyStyle(module, service, resultView)
                 }
                 resultView
@@ -119,7 +119,7 @@ object KeyboardStyleHook {
                     ConfigManager.syncFromProvider(service)
                 }
                 val result = chain.proceed()
-                if (ConfigManager.isStyleEnabled() && service != null) {
+                if (ConfigManager.isAppearanceEnabled() && service != null) {
                     val currentImeRootView = XposedUtils.getObjectField(service, "currentImeRootView") as? View
                     if (currentImeRootView != null) {
                         applyStyle(module, service, currentImeRootView)
@@ -139,7 +139,7 @@ object KeyboardStyleHook {
                     ConfigManager.syncFromProvider(service)
                 }
                 val result = chain.proceed()
-                if (ConfigManager.isStyleEnabled() && service != null) {
+                if (ConfigManager.isAppearanceEnabled() && service != null) {
                     val currentImeRootView = XposedUtils.getObjectField(service, "currentImeRootView") as? View
                     if (currentImeRootView != null) {
                         applyStyle(module, service, currentImeRootView)
@@ -202,7 +202,7 @@ object KeyboardStyleHook {
                 val f0Method = naMClass.declaredMethods.find { it.name == "F0" }
                 if (f0Method != null) {
                     module.hook(f0Method).intercept { chain ->
-                        if (ConfigManager.isStyleEnabled()) {
+                        if (ConfigManager.isAppearanceEnabled()) {
                             ConfigManager.getCornerRadius().toFloat()
                         } else {
                             chain.proceed()
@@ -365,6 +365,7 @@ object KeyboardStyleHook {
                 module.hook(cMethod).intercept { chain ->
                     val result = chain.proceed()
                     useCompositorGlassForTransparentMaterial(module, chain.thisObject, chain.getArg(0) as? View)
+                    if (ConfigManager.isOfficialAppearance()) applyOfficialMaterial(chain.thisObject)
                     (chain.getArg(0) as? View)?.let { material ->
                         if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0 &&
                             material === XposedUtils.getObjectField(chain.thisObject, "h")) {
@@ -403,7 +404,7 @@ object KeyboardStyleHook {
                     if (isToolbarTransitionGuardActive()) {
                         forceHyperMaterialLayersInvisible(chain.thisObject)
                     }
-                    if (ConfigManager.isStyleEnabled()) {
+                    if (ConfigManager.isAppearanceEnabled()) {
                         val helper = chain.thisObject
                         val view = chain.getArg(0) as? View
                         val runtimeShader = XposedUtils.getObjectField(helper, "s") as? android.graphics.RuntimeShader
@@ -1575,6 +1576,12 @@ object KeyboardStyleHook {
         val service = XposedUtils.getObjectField(popup, "mInputMethodService") as?
             android.inputmethodservice.InputMethodService ?: return
         ConfigManager.syncFromProvider(service)
+        if (ConfigManager.isOfficialAppearance()) {
+            val root = popup.contentView ?: return
+            OfficialAppearance.apply(findViewByResourceName(root, "inside_view") ?: root,
+                roundBottom = popup.width > 0)
+            return
+        }
         if (!ConfigManager.isStyleEnabled()) return
 
         val root = popup.contentView ?: return
@@ -2578,8 +2585,21 @@ object KeyboardStyleHook {
         )
     }
 
+    private fun applyOfficialMaterial(helper: Any) {
+        val material = XposedUtils.getObjectField(helper, "h") as? View ?: return
+        val service = XposedUtils.getObjectField(helper, "a") as? android.inputmethodservice.InputMethodService
+        val roundBottom = service?.window?.window?.decorView?.let { material.rootView !== it } ?: false
+        OfficialAppearance.apply(material, roundBottom)
+    }
+
     fun applyStyle(module: XposedModule, service: android.inputmethodservice.InputMethodService, rootView: View) {
         ConfigManager.syncFromProvider(service)
+        if (ConfigManager.isOfficialAppearance()) {
+            service.window?.window?.decorView?.let(ImeWindowCornerGuard::track)
+            val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper") ?: return
+            applyOfficialMaterial(helper)
+            return
+        }
         if (!ConfigManager.isStyleEnabled()) return
 
         service.window?.window?.decorView?.let(ImeWindowCornerGuard::track)

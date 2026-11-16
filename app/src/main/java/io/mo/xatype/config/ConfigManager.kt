@@ -66,6 +66,7 @@ object ConfigManager {
 
     // Style & Appearance Configs
     const val KEY_STYLE_ENABLED = "pref_style_enabled"
+    const val KEY_APPEARANCE_MODE = "pref_appearance_mode"
     const val KEY_CORNER_RADIUS = "pref_corner_radius"
     const val KEY_OPACITY = "pref_opacity" // 0 to 100
     const val KEY_BLUR_RADIUS = "pref_blur_radius" // 20 to 100
@@ -242,7 +243,12 @@ object ConfigManager {
         return mapping
     }
 
-    fun isStyleEnabled() = bool(KEY_STYLE_ENABLED)
+    /** The master switch also enables geometry-only edits in official mode. */
+    fun isAppearanceEnabled() = bool(KEY_STYLE_ENABLED)
+    fun isOfficialAppearance() = isAppearanceEnabled() &&
+        string(KEY_APPEARANCE_MODE) == AppearancePresetStore.OFFICIAL
+    /** Palette, opacity and material overrides are exclusive to custom schemes. */
+    fun isStyleEnabled() = isAppearanceEnabled() && !isOfficialAppearance()
     fun getCornerRadius() = int(KEY_CORNER_RADIUS)
     fun getOpacity() = int(KEY_OPACITY)
     fun getBlurRadius() = int(KEY_BLUR_RADIUS)

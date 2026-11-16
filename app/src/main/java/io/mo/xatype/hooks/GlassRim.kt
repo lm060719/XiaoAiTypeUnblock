@@ -76,7 +76,7 @@ internal object GlassRim {
 
     /** The rim for [view] under the current settings, or null when it is off. */
     fun spec(view: View, roundBottom: Boolean): Spec? {
-        if (!ConfigManager.isStyleEnabled()) return null
+        if (!ConfigManager.isAppearanceEnabled()) return null
         val intensity = ConfigManager.getRimHighlight()
         if (intensity <= 0) return null
         val density = view.resources.displayMetrics.density

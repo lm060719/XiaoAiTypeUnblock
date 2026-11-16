@@ -52,7 +52,7 @@ internal object ImeWindowCornerGuard {
 
     @SuppressLint("DiscouragedApi") // Framework dimensions are a fallback for IME insets without corners.
     fun bottomRadius(decor: View): Float {
-        if (!ConfigManager.isStyleEnabled()) return 0f
+        if (!ConfigManager.isAppearanceEnabled()) return 0f
         if (Build.VERSION.SDK_INT >= 31) {
             val insets = decor.rootWindowInsets
             val left = insets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0

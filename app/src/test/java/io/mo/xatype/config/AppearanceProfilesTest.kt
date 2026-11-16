@@ -6,6 +6,84 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppearanceProfilesTest {
+    @Test fun officialPresetRestoresNativeValuesOnlyInTheSelectedProfile() {
+        val prefs = memoryPreferences()
+        AppearanceProfiles.initialize(prefs)
+        val light = AppearanceProfiles.forProfile(prefs, false)
+        val dark = AppearanceProfiles.forProfile(prefs, true)
+        light.edit().putString(ConfigManager.KEY_TEXT_COLOR, "#112233")
+            .putString(ConfigManager.KEY_LETTER_KEYCAP_COLOR, "#445566")
+            .putInt(ConfigManager.KEY_OPACITY, 20)
+            .putInt(ConfigManager.KEY_LETTER_KEYCAP_OPACITY, 30).apply()
+        dark.edit().putString(ConfigManager.KEY_TEXT_COLOR, "#ddeeff").apply()
+
+        assertTrue(AppearancePresetStore.applyPreset(prefs, false, AppearancePresetStore.OFFICIAL))
+        assertTrue(AppearancePresetStore.isOfficial(light))
+        assertFalse(AppearancePresetStore.isOfficial(dark))
+        assertEquals("", light.getString(ConfigManager.KEY_TEXT_COLOR, null))
+        assertEquals("", light.getString(ConfigManager.KEY_LETTER_KEYCAP_COLOR, null))
+        assertEquals(100, light.getInt(ConfigManager.KEY_OPACITY, -1))
+        assertEquals(100, light.getInt(ConfigManager.KEY_LETTER_KEYCAP_OPACITY, -1))
+        assertEquals(0, light.getInt(ConfigManager.KEY_SCRIM_OPACITY, -1))
+        assertEquals("#ddeeff", dark.getString(ConfigManager.KEY_TEXT_COLOR, null))
+        val hostValues = ConfigSchema.read(prefs, light)
+        assertEquals(AppearancePresetStore.OFFICIAL, hostValues[ConfigManager.KEY_APPEARANCE_MODE])
+        assertEquals(true, hostValues[ConfigManager.KEY_STYLE_ENABLED])
+    }
+
+    @Test fun officialGeometryStaysEditableAndAnotherPresetUnlocksColors() {
+        val prefs = memoryPreferences()
+        AppearanceProfiles.initialize(prefs)
+        val light = AppearanceProfiles.forProfile(prefs, false)
+        AppearancePresetStore.applyPreset(prefs, false, AppearancePresetStore.OFFICIAL)
+        light.edit().putInt(ConfigManager.KEY_CORNER_RADIUS, 30)
+            .putInt(ConfigManager.KEY_RIM_HIGHLIGHT, 70)
+            .putInt(ConfigManager.KEY_RIM_LIGHT, 2).apply()
+        assertTrue(AppearancePresetStore.isOfficial(light))
+        assertEquals(30, light.getInt(ConfigManager.KEY_CORNER_RADIUS, -1))
+        assertEquals(70, light.getInt(ConfigManager.KEY_RIM_HIGHLIGHT, -1))
+        assertEquals(2, light.getInt(ConfigManager.KEY_RIM_LIGHT, -1))
+
+        assertTrue(AppearancePresetStore.applyPreset(prefs, false, "cream"))
+        assertFalse(AppearancePresetStore.isOfficial(light))
+        assertEquals("#503A31", light.getString(ConfigManager.KEY_TEXT_COLOR, null))
+    }
+
+    @Test fun savedSchemesRestoreOfficialModeAndGeometryForEachProfile() {
+        val prefs = memoryPreferences()
+        AppearanceProfiles.initialize(prefs)
+        val light = AppearanceProfiles.forProfile(prefs, false)
+        val dark = AppearanceProfiles.forProfile(prefs, true)
+        AppearancePresetStore.applyPreset(prefs, false, AppearancePresetStore.OFFICIAL)
+        AppearancePresetStore.applyPreset(prefs, true, "midnight")
+        light.edit().putInt(ConfigManager.KEY_CORNER_RADIUS, 32)
+            .putInt(ConfigManager.KEY_RIM_HIGHLIGHT, 60).apply()
+        assertTrue(AppearancePresetStore.save(prefs, "官方圆角"))
+        val scheme = AppearancePresetStore.saved(prefs).single()
+        AppearancePresetStore.applyPreset(prefs, false, "glass")
+        AppearancePresetStore.applyPreset(prefs, true, AppearancePresetStore.OFFICIAL)
+
+        assertTrue(AppearancePresetStore.applySaved(prefs, scheme.id))
+        assertTrue(AppearancePresetStore.isOfficial(light))
+        assertFalse(AppearancePresetStore.isOfficial(dark))
+        assertEquals(32, light.getInt(ConfigManager.KEY_CORNER_RADIUS, -1))
+        assertEquals(60, light.getInt(ConfigManager.KEY_RIM_HIGHLIGHT, -1))
+        assertEquals("#F5E8BE", dark.getString(ConfigManager.KEY_TEXT_COLOR, null))
+    }
+
+    @Test fun oldSnapshotsWithoutAnAppearanceModeRemainEditable() {
+        val prefs = memoryPreferences()
+        AppearanceProfiles.initialize(prefs)
+        val old = AppearancePresetStore.capture(prefs)
+        old.getJSONObject("light").remove(ConfigManager.KEY_APPEARANCE_MODE)
+        old.getJSONObject("dark").remove(ConfigManager.KEY_APPEARANCE_MODE)
+        AppearancePresetStore.applyPreset(prefs, false, AppearancePresetStore.OFFICIAL)
+        AppearancePresetStore.applyPreset(prefs, true, AppearancePresetStore.OFFICIAL)
+        assertTrue(AppearancePresetStore.applySnapshot(prefs, old))
+        assertFalse(AppearancePresetStore.isOfficial(AppearanceProfiles.forProfile(prefs, false)))
+        assertFalse(AppearancePresetStore.isOfficial(AppearanceProfiles.forProfile(prefs, true)))
+    }
+
     @Test fun popupColorsStayIndependentAcrossProfilesAndSavedSchemes() {
         val prefs = memoryPreferences()
         AppearanceProfiles.initialize(prefs)

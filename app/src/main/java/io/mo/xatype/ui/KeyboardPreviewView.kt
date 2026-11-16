@@ -33,6 +33,7 @@ class KeyboardPreviewView @JvmOverloads constructor(
 
     data class Style(
         val enabled: Boolean = false,
+        val official: Boolean = false,
         val dark: Boolean = false,
         val cornerRadiusDp: Int = 16,
         val opacity: Int = 85,
@@ -103,7 +104,7 @@ class KeyboardPreviewView @JvmOverloads constructor(
     private val nativeFunction get() = if (style.dark) 0xff2a2a2c.toInt() else 0xffd9dde3.toInt()
     private val nativeCard get() = if (style.dark) 0xff2c2c2e.toInt() else 0xffffffff.toInt()
 
-    private val custom get() = style.enabled
+    private val custom get() = style.enabled && !style.official
 
     private fun surfaceColor(): Int {
         if (!custom) return nativeSurface
@@ -150,7 +151,7 @@ class KeyboardPreviewView @JvmOverloads constructor(
         drawBackdrop(canvas, w, h, blurred = false)
 
         val top = dp(14f)
-        val radius = (if (custom) style.cornerRadiusDp else 16) * resources.displayMetrics.density
+        val radius = (if (style.enabled) style.cornerRadiusDp else 16) * resources.displayMetrics.density
         path.reset()
         rect.set(0f, top, w, h + radius)
         path.addRoundRect(rect, radius, radius, Path.Direction.CW)
@@ -161,7 +162,7 @@ class KeyboardPreviewView @JvmOverloads constructor(
         if (glass) drawBackdrop(canvas, w, h, blurred = true)
         drawSurface(canvas, w, h, top, glass)
         // Like the keyboard material's foreground: above the surface, below the keys.
-        if (custom && style.rimHighlight > 0) {
+        if (style.enabled && style.rimHighlight > 0) {
             rimPainter.draw(canvas, 0f, top, w, h, GlassRim.Spec(style.rimHighlight, radius,
                 roundBottom = false, surfaceDark = surfaceDark, density = resources.displayMetrics.density,
                 lightAngle = GlassRim.lightAngle(style.rimLight)))

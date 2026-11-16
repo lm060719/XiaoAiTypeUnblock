@@ -86,6 +86,7 @@ class AppearancePage(
     private lateinit var panelTitle: TextView
     private lateinit var panelContent: LinearLayout
     private lateinit var styleSwitch: SwitchCompat
+    private var syncingStyleSwitch = false
     private val rows = mutableListOf<Row>()
     private var panelChanged = false
 
@@ -150,6 +151,11 @@ class AppearancePage(
 
     private fun stylePrefs() = AppearanceProfiles.forProfile(prefs, editingDark)
 
+    private fun officialAppearance() = AppearancePresetStore.isOfficial(stylePrefs())
+
+    private fun lockedByOfficial(option: Option) = officialAppearance() &&
+        option.focus !in setOf(Focus.NONE, Focus.CORNER, Focus.RIM)
+
     /** One-time fixes previously done while binding the controls. */
     private fun migrateProfiles() {
         for (dark in listOf(false, true)) {
@@ -183,6 +189,7 @@ class AppearancePage(
             styleSwitch = SwitchCompat(context).apply {
                 isChecked = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)
                 setOnCheckedChangeListener { _, checked ->
+                    if (syncingStyleSwitch) return@setOnCheckedChangeListener
                     prefs.edit().putBoolean(ConfigManager.KEY_STYLE_ENABLED, checked).apply()
                     SettingsKit.confirmHaptic(this)
                     onConfigChanged()
@@ -220,7 +227,8 @@ class AppearancePage(
             }, ::buildRimPanel),
             Option("背景类型", "", Focus.BACKGROUND, {
                 val p = stylePrefs()
-                if (p.getInt(ConfigManager.KEY_BG_TYPE, 0) == 1) {
+                if (officialAppearance()) Summary("官方")
+                else if (p.getInt(ConfigManager.KEY_BG_TYPE, 0) == 1) {
                     Summary("纯色", parseColor(p.getString(ConfigManager.KEY_BG_COLOR, "")))
                 } else Summary("动态毛玻璃")
             }, ::buildBackgroundPanel),
@@ -368,7 +376,10 @@ class AppearancePage(
                 AlertDialog.Builder(activity)
                     .setTitle("应用「" + preset.name + "」")
                     .setMessage("将替换当前" + (if (editingDark) "深色" else "浅色") +
-                        "外观的全部颜色、透明度和圆角设置。")
+                        "外观的全部颜色、透明度和圆角设置。" +
+                        if (preset.id == AppearancePresetStore.OFFICIAL)
+                            "\n\n官方方案保留输入法原始配色、透明度与材质，仅可编辑圆角和边缘高光。应用其他预设后可恢复编辑。"
+                        else "")
                     .setNegativeButton("取消", null)
                     .setPositiveButton("应用") { _, _ ->
                         if (AppearancePresetStore.applyPreset(prefs, editingDark, preset.id))
@@ -760,6 +771,10 @@ class AppearancePage(
     // ------------------------------------------------------------ panel state
 
     private fun openPanel(row: Row) {
+        if (lockedByOfficial(row.option)) {
+            Toast.makeText(this, "官方方案仅可编辑圆角和边缘高光，请先切换其他预设", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (!styleSwitch.isChecked && row.option.focus != Focus.NONE) {
             Toast.makeText(this, "请先启用键盘外观个性化", Toast.LENGTH_SHORT).show()
             return
@@ -797,15 +812,25 @@ class AppearancePage(
 
     private fun refresh() {
         val style = readStyle()
+        syncingStyleSwitch = true
+        try {
+            styleSwitch.isChecked = style.enabled
+        } finally {
+            syncingStyleSwitch = false
+        }
         preview.style = style
         previewHint.text = "编辑" + (if (editingDark) "深色" else "浅色") + "配置" +
-            if (!style.enabled) " · 未启用" else ""
+            if (!style.enabled) " · 未启用"
+            else if (officialAppearance()) " · 官方方案，仅可调圆角与高光" else ""
         rows.forEach { row ->
-            val summary = row.option.summary()
+            val locked = lockedByOfficial(row.option)
+            val summary = if (locked) Summary("官方 · 已锁定") else row.option.summary()
             row.value.text = summary.text
+            row.value.setTextColor(getColor(if (locked) R.color.text_secondary else R.color.primary))
             row.swatch.visibility = if (summary.color != null) View.VISIBLE else View.GONE
             summary.color?.let { row.swatch.background = swatchDrawable(it, dp(9).toFloat()) }
             val active = style.enabled || row.option.focus == Focus.NONE
+            row.view.isEnabled = active && !locked
             row.view.alpha = if (active) 1f else 0.45f
         }
     }
@@ -815,6 +840,7 @@ class AppearancePage(
         fun color(key: String) = parseColor(p.getString(key, ""))
         return KeyboardPreviewView.Style(
             enabled = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false),
+            official = officialAppearance(),
             dark = editingDark,
             cornerRadiusDp = p.getInt(ConfigManager.KEY_CORNER_RADIUS, 16),
             opacity = p.getInt(ConfigManager.KEY_OPACITY, 85).coerceIn(0, 100),

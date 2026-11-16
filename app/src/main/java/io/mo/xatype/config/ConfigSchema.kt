@@ -124,6 +124,7 @@ object ConfigSchema {
 
         // Appearance
         add(Bool(ConfigManager.KEY_STYLE_ENABLED, false))
+        add(Text(ConfigManager.KEY_APPEARANCE_MODE, "", P))
         add(Bool(ConfigManager.KEY_SCRIM_ENABLED, true))
         add(Int32(ConfigManager.KEY_CORNER_RADIUS, 16, scope = P))
         add(Int32(ConfigManager.KEY_OPACITY, 85, scope = P))

@@ -29,7 +29,7 @@ object AppearanceConfigurationHook {
             val result = chain.proceed()
             if (service != null) {
                 ConfigManager.syncFromProvider(service)
-                if (ConfigManager.isStyleEnabled()) {
+                if (ConfigManager.isAppearanceEnabled()) {
                     val root = XposedUtils.getObjectField(service, "currentImeRootView") as? View
                     if (root != null) applyStyle(service, root)
                 }

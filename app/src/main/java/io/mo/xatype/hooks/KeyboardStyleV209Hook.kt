@@ -118,7 +118,7 @@ object KeyboardStyleV209Hook
 
                 val result = chain.proceed() as? View
 
-                if (service != null && result != null && ConfigManager.isStyleEnabled())
+                if (service != null && result != null && ConfigManager.isAppearanceEnabled())
                 {
                     applyStyle(module, service, result)
                 }
@@ -139,7 +139,7 @@ object KeyboardStyleV209Hook
                 service?.let(ConfigManager::syncFromProvider)
                 val result = chain.proceed()
 
-                if (service != null && ConfigManager.isStyleEnabled())
+                if (service != null && ConfigManager.isAppearanceEnabled())
                 {
                     val root = XposedUtils.getObjectField(service, "currentImeRootView") as? View
                     if (root != null)
@@ -159,7 +159,7 @@ object KeyboardStyleV209Hook
                 service?.let(ConfigManager::syncFromProvider)
                 val result = chain.proceed()
 
-                if (service != null && ConfigManager.isStyleEnabled())
+                if (service != null && ConfigManager.isAppearanceEnabled())
                 {
                     val root = XposedUtils.getObjectField(service, "currentImeRootView") as? View
                     if (root != null)
@@ -279,6 +279,9 @@ object KeyboardStyleV209Hook
                 if (material != null && XposedUtils.getObjectField(helper, profile.helperMaterialField) === material) {
                     val service = XposedUtils.getObjectField(helper, profile.helperServiceField) as?
                         android.inputmethodservice.InputMethodService
+                    if (service != null && ConfigManager.isOfficialAppearance()) {
+                        OfficialAppearance.apply(material, isPopupMaterial(service, material))
+                    }
                     if (service != null) useCompositorGlass(module, service, helper, material)
                     if (ConfigManager.isStyleEnabled() && ConfigManager.getBgType() == 0) {
                         if (service != null) applyGlassOverlay(service, material)
@@ -407,7 +410,7 @@ object KeyboardStyleV209Hook
                         android.inputmethodservice.InputMethodService
                     val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View
 
-                    if (ConfigManager.isStyleEnabled() && service != null && material != null)
+                    if (ConfigManager.isAppearanceEnabled() && service != null && material != null)
                     {
                         applyMaterialStyle(module, service, helper, material)
                         material.post {
@@ -859,6 +862,12 @@ object KeyboardStyleV209Hook
         ) as? android.inputmethodservice.InputMethodService ?: return
 
         ConfigManager.syncFromProvider(service)
+        if (ConfigManager.isOfficialAppearance()) {
+            val root = popup.contentView ?: return
+            OfficialAppearance.apply(findViewByResourceName(root, "inside_view") ?: root,
+                roundBottom = popup.width > 0)
+            return
+        }
         if (!ConfigManager.isStyleEnabled()) return
 
         val root = popup.contentView ?: return
@@ -1691,6 +1700,13 @@ object KeyboardStyleV209Hook
     )
     {
         ConfigManager.syncFromProvider(service)
+        if (ConfigManager.isOfficialAppearance()) {
+            service.window?.window?.decorView?.let(ImeWindowCornerGuard::track)
+            val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper") ?: return
+            val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View ?: return
+            OfficialAppearance.apply(material, isPopupMaterial(service, material))
+            return
+        }
         if (!ConfigManager.isStyleEnabled()) return
 
         service.window?.window?.decorView?.let(ImeWindowCornerGuard::track)
@@ -1924,6 +1940,12 @@ object KeyboardStyleV209Hook
         material: View
     )
     {
+        if (ConfigManager.isOfficialAppearance()) {
+            if (XposedUtils.getObjectField(helper, profile.helperMaterialField) === material) {
+                OfficialAppearance.apply(material, isPopupMaterial(service, material))
+            }
+            return
+        }
         if (!ConfigManager.isStyleEnabled() || XposedUtils.getObjectField(helper, profile.helperMaterialField) !== material) return
         try
         {
