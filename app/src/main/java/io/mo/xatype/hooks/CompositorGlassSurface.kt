@@ -197,6 +197,23 @@ internal class CompositorGlassSurface(
                 primer,
                 if (roundDisplayBottom) 0f else cornerRadiusPx
             )
+            // HyperOS explicit blur regions disappear during a held Recents
+            // gesture even though the effect layer remains visible. Its native
+            // per-corner crop lets background blur follow the layer transform
+            // while preserving the different keyboard/display corner radii.
+            val perCornerCrop = try {
+                val cropBottomRadius = if (roundDisplayBottom) bottomRadius else cornerRadiusPx
+                transactionClass.getDeclaredMethod("setMiCornerRadii", surfaceClass, FloatArray::class.java)
+                    .apply { isAccessible = true }
+                    .invoke(transaction, primer, floatArrayOf(
+                        cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx,
+                        cropBottomRadius, cropBottomRadius, cropBottomRadius, cropBottomRadius
+                    ))
+                true
+            } catch (_: ReflectiveOperationException) {
+                false
+            }
+            val useBlurRegions = roundDisplayBottom && !perCornerCrop
             transactionClass.getDeclaredMethod(
                 "setBackgroundBlurRadius",
                 surfaceClass,
@@ -204,12 +221,12 @@ internal class CompositorGlassSurface(
             ).apply { isAccessible = true }.invoke(
                 transaction,
                 primer,
-                if (roundDisplayBottom) 0 else (ConfigManager.getBlurRadius() * material.resources.displayMetrics.density + 0.5f)
+                if (useBlurRegions) 0 else (ConfigManager.getBlurRadius() * material.resources.displayMetrics.density + 0.5f)
                     .toInt().coerceIn(0, 400)
             )
             val blurRadius = (ConfigManager.getBlurRadius() * material.resources.displayMetrics.density + 0.5f)
                 .toInt().coerceIn(0, 400)
-            if (roundDisplayBottom) {
+            if (useBlurRegions) {
                 val template = blurRegionTemplate ?: run {
                     val drawable = viewRoot.javaClass.getDeclaredMethod("createBackgroundBlurDrawable").invoke(viewRoot) as Drawable
                     // This is only a serializer template; never register another visible blur region.
@@ -222,8 +239,8 @@ internal class CompositorGlassSurface(
                     (regionClass.getDeclaredMethod("toFloatArray").apply { isAccessible = true }
                         .invoke(region) as FloatArray).also { blurRegionTemplate = it }
                 }
-                // Unlike backgroundBlurRadius, explicit regions keep their four corner shapes
-                // when the IME is attached to a shrinking Recents task. Bounds use window coordinates.
+                // Compatibility fallback for frameworks without native per-corner cropping.
+                // Bounds use window coordinates, not child-surface coordinates.
                 val region = GlassBlurRegion.encode(template, blurRadius, location[0], location[1],
                     material.width, visibleHeight, cornerRadiusPx, bottomRadius)
                 transactionClass.getDeclaredMethod("setBlurRegions", surfaceClass, Array<FloatArray>::class.java)
@@ -259,7 +276,8 @@ internal class CompositorGlassSurface(
                 "[BottomDiag] glass Surface geometry " +
                     "bounds=${material.width}x${material.height}@${location[0]},${location[1]} " +
                     "shown=${material.isShown} drawSync=$syncWithDraw decor=${decor.width}x${decor.height} " +
-                    "visibleHeight=$visibleHeight bottomRadius=$bottomRadius"
+                    "visibleHeight=$visibleHeight bottomRadius=$bottomRadius " +
+                    "perCornerCrop=$perCornerCrop blurRegions=$useBlurRegions"
             }
             dynamicGlassGeometry = geometry
             (transaction as? AutoCloseable)?.close()
