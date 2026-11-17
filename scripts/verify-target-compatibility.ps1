@@ -4,7 +4,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$TargetApk,
     [Parameter(Mandatory = $true)]
-    [ValidateSet('LEGACY', 'V209', 'V21053')][string]$ExpectedProfile,
+    [ValidateSet('LEGACY', 'V209', 'V21053', 'V21448')][string]$ExpectedProfile,
     [string]$ModuleApk,
     [string]$SdkPath,
     [string]$AdbPath = 'adb',

@@ -52,7 +52,10 @@ class ShapeHostBridge(private val loader: ClassLoader, private val abi: Keyboard
             "cursorEditing" to (booleanType to emptyArray()),
             "engineName" to (stringType to emptyArray()),
             "deleteAtCursor" to (resultType to arrayOf(intType)),
-            "segmentState" to (intType to emptyArray<Class<*>>())
+            "segmentState" to (intType to emptyArray<Class<*>>()),
+            // 0.2.1448: native engines expose a no-op indexed input and raw cursor.
+            "inputAtCursor" to (resultType to arrayOf(intType, Char::class.javaPrimitiveType!!)),
+            "rawCursor" to (intType to emptyArray<Class<*>>())
         )
         optional.forEach { (name, signature) ->
             if (abi.namedMethods("z8.q", name).isNotEmpty() || abi.namedMethods("z8.p", name).isNotEmpty())
@@ -125,10 +128,11 @@ class ShapeHostBridge(private val loader: ClassLoader, private val abi: Keyboard
                 val selected = engine.select(arg[0] as Int)
                 host.pair(selected.orEmpty(), selected != null)
             }
-            "r", "filterSingleChar", "insertAtCursor", "deleteAtCursor" -> result(engine.snapshot(false))
+            "r", "filterSingleChar", "insertAtCursor", "deleteAtCursor", "inputAtCursor" -> result(engine.snapshot(false))
             "singleCharFilterSupported", "cursorEditing" -> false
             "engineName" -> "xatype-shape"
             "segmentState" -> 0
+            "rawCursor" -> engine.code.length
             "v" -> emptyList<Any>()
             else -> error("Unexpected host method: ${method.name}")
         }

@@ -197,11 +197,10 @@ internal object HostFingerprints {
             matcher {
                 modifiers(Modifier.STATIC)
                 returnType("float")
-                paramCount(2)
                 addUsingField(FieldMatcher().name("keyboard_unified_height_portrait"))
                 addUsingField(FieldMatcher().name("unified_keyboard_height_min"))
             }
-        }.filter { it.paramTypeNames.contains(composer.name) }, "keyboard unified height")
+        }.filter { it.paramCount in 2..3 && it.paramTypeNames.contains(composer.name) }, "keyboard unified height")
         val consume = single(bar.invokes.filter {
             it.className == composer.name && it.paramCount == 1 &&
                 it.returnTypeName == "java.lang.Object" &&

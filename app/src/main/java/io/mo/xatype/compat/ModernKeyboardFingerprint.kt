@@ -150,9 +150,25 @@ internal object ModernKeyboardFingerprint {
         )
         // The base light/dark palettes the helper attaches with; the holder
         // also keeps derived variants built by copy().
-        val holderFields = attach.usingFields.map { it.field }
+        val attachedPalettes = attach.usingFields.map { it.field }
             .filter { it.typeName == palette.name }
             .distinctBy { it.className + "." + it.name }
+        val holderFields = if (attachedPalettes.size == 2) attachedPalettes else {
+            // In 0.2.1448 the attach method no longer reads the palettes. The
+            // palette factory still reads this holder's Compose state; its
+            // initializer writes the base light/dark palettes before copies.
+            val holder = single(factory.usingFields.map { it.field.className }.distinct()
+                .mapNotNull { runCatching { Class.forName(it, false, loader) }.getOrNull() }
+                .filter { type -> type.declaredFields.count { it.type == palette } == 4 },
+                "palette holder through factory")
+            val initializer = single(bridge.getClassData(holder)?.methods.orEmpty()
+                .filter { it.name == "<clinit>" }, "palette holder initializer")
+            val palettes = initializer.usingFields.filter { it.usingType.isWrite() }
+                .map { it.field }.filter { it.className == holder.name && it.typeName == palette.name }
+                .distinctBy { it.descriptor }
+            if (palettes.size != 4) throw FingerprintMiss("palette initializer: ${palettes.size} fields")
+            palettes.take(2)
+        }
         if (holderFields.size != 2 || holderFields.map { it.className }.toSet().size != 1) {
             throw FingerprintMiss("palette holder: " + holderFields.size + " fields")
         }

@@ -100,7 +100,7 @@ private class Variant(private val bridge: DexKitBridge, private val reference: J
 
 internal object KeyboardAbiReference {
     /** Witnesses from verified host builds, newest first; all share the same ID labels. */
-    private val resources = listOf("/xatype/keyboard-abi-21358.json", "/xatype/keyboard-abi-21246.json",
+    private val resources = listOf("/xatype/keyboard-abi-21448.json", "/xatype/keyboard-abi-21358.json", "/xatype/keyboard-abi-21246.json",
         "/xatype/keyboard-abi.json")
 
     val variants: List<JSONObject> by lazy {

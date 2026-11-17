@@ -120,7 +120,7 @@
 | **验证宿主** | 超级小爱输入法 0.2.1358.a9d5eb78 |
 
 > [!TIP]
-> **小版本自适配**：大部分依赖宿主混淆名的功能接入 [DexKit](https://github.com/LuckyPray/DexKit) 指纹与缓存。宿主或模块变化后重新扫描，结果保存到各进程自己的 `/data/user_de/0/<包名>/cache/xatype-*symbols.json`；缓存按完整 ZIP 条目元数据标识并校验，损坏时重扫。接口找不到或不唯一时跳过对应功能，并在首页适配状态中展示。指纹已在 0.2.701 ~ 0.2.1358 的 DEX 上核对，其他版本须满足结构校验，不能据此推定全部兼容。可用 `scripts/verify-host-fingerprints.ps1`（剪贴板加 `-Table PhraseSymbols`）对宿主 APK 检查。
+> **小版本自适配**：大部分依赖宿主混淆名的功能接入 [DexKit](https://github.com/LuckyPray/DexKit) 指纹与缓存。宿主或模块变化后重新扫描，结果保存到各进程自己的 `/data/user_de/0/<包名>/cache/xatype-*symbols.json`；缓存按完整 ZIP 条目元数据标识并校验，损坏时重扫。接口找不到或不唯一时跳过对应功能，并在首页适配状态中展示。指纹已在 0.2.701 ~ 0.2.1358 和 0.2.1448 的 DEX 上核对，其他版本须满足结构校验，不能据此推定全部兼容。可用 `scripts/verify-host-fingerprints.ps1`（剪贴板加 `-Table PhraseSymbols`）对宿主 APK 检查。
 
 ---
 

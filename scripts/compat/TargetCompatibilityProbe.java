@@ -160,12 +160,15 @@ public final class TargetCompatibilityProbe {
         method(load(target, voice), voiceMethod, void.class, Context.class, String.class, String.class);
         String asr = (String) compat.getMethod("asrManagerClassName", ClassLoader.class)
                 .invoke(singleton, target);
-        load(target, asr).getDeclaredMethod("m", int.class, String.class);
+        load(target, asr).getDeclaredMethod(generation.toString().equals("V21448") ? "n" : "m",
+                int.class, String.class);
         checks++;
         String callback = (String) compat.getMethod("asrCallbackClassName", ClassLoader.class)
                 .invoke(singleton, target);
         method(load(target, callback), "e", void.class, Bundle.class);
-        method(load(target, "com.iflytek.inputmethod.smartengine.c1"), "onPyCloudAttachUpdate",
+        method(load(target, generation.toString().equals("V21448")
+                ? "com.iflytek.inputmethod.smartengine.d1" : "com.iflytek.inputmethod.smartengine.c1"),
+                "onPyCloudAttachUpdate",
                 void.class, int.class, String.class, String.class, String.class, String.class);
         Class<?> result = load(target, "com.iflytek.inputmethod.smart.api.entity.PinyinCloudAttachResult");
         method(result, "getBlackListStr", String.class);

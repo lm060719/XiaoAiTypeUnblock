@@ -9,6 +9,7 @@ enum class TargetGeneration {
     LEGACY,
     V209,
     V21053,
+    V21448,
     UNKNOWN
 }
 
@@ -197,23 +198,37 @@ object TargetCompatibility {
         HostSymbols.modernKeyboard() ?: when (detect(classLoader)) {
             TargetGeneration.V209 -> v209Keyboard
             TargetGeneration.V21053 -> v21053Keyboard
+            TargetGeneration.V21448 -> null
             else -> null
         }
 
     fun voiceModerationClassName(classLoader: ClassLoader): String =
-        if (detect(classLoader) == TargetGeneration.V21053) "z7.h" else "a8.n"
+        when (detect(classLoader)) {
+            TargetGeneration.V21448 -> "u7.i"
+            TargetGeneration.V21053 -> "z7.h"
+            else -> "a8.n"
+        }
 
     fun asrManagerClassName(classLoader: ClassLoader): String =
-        if (detect(classLoader) == TargetGeneration.V21053) "r8.f" else "s8.f"
+        when (detect(classLoader)) {
+            TargetGeneration.V21448 -> "m8.g"
+            TargetGeneration.V21053 -> "r8.f"
+            else -> "s8.f"
+        }
 
     fun asrCallbackClassName(classLoader: ClassLoader): String =
-        if (detect(classLoader) == TargetGeneration.V21053) "r8.d" else "s8.d"
+        when (detect(classLoader)) {
+            TargetGeneration.V21448 -> "m8.e"
+            TargetGeneration.V21053 -> "r8.d"
+            else -> "s8.d"
+        }
 
     @Synchronized
     fun detect(classLoader: ClassLoader): TargetGeneration {
         detectedGenerations[classLoader]?.let { return it }
 
         val generation = when {
+            matchesV21448Structure(classLoader) -> TargetGeneration.V21448
             matchesV21053Structure(classLoader) -> TargetGeneration.V21053
             matchesV209Structure(classLoader) -> TargetGeneration.V209
             matchesLegacyStructure(classLoader) -> TargetGeneration.LEGACY
@@ -225,6 +240,7 @@ object TargetCompatibility {
 
     fun aiSafetyParserClassName(classLoader: ClassLoader): String {
         return when (detect(classLoader)) {
+            TargetGeneration.V21448 -> "jb.s"
             TargetGeneration.V21053 -> "eb.s"
             TargetGeneration.V209 -> "fb.t"
             TargetGeneration.LEGACY -> "fb.s"
@@ -236,6 +252,7 @@ object TargetCompatibility {
 
     fun voiceModerationMethodName(classLoader: ClassLoader): String {
         return when (detect(classLoader)) {
+            TargetGeneration.V21448 -> "e"
             TargetGeneration.V21053 -> "g"
             TargetGeneration.V209 -> "g"
             TargetGeneration.LEGACY -> "f"
@@ -255,6 +272,19 @@ object TargetCompatibility {
                 }
             }
         }
+    }
+
+    private fun matchesV21448Structure(classLoader: ClassLoader): Boolean {
+        val service = findClass("com.mi.ime.MiInputMethodService", classLoader) ?: return false
+        val helper = findClass("fb.h0", classLoader) ?: return false
+        val palette = findClass("ra.j", classLoader) ?: return false
+        if (runCatching { service.getDeclaredField("hyperMaterialHelper").type }.getOrNull() != helper) return false
+        return hasMethod(helper, "a", java.lang.Boolean.TYPE, View::class.java) &&
+            hasMethod(helper, "f", java.lang.Boolean.TYPE,
+                java.lang.Boolean.TYPE, FrameLayout::class.java, Integer.TYPE) &&
+            helper.declaredFields.any { it.type == service } &&
+            helper.declaredFields.any { it.type == View::class.java } &&
+            palette.declaredFields.count { it.type == java.lang.Long.TYPE } >= 30
     }
 
     private fun matchesV21053Structure(classLoader: ClassLoader): Boolean {

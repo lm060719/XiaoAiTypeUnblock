@@ -1,0 +1,157 @@
+XiaoAiTypeUnblock 0.2.1448 adaptation verification
+Date: 2026-11-17
+Device: 66064e1f (real Android device)
+Host: com.xiaomi.type 0.2.1448.5cf769fe / versionCode 21448
+Module: 2.2.3.11 / versionCode 71
+
+$ .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest --offline
+
+Starting a Gradle Daemon, 1 busy and 1 incompatible and 1 stopped Daemons could not be reused, use --status for details
+
+> Configure project :app
+WARNING: The option setting 'android.overridePathCheck=true' is experimental.
+The current default is 'false'.
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:mergeDebugShaders UP-TO-DATE
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:compressDebugAssets UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :app:dexBuilderDebug UP-TO-DATE
+> Task :app:mergeDebugGlobalSynthetics UP-TO-DATE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:mergeDebugJavaResource UP-TO-DATE
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :app:mergeProjectDexDebug UP-TO-DATE
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :app:mergeDebugNativeLibs UP-TO-DATE
+> Task :app:stripDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:packageDebug UP-TO-DATE
+> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDebug UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :app:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :app:testDebugUnitTest UP-TO-DATE
+
+[Incubating] Problems report is available at: file:///E:/Users/limo2/Desktop/project/Github/XiaoAiTypeUnblock/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 7s
+46 actionable tasks: 1 executed, 45 up-to-date
+
+JUnit XML summary: reports=45 tests=289 failures=0 errors=0 skipped=0
+
+$ .\scripts\verify-host-fingerprints.ps1 -TargetApk <host APK> -DeviceSerial 66064e1f
+Host APK: C:\Users\limo2\AppData\Local\ReconBridge\work\com.xiaomi.type\apk\base.apk
+
+target0.apk = C:\Users\limo2\AppData\Local\ReconBridge\work\com.xiaomi.type\apk\base.apk
+== target0.apk
+scan:  fingerprint scan 551ms: 46 resolved
+cache: fingerprints from cache: 46 resolved
+  keyboard.oneHandDimensions = [Lra/k;]
+  keyboard.keyPreview = [Lfa/u7;->onDraw(Landroid/graphics/Canvas;)V]
+  keyboard.keyPreviewFill = [Lfa/u7;->h:I]
+  kotlin.coroutines = [Ldd/c;, Lyc/m;, Ldd/a;]
+  aiSafety.parsers = [Ljb/s;->e(Ljava/lang/String;)Ljb/f;, Ljb/s;->f(Ljava/lang/String;)Ljb/g;, Ljb/s;->h(Ljava/lang/String;)Ljb/f;]
+  voice.moderation = [Lu7/i;->e(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V]
+  asr.errorMapper = [Lm8/g;->n(ILjava/lang/String;)Ln8/e;]
+  asr.errorCallback = [Lm8/e;->e(Landroid/os/Bundle;)V]
+  os.versionGate = [Lt7/n4;]
+  height.rect = [Lfa/c;]
+  height.clamp = [Lhi/c;->F(III)I]
+  height.rectGetter = [Lfb/c3;->o()Lfa/c;]
+  height.layout = [Lmb/u0;->a(Lcom/mi/ime/MiInputMethodService;Lp0/r;I)V]
+  height.drag = [Lfa/d9;->n(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;]
+  height.dragKind = [Lfa/d9;->a:I]
+  keyboard.modern = 58 entries
+  keyboard.bottomSpacing = [Lra/v;->w1(Lp0/r;)F]
+  keyboard.bottomSpacingConsume = [Lp0/r;->l(Lp0/o1;)Ljava/lang/Object;]
+  keyboard.bottomSpacingCallers = [Lmb/n0;->b(ILp0/r;)V]
+  keyboard.toolbarHeight = [Lra/v;->x0(Lp0/r;)F]
+  keyboard.toolbarTotalHeight = [Lra/v;->e(IILp0/r;)F]
+  keyboard.toolbarHeightConsume = [Lp0/r;->l(Lp0/o1;)Ljava/lang/Object;]
+  keyboard.toolbarHeightCallers = [Lb8/c;->n(ILp0/r;Z)F, Lkb/e;->c(Lkotlin/jvm/functions/Function0;Lmd/b;Lkotlin/jvm/functions/Function0;JJJJILjava/util/Set;Lb1/l;Lp0/r;I)V, Lkb/e;->d(Lkotlin/jvm/functions/Function0;Lmd/b;Lkotlin/jvm/functions/Function0;JJJJILjava/util/Set;Lb1/l;Lp0/r;I)V, Lkb/e;->e(Lkotlin/jvm/functions/Function0;Lmd/b;Lkotlin/jvm/functions/Function0;JJJJILjava/util/Set;Lb1/l;Lp0/r;I)V, Lfa/j5;->n(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, Lfa/za;->C(Lpa/g;Lra/j;FFLmd/b;Lkotlin/jvm/functions/Function0;Lmd/e;Lkotlin/jvm/functions/Function0;Lmd/f;IILkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;ZLmd/b;Lmd/b;Lmd/b;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;ZLkotlin/jvm/functions/Function0;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lp0/r;I)V, Lfa/za;->F0(Ld9/x;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lb1/l;Lkotlin/jvm/functions/Function0;Lp0/r;I)V, Lfa/za;->T(Lpa/g;Lmd/b;Lb1/l;Ljava/util/List;ZZZLmd/b;Lkotlin/jvm/functions/Function0;Lmd/b;Lmd/b;Lmd/b;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;Lmd/b;ZZLkotlin/jvm/functions/Function0;Lmd/e;Lkotlin/jvm/functions/Function0;Lmd/f;IILkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;ZLjava/lang/String;ZZLp0/r;IIIII)V, Lfa/za;->c0(Lpa/g;Lra/j;FFLmd/b;Lkotlin/jvm/functions/Function0;Lmd/e;Lkotlin/jvm/functions/Function0;Lmd/f;IILkotlin/jvm/functions/Function0;ZLmd/b;Lmd/b;Lmd/b;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;ZLkotlin/jvm/functions/Function0;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lp0/r;I)V, Lpd/a;->g(Lcom/mi/ime/MiInputMethodService;Ljava/util/List;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ZZZZLmd/e;Lp0/r;II)V, Lpd/a;->r(Lcom/mi/ime/MiInputMethodService;Ljava/util/List;Ljava/lang/String;Ljava/util/List;ZLmd/b;Lkotlin/jvm/functions/Function0;Lmd/d;ZZLkotlin/jvm/functions/Function0;Ljava/lang/Boolean;Lfb/g4;Lkotlin/jvm/functions/Function0;Lp0/r;II)V, Lka/k0;->n(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, Lmb/m2;->c(Lcom/mi/ime/MiInputMethodService;Lt7/j0;Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lp0/r;I)V, Lmb/m2;->d(ILcom/mi/ime/MiInputMethodService;Lp0/r;Z)V, Lmb/m2;->e(Lcom/mi/ime/MiInputMethodService;Lt7/j0;Lp0/r;II)V, Lmb/m2;->i(Lae/r0;Ld9/x;Lp0/r;I)V, Lmb/n0;->b(ILp0/r;)V, Lmb/n4;->e(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, Lra/b;->c(JLp0/r;)J, Lz9/l;->n(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, Lz9/n;->n(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, Lhi/c;->f(Ld9/x;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;Lmd/d;Lae/r0;Lb1/l;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Ld9/m;ZLr8/g;Lr8/h;ZZLkotlin/jvm/functions/Function0;Lmd/b;Lmd/b;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;Lkotlin/jvm/functions/Function0;ZZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;ZLjava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lp0/r;IIIIIII)V, Lhi/c;->g(Ld9/x;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;Lae/r0;Lb1/l;ZZLjava/lang/String;ZZLd9/m;ZLr8/g;Lr8/h;ZLkotlin/jvm/functions/Function0;Lmd/b;Lmd/b;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lmd/b;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lp0/r;IIIIII)V, Lmb/o0;->n(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, Lra/v;->z0(ILp0/r;)F]
+  cloud.blacklistAttach = [Lcom/iflytek/inputmethod/smartengine/d1;->onPyCloudAttachUpdate(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V]
+  panel.expansion = [Lmb/n;->r(Ljava/lang/Object;)Ljava/lang/Object;]
+  panel.snapTo = [Lw/a;->e(Ljava/lang/Object;Led/i;)Ljava/lang/Object;]
+  panel.animateTo = [Lw/a;->c(Lw/a;Ljava/lang/Object;Lw/g;Lcd/c;)Ljava/lang/Object;]
+  panel.spring = [Lw/b;->p(FFLjava/lang/Object;I)Lw/m0;]
+  ui.manager = [Lcom/mi/ime/MiInputMethodService;->getUiStateManager$app_iflytekFullRelease()Lfb/c3;]
+  ui.mode = [Lfb/c3;->q()Lt7/j0;]
+  ui.floating = [Lfb/c3;->y()Z]
+  ui.closing = [Lfb/c3;->E()Z]
+  ui.closingState = [Lfb/c3;->q:Lp0/i1;]
+  ui.aiMode = [Lt7/j0;->j:Lt7/j0;]
+  panel.close = [Lxc/a;->w0(Lcom/mi/ime/MiInputMethodService;Led/c;)Ljava/lang/Object;]
+  keyboard.t9ShuangpinInit = [Lx9/l;->f(Lcom/mi/ime/MiInputMethodService;Lv8/m0;)V]
+  keyboard.t9ShuangpinBoolean = [Lj9/e;->a(Ljava/lang/String;Z)Z]
+  keyboard.t9ShuangpinString = [Lj9/e;->f(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;]
+  keyboard.engine = 75 entries
+  keyboard.layout = 50 entries
+  keyboard.actions = 15 entries
+  keyboard.picker = 12 entries
+  keyboard.settings = 22 entries
+  keyboard.swipe = 45 entries
+  keyboard.letterAppearance = 14 entries
+  keyboard.surfaceText = 13 entries
+  BINDINGS OK io.mo.xatype.shape.ShapeHostBridge
+  BINDINGS OK io.mo.xatype.keyboard18.Keyboard18HostBridge
+  BINDINGS OK io.mo.xatype.keyboard.EmojiHostBridge
+  BINDINGS OK io.mo.xatype.keyboard18.Keyboard18HostLayout
+  BINDINGS OK io.mo.xatype.keyboard.KeyboardShortcutHostLayout
+  BINDINGS OK io.mo.xatype.keyboard.KeyboardShortcutHostActions
+  BINDINGS OK io.mo.xatype.keyboard.KeyboardPickerBridge
+  BINDINGS OK io.mo.xatype.keyboard.ShortcutSwipeHostBridge
+  BINDINGS OK keyboard.surfaceText
+DONE
+Evidence: E:\Users\limo2\Desktop\project\Github\XiaoAiTypeUnblock\work\fingerprint-probe-f416421243fc4f4eb83237819ce3e4c0
+
+$ .\scripts\verify-target-compatibility.ps1 -TargetApk <host APK> -ExpectedProfile V21448 -DeviceSerial 66064e1f
+Host APK: C:\Users\limo2\AppData\Local\ReconBridge\work\com.xiaomi.type\apk\base.apk
+
+E:\Users\limo2\Desktop\project\Github\XiaoAiTypeUnblock\work\compat-probe-10abf65e44de4c3a8a2894344fd198ab\dex\classes.dex: 1 file pushed, 0 skipped. 64.0 MB/s (11340 bytes in 0.000s)
+E:\Users\limo2\Desktop\project\Github\XiaoAiTypeUnblock\app\build\outputs\apk\debug\app-debug.apk: 1 file pushed, 0 skipped. 26.9 MB/s (8024022 bytes in 0.284s)
+C:\Users\limo2\AppData\Local\ReconBridge\work\com.xiaomi.type\apk\base.apk: 1 file pushed, 0 skipped. 42.9 MB/s (47749693 bytes in 1.061s)
+PASS profile=V21448 checks=15
+Evidence: E:\Users\limo2\Desktop\project\Github\XiaoAiTypeUnblock\work\compat-probe-10abf65e44de4c3a8a2894344fd198ab
+
+APK SHA-256: C6B03C1740B2110A6BE107BFCBFC0454C7BF6B9DEB05D803E37434FE502B37AC
