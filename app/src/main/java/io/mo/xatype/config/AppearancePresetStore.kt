@@ -16,8 +16,8 @@ object AppearancePresetStore
 {
     const val OFFICIAL = "official"
     const val STORAGE_KEY = "pref_appearance_saved_schemes_v1"
-    private const val SNAPSHOT_VERSION = 1
-    private const val MAX_NAME_LENGTH = 30
+    internal const val SNAPSHOT_VERSION = 1
+    const val MAX_NAME_LENGTH = 30
 
     data class Preset(
         val id: String,
@@ -220,6 +220,24 @@ object AppearancePresetStore
     {
         val snapshot = saved(prefs).firstOrNull { it.id == id }?.snapshot ?: return false
         return applySnapshot(prefs, snapshot)
+    }
+
+    /** Import adds a separate archive; active settings and existing schemes stay intact. */
+    fun importScheme(prefs: SharedPreferences, document: AppearanceSchemeFile.Document): Scheme?
+    {
+        val snapshot = AppearanceSchemeFile.validateSnapshot(document.snapshot)
+        val base = document.name.trim()
+        require(validName(base)) { "配置名称须为 1–30 个字符" }
+        val items = saved(prefs)
+        var name = base
+        var suffix = 2
+        while (items.any { it.name.equals(name, ignoreCase = true) })
+        {
+            val tail = " (${suffix++})"
+            name = base.take(MAX_NAME_LENGTH - tail.length) + tail
+        }
+        val scheme = Scheme(UUID.randomUUID().toString(), name, snapshot)
+        return if (persist(prefs, items + scheme)) scheme else null
     }
 
     private fun validName(name: String) = name.isNotBlank() && name.length <= MAX_NAME_LENGTH

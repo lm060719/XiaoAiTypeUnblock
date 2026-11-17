@@ -97,6 +97,7 @@ object Keyboard18Hook {
         val codeField = keyClass.abiField(abi, "a").apply { isAccessible = true }
         val labelField = keyClass.abiField(abi, "b").apply { isAccessible = true }
         val kindField = keyClass.abiField(abi, "f").apply { isAccessible = true }
+        val popupField = keyClass.abiField(abi, "i").apply { isAccessible = true }
         val layoutFactory = KeyboardAbi.qwertyFactory(abi)
         // ab.p1.a is declared as MiInputMethodService, not its Context superclass.
         val layoutContext = layoutFactory.declaringClass.declaredFields.single { hostService.isAssignableFrom(it.type) }
@@ -139,10 +140,16 @@ object Keyboard18Hook {
                 XposedUtils.logError(module, "18-key input delivery failed", it)
             }
             val enabled = loaded?.dictionary != null && service?.let { groupedKeys(it) } != null
-            if (enabled && session != null && label in KeyboardShortcuts.actions) {
-                if (!ConfigManager.isKeyboardShortcutsEnabled()) keys.consumed() else perform(listOf(flush(), KeyOp.Action {
+            if (enabled && session != null && kind == "CHAR" && KeyboardShortcuts.isAction(label) &&
+                (popupField.get(key) as? List<*>)?.contains(label) == true) {
+                val editor = session.service.currentInputEditorInfo
+                if (!ConfigManager.isKeyboardShortcutsEnabled()) keys.consumed()
+                else if (KeyboardShortcuts.cancelsPending(label) && synchronized(session.engine) { session.engine.raw.isNotEmpty() }) {
+                    perform(listOf(engineOp({ session.engine.clear(); session.engine.snapshot() }) { host.replaceRaw("") }))
+                } else perform(listOf(flush(), KeyOp.Action {
                     runCatching {
-                        session.service.currentInputConnection?.let { KeyboardShortcutActions.perform(it, label) }
+                        if (session.service.currentInputEditorInfo === editor)
+                            session.service.currentInputConnection?.let { KeyboardShortcutActions.perform(it, label) }
                     }.onFailure { XposedUtils.logError(module, "Grouped-key shortcut failed: $label", it) }
                 }))
             } else if (session == null) chain.proceed()

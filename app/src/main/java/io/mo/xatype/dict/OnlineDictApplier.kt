@@ -56,9 +56,6 @@ class OnlineDictApplier(
             return Result(removal.failed == 0, "已清除 ${removal.removed} 个导入词$note",
                 before = initial, after = engine.words().orEmpty().size)
         }
-        if (removal.failed > 0) {
-            return Result(false, "上一来源有 ${removal.failed} 个词未能删除，已暂停导入，请先清除后重试")
-        }
         if (words == null) return Result(false, "没有可导入的词库文件")
 
         val fileWords = LinkedHashSet<String>()
@@ -83,7 +80,7 @@ class OnlineDictApplier(
         }
 
         // Recorded before importing, so an interrupted run can still be undone later.
-        writeRecord(planned)
+        writeRecord(removal.remaining + planned)
         val chunk = File(dir, "chunk.txt")
         var index = 0
         var size = FIRST_CHUNK
@@ -118,9 +115,10 @@ class OnlineDictApplier(
         engine.save()
         val after = engine.words().orEmpty().toHashSet()
         val added = planned.filter { it in after }
-        writeRecord(added)
+        writeRecord(removal.remaining + added)
 
         val notes = ArrayList<String>()
+        if (removal.failed > 0) notes += "上一来源有 ${removal.failed} 个词未能删除，已保留清理记录"
         if (alreadyThere > 0) notes += "$alreadyThere 个已存在"
         if (overLimit > 0) notes += "因用户词库容量限制少导入 $overLimit 个"
         if (planned.size - added.size > 0 && lost.isEmpty()) notes += "${planned.size - added.size} 个被输入法拒绝"
@@ -153,10 +151,12 @@ class OnlineDictApplier(
         return lost.count { it in now }
     }
 
-    private class Removal(val removed: Int, val failed: Int)
+    private class Removal(val removed: Int, val remaining: List<String>) {
+        val failed get() = remaining.size
+    }
 
     private fun removeRecorded(): Removal {
-        if (!record.isFile) return Removal(0, 0)
+        if (!record.isFile) return Removal(0, emptyList())
         val recorded = record.readLines(Charsets.UTF_8).filter { it.isNotEmpty() }
         val before = engine.words().orEmpty().toHashSet()
         val present = recorded.filter { it in before }
@@ -169,7 +169,7 @@ class OnlineDictApplier(
         val remaining = present.filter { it in after }
         // Words that could not be deleted stay recorded, so a later clear tries them again.
         if (remaining.isEmpty()) record.delete() else writeRecord(remaining)
-        return Removal(present.size - remaining.size, remaining.size)
+        return Removal(present.size - remaining.size, remaining)
     }
 
     private fun writeRecord(words: List<String>) {

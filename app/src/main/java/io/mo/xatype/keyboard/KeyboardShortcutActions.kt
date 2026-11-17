@@ -1,6 +1,8 @@
 package io.mo.xatype.keyboard
 
 import android.view.KeyEvent
+import android.os.SystemClock
+import android.view.KeyCharacterMap
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 
@@ -25,10 +27,19 @@ object KeyboardShortcutActions {
                     connection.setSelection(position, position)
                 } else {
                     val key = if (action == "段首") KeyEvent.KEYCODE_MOVE_HOME else KeyEvent.KEYCODE_MOVE_END
-                    connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, key))
-                    connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, key))
+                    send(connection, ShortcutKeyChord(if (key == KeyEvent.KEYCODE_MOVE_HOME) "Home" else "End"))
                 }
             }
+            else -> KeyboardShortcuts.chord(action)?.let { send(connection, it) }
+        }
+    }
+
+    private fun send(connection: InputConnection, chord: ShortcutKeyChord) {
+        val downTime = SystemClock.uptimeMillis()
+        chord.dispatch { stroke ->
+            connection.sendKeyEvent(KeyEvent(downTime, SystemClock.uptimeMillis(),
+                if (stroke.down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
+                stroke.code, 0, stroke.meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_SOFT_KEYBOARD))
         }
     }
 }

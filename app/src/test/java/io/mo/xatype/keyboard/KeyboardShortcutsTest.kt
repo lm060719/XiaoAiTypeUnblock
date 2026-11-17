@@ -130,7 +130,8 @@ class KeyboardShortcutsTest {
     }
 
     @Test fun `every supported action including select all and paragraph start can be dispatched`() {
-        assertEquals(setOf("全选", "复制", "粘贴", "剪切", "段首", "段尾"), KeyboardShortcuts.actions)
+        assertTrue(KeyboardShortcuts.actions.containsAll(listOf("全选", "复制", "粘贴", "剪切", "段首", "段尾",
+            "向左", "向右", "向上", "向下", "Esc", "撤销", "恢复")))
         for (action in KeyboardShortcuts.actions) {
             assertEquals(action, (adapter.actionKey(key('z'.code, "Z"), action) as ka.c).b)
         }
@@ -146,6 +147,19 @@ class KeyboardShortcutsTest {
         assertEquals("粘贴", mapped.action(key('2'.code, "ABC"), T9))
         assertNull(mapped.action(key('9'.code, "WXYZ"), T9))
         assertEquals("复制", (mapped.actionKey(key('a'.code, "A"), "复制") as ka.c).b)
+    }
+
+    @Test fun `chords round trip on every layout and synthesize identifiable action keys`() {
+        val chord = ShortcutKeyChord("Z", ctrl = true, shift = true).encoded
+        for (keyboard in ShortcutKeyboard.entries) {
+            val mapping = mapOf(keyboard.keys.first() to chord)
+            assertEquals(mapping, keyboard.decode(keyboard.encode(mapping)))
+        }
+        val release = adapter.actionKey(key('z'.code, "Z"), chord) as ka.c
+        assertEquals(chord, release.b)
+        assertEquals(listOf(chord), release.i)
+        assertFalse(KeyboardShortcuts.isAction("Z"))
+        assertFalse(KeyboardShortcuts.isAction("Ctrl"))
     }
 
     @Test fun `mapping storage keeps defaults until edited and ignores invalid entries`() {

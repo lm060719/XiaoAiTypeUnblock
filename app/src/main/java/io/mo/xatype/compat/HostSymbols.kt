@@ -1,7 +1,8 @@
 package io.mo.xatype.compat
 
 /** Members of the input method (com.xiaomi.type), located by [HostFingerprints]. */
-object HostSymbols : SymbolTable(12, HostFingerprints::resolve) {
+object HostSymbols : SymbolTable(13, HostFingerprints::resolve) {
+    const val ONE_HAND_DIMENSIONS = "keyboard.oneHandDimensions"
     const val KEYBOARD_KEY_PREVIEW = "keyboard.keyPreview"
     /** The bubble's background color field where it draws from a cached bitmap (0.2.1358); empty before. */
     const val KEYBOARD_KEY_PREVIEW_FILL = "keyboard.keyPreviewFill"
@@ -60,6 +61,7 @@ object HostSymbols : SymbolTable(12, HostFingerprints::resolve) {
     const val TOOLBAR_HEIGHT_CALLERS = "keyboard.toolbarHeightCallers"
 
     override val keys = listOf(
+        ONE_HAND_DIMENSIONS,
         KEYBOARD_KEY_PREVIEW, KEYBOARD_KEY_PREVIEW_FILL, KOTLIN_COROUTINES,
         AI_SAFETY_PARSERS, VOICE_MODERATION, ASR_ERROR_MAPPER, ASR_ERROR_CALLBACK,
         OS_VERSION_GATE, HEIGHT_RECT, HEIGHT_CLAMP, HEIGHT_RECT_GETTER, HEIGHT_LAYOUT,

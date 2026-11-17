@@ -174,7 +174,7 @@ class OnlineDictActivity : AppCompatActivity() {
             else -> {
                 title = "${current.title} ${state.getString(OnlineDictStore.LABEL)}"
                 lines += "已整理 ${state.getInt(OnlineDictStore.COUNT)} 条词"
-                lines += if (pending(state)) "已排队，重启输入法后导入" else hostLine(state)
+                lines += if (pending(state)) "已排队或正在导入；重启输入法后请等待完成，期间不要再次重启" else hostLine(state)
             }
         }
         val latestTime = state.getLong(OnlineDictStore.CHECK_TIME)

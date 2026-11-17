@@ -34,6 +34,8 @@ object ConfigManager {
     const val KEY_AI_ABILITY_UNLOCK = "pref_ai_ability_unlock"
     const val KEY_TELEMETRY_BLOCK = "pref_telemetry_block"
     const val KEY_KEYBOARD_HEIGHT_UNBLOCK = "pref_keyboard_height_unblock"
+    const val KEY_ONE_HAND_SIDE = "pref_one_hand_side"
+    const val KEY_ONE_HAND_WIDTH = "pref_one_hand_width"
     const val KEY_KEYBOARD_SHORTCUTS = "pref_keyboard_shortcuts"
     const val KEY_KEYBOARD_HANDWRITING = "pref_keyboard_handwriting"
     /** dp an upward first stroke travels before handwriting claims it; shorter swipes stay the host's symbols. */
@@ -209,6 +211,8 @@ object ConfigManager {
     fun isVerboseLogEnabled() = bool(KEY_VERBOSE_LOG)
 
     fun isKeyboardHeightUnblockEnabled() = bool(KEY_KEYBOARD_HEIGHT_UNBLOCK)
+    fun getOneHandSide() = int(KEY_ONE_HAND_SIDE)
+    fun getOneHandWidth() = int(KEY_ONE_HAND_WIDTH)
     fun isKeyboardShortcutsEnabled() = bool(KEY_KEYBOARD_SHORTCUTS)
     fun isKeyboardHandwritingEnabled() = bool(KEY_KEYBOARD_HANDWRITING)
     fun getHandwritingUpDistance() = int(KEY_HANDWRITING_UP_DISTANCE)

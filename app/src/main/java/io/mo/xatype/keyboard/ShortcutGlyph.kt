@@ -44,6 +44,26 @@ object ShortcutGlyph {
                     line(4f, 5f, 4f, 19f); line(8f, 12f, 20f, 12f)
                     line(8f, 12f, 12f, 8f); line(8f, 12f, 12f, 16f)
                 }
+                "向左", "向右", "向上", "向下" -> {
+                    canvas.rotate(when (action) { "向右" -> 180f; "向上" -> 90f; "向下" -> -90f; else -> 0f }, 12f, 12f)
+                    line(4f, 12f, 20f, 12f); line(4f, 12f, 10f, 6f); line(4f, 12f, 10f, 18f)
+                }
+                "撤销", "恢复" -> {
+                    if (action == "恢复") { canvas.translate(24f, 0f); canvas.scale(-1f, 1f) }
+                    canvas.drawArc(RectF(5f, 7f, 20f, 21f), 200f, 230f, false, paint)
+                    line(4f, 5f, 4f, 12f); line(4f, 12f, 11f, 12f)
+                }
+                else -> {
+                    box(2f, 5f, 22f, 20f)
+                    val chord = KeyboardShortcuts.chord(action)
+                    val label = when { chord?.ctrl == true -> "Ctrl"; chord?.alt == true -> "Alt"
+                        chord?.shift == true -> "Shift"; else -> chord?.key ?: "Key" }
+                    paint.style = Paint.Style.FILL
+                    paint.textAlign = Paint.Align.CENTER
+                    paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    paint.textSize = if (label.length > 3) 6f else 8f
+                    canvas.drawText(label, 12f, 15f, paint)
+                }
             }
         } finally { canvas.restoreToCount(save) }
     }

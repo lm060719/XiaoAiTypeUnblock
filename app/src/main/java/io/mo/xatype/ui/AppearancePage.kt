@@ -30,15 +30,18 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.ViewModelProvider
 import io.mo.xatype.R
 import io.mo.xatype.config.AppearancePresetStore
 import io.mo.xatype.config.AppearanceProfiles
+import io.mo.xatype.config.AppearanceSchemeFile
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.hooks.BackgroundOpacity
 import io.mo.xatype.hooks.GlassRim
@@ -89,6 +92,26 @@ class AppearancePage(
     private var syncingStyleSwitch = false
     private val rows = mutableListOf<Row>()
     private var panelChanged = false
+    private val schemeTransfer = ViewModelProvider(activity)[AppearanceSchemeTransfer::class.java]
+    private var pickingSchemeImport = savedInstanceState?.getBoolean(STATE_IMPORT_PICKER) ?: false
+    private var pendingSchemeExport = savedInstanceState?.getString(STATE_EXPORT_CONTENT)
+    private val openSchemeFile = activity.registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pickingSchemeImport = false
+        if (uri != null) {
+            Toast.makeText(this, "正在导入配置…", Toast.LENGTH_SHORT).show()
+            schemeTransfer.importFile(this, uri)
+        }
+    }
+    private val createSchemeFile = activity.registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val content = pendingSchemeExport
+        pendingSchemeExport = null
+        if (uri != null && content != null) {
+            Toast.makeText(this, "正在导出配置…", Toast.LENGTH_SHORT).show()
+            schemeTransfer.exportFile(this, uri, content)
+        }
+    }
 
     // Profile writes go to the same file, so one listener covers both profiles.
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -139,6 +162,23 @@ class AppearancePage(
         buildOptions(options)
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         refresh()
+        if (savedInstanceState?.getBoolean(STATE_SCHEME_PANEL) == true) {
+            openPanel(rows.first { it.option.title == SCHEME_PANEL_TITLE })
+        }
+        schemeTransfer.result.observe(activity) { result ->
+            if (result != null) {
+                schemeTransfer.consumeResult()
+                when (result) {
+                    is AppearanceSchemeTransfer.Result.Imported -> finishSchemeImport(result.document)
+                    AppearanceSchemeTransfer.Result.Exported -> {
+                        SettingsKit.confirmHaptic(panelContent)
+                        Toast.makeText(this, "配置已导出", Toast.LENGTH_SHORT).show()
+                    }
+                    is AppearanceSchemeTransfer.Result.Failed -> Toast.makeText(this,
+                        "${result.action}失败：${result.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     fun destroy() {
@@ -147,6 +187,10 @@ class AppearancePage(
 
     fun saveState(outState: Bundle) {
         outState.putBoolean(STATE_EDITING_DARK, editingDark)
+        outState.putBoolean(STATE_IMPORT_PICKER, pickingSchemeImport)
+        outState.putString(STATE_EXPORT_CONTENT, pendingSchemeExport)
+        outState.putBoolean(STATE_SCHEME_PANEL,
+            overlay.visibility == View.VISIBLE && panelTitle.text.toString() == SCHEME_PANEL_TITLE)
     }
 
     private fun stylePrefs() = AppearanceProfiles.forProfile(prefs, editingDark)
@@ -208,7 +252,7 @@ class AppearancePage(
             Option("一键外观预设", "快速尝试不同风格", Focus.NONE,
                 { Summary("内置 " + AppearancePresetStore.presets.size + " 套") },
                 ::buildPresetPanel),
-            Option("我的外观配置", "命名保存、切换与管理多套外观", Focus.NONE,
+            Option(SCHEME_PANEL_TITLE, "保存、切换、导入与导出单条外观配置", Focus.NONE,
                 { Summary(AppearancePresetStore.saved(prefs).size.toString() + " 套") },
                 ::buildSchemePanel)
         ))
@@ -410,11 +454,19 @@ class AppearancePage(
                 AppearancePresetStore.save(prefs, name)
             }
         })
+        panel.addView(kit.navRow("导入外观配置", "选择单条配置的 JSON 文件，导入后可手动加载", R.drawable.ic_shape_import) {
+            if (schemeTransferPending()) return@navRow
+            pickingSchemeImport = true
+            runCatching { openSchemeFile.launch(arrayOf("*/*")) }.onFailure {
+                pickingSchemeImport = false
+                Toast.makeText(this, "无法打开文件选择器", Toast.LENGTH_SHORT).show()
+            }
+        })
 
         val schemes = AppearancePresetStore.saved(prefs)
         if (schemes.isEmpty())
         {
-            note(panel, "还没有保存的配置，先调整外观，再点击上方保存。")
+            note(panel, "还没有保存的配置。可保存当前外观，或导入已有配置文件。")
             return
         }
         note(panel, "已保存 " + schemes.size + " 套 · 点击名称加载配置")
@@ -457,13 +509,17 @@ class AppearancePage(
                         }
                         else Toast.makeText(this, "覆盖保存失败", Toast.LENGTH_SHORT).show()
                     }.show()
-            }, LinearLayout.LayoutParams(0, dp(48), 1f))
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             actions.addView(schemeAction("重命名") {
                 askSchemeName(panel, "重命名配置", scheme.name) { name ->
                     AppearancePresetStore.rename(prefs, scheme.id, name)
                 }
-            }, LinearLayout.LayoutParams(0, dp(48), 1f))
-            actions.addView(schemeAction("删除") {
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            panel.addView(actions)
+            val fileActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            fileActions.addView(schemeAction("导出") { exportScheme(scheme) },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            fileActions.addView(schemeAction("删除") {
                 AlertDialog.Builder(activity)
                     .setTitle("删除「" + scheme.name + "」")
                     .setMessage("只删除这一套存档，不会改变当前键盘外观。删除后不能恢复。")
@@ -476,18 +532,53 @@ class AppearancePage(
                         }
                         else Toast.makeText(this, "删除配置失败", Toast.LENGTH_SHORT).show()
                     }.show()
-            }, LinearLayout.LayoutParams(0, dp(48), 1f))
-            panel.addView(actions)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            panel.addView(fileActions)
         }
     }
 
     private fun schemeAction(label: String, onClick: () -> Unit) = Button(this).apply {
         text = label
-        textSize = 12f
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.settings_description_size))
+        setTextColor(getColor(R.color.text_primary))
         isAllCaps = false
         minWidth = 0
-        minimumHeight = dp(44)
+        minimumHeight = kit.dimen(R.dimen.settings_touch_height)
         setOnClickListener { onClick() }
+    }
+
+    private fun schemeTransferPending(): Boolean {
+        val pending = pickingSchemeImport || pendingSchemeExport != null || schemeTransfer.busy
+        if (pending) Toast.makeText(this, "请等待当前导入或导出完成", Toast.LENGTH_SHORT).show()
+        return pending
+    }
+
+    private fun exportScheme(scheme: AppearancePresetStore.Scheme) {
+        if (schemeTransferPending()) return
+        runCatching {
+            // Export the saved archive, even if the live appearance has changed since saving.
+            pendingSchemeExport = AppearanceSchemeFile.encode(scheme)
+            createSchemeFile.launch(AppearanceSchemeFile.fileName(scheme.name))
+        }.onFailure {
+            pendingSchemeExport = null
+            Toast.makeText(this, "无法导出配置：${it.message ?: "请重试"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun finishSchemeImport(document: AppearanceSchemeFile.Document) {
+        // Commit on the UI thread so edits made while reading cannot be overwritten.
+        val imported = runCatching { AppearancePresetStore.importScheme(prefs, document) }
+        val scheme = imported.getOrNull()
+        if (scheme == null) {
+            Toast.makeText(this, "导入失败：${imported.exceptionOrNull()?.message ?: "无法保存配置"}",
+                Toast.LENGTH_LONG).show()
+        } else {
+            if (overlay.visibility == View.VISIBLE && panelTitle.text.toString() == SCHEME_PANEL_TITLE) {
+                showSchemes(panelContent)
+            }
+            SettingsKit.confirmHaptic(panelContent)
+            Toast.makeText(this, "已导入「${scheme.name}」，点击配置名称即可加载", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun askSchemeName(panel: LinearLayout, title: String, initial: String,
@@ -496,7 +587,7 @@ class AppearancePage(
         val input = AppCompatEditText(activity).apply {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            filters = arrayOf(InputFilter.LengthFilter(30))
+            filters = arrayOf(InputFilter.LengthFilter(AppearancePresetStore.MAX_NAME_LENGTH))
             hint = "例如：日常通透、深夜护眼"
             setText(initial)
             setSelection(text?.length ?: 0)
@@ -1132,6 +1223,10 @@ class AppearancePage(
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val SCHEME_PANEL_TITLE = "我的外观配置"
+        private const val STATE_SCHEME_PANEL = "appearance_scheme_panel"
+        private const val STATE_IMPORT_PICKER = "appearance_scheme_import_picker"
+        private const val STATE_EXPORT_CONTENT = "appearance_scheme_export_content"
         private const val STATE_EDITING_DARK = "editing_dark"
         private const val UI_PREFS = "ui_state"
         /** Below this overall opacity, keys may be hard to read. */

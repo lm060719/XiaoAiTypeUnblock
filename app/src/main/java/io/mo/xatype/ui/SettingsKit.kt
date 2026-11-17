@@ -25,6 +25,13 @@ internal class SettingsKit(val context: Context) {
     fun dimen(res: Int): Int = context.resources.getDimensionPixelSize(res)
     fun color(res: Int): Int = context.getColor(res)
 
+    fun resourceLabel(text: CharSequence, sizeRes: Int, colorRes: Int, bold: Boolean = false) = TextView(context).apply {
+        this.text = text
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, context.resources.getDimension(sizeRes))
+        setTextColor(color(colorRes))
+        if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
+
     fun label(text: CharSequence, sizeSp: Float, colorRes: Int, bold: Boolean = false) = TextView(context).apply {
         this.text = text
         textSize = sizeSp

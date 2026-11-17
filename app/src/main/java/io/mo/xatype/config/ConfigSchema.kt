@@ -99,6 +99,9 @@ object ConfigSchema {
         add(Bool(ConfigManager.KEY_VERBOSE_LOG, false))
 
         // Keyboard
+        add(Int32(ConfigManager.KEY_ONE_HAND_SIDE, 0, 0..2))
+        add(Int32(ConfigManager.KEY_ONE_HAND_WIDTH, io.mo.xatype.hooks.OneHandPolicy.DEFAULT_WIDTH,
+            io.mo.xatype.hooks.OneHandPolicy.WIDTH_RANGE))
         add(Bool(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, false))
         add(Bool(ConfigManager.KEY_KEYBOARD_SHORTCUTS, false))
         add(Bool(ConfigManager.KEY_KEYBOARD_HANDWRITING, false))

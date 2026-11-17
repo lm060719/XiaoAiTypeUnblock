@@ -110,13 +110,19 @@ class OnlineDictApplierTest {
         assertEquals(setOf("自造词"), engine.store)
     }
 
-    @Test fun `a new source is not imported while old words could not be removed`() {
+    @Test fun `a new source imports while undeletable old words stay recorded for clearing`() {
         val engine = FakeEngine(undeletable = mutableSetOf("顽固词"))
         val dir = temp.newFolder()
         applier(engine, dir).apply(OnlineDictStore.ACTION_IMPORT, words("顽固词"))
         val result = applier(engine, dir).apply(OnlineDictStore.ACTION_IMPORT, words("万象词"))
-        assertFalse(result.ok)
-        assertFalse("万象词" in engine.store)
+        assertTrue(result.message, result.ok)
+        assertEquals(1, result.imported)
+        assertTrue("万象词" in engine.store)
+        assertEquals(listOf("顽固词", "万象词"), File(dir, "imported-words.txt").readLines())
+        engine.undeletable.clear()
+        val cleared = applier(engine, dir).apply(OnlineDictStore.ACTION_CLEAR, null)
+        assertTrue(cleared.message, cleared.ok)
+        assertTrue(engine.store.isEmpty())
     }
 
     @Test fun `engine not ready asks for a retry and changes nothing`() {

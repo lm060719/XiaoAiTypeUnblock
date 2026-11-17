@@ -21,6 +21,14 @@ internal object HostFingerprints {
 
     fun resolve(bridge: DexKitBridge, loader: ClassLoader): FingerprintResult {
         val collector = FingerprintCollector()
+        collector.put(HostSymbols.ONE_HAND_DIMENSIONS) {
+            val type = single(bridge.findClass {
+                matcher { usingStrings("KeyboardDimensionAdjustment(heightDelta=") }
+            }, "native keyboard dimension adjustment")
+            val int = Int::class.javaPrimitiveType!!
+            type.getInstance(loader).getDeclaredConstructor(int, int, int, int, int, int)
+            listOf(listOf(type.descriptor))
+        }
         collector.put(HostSymbols.KEYBOARD_KEY_PREVIEW, HostSymbols.KEYBOARD_KEY_PREVIEW_FILL) {
             keyPreview(bridge, loader)
         }

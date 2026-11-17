@@ -113,7 +113,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                         val reference = if (floating()) dockedKeyHeight.takeIf { it > 0f }
                             ?: REFERENCE_KEY_HEIGHT_DP * dm.density
                         else 0f.also { bridge.keyHeight(scope).takeIf { it > 0f }?.let { dockedKeyHeight = it } }
-                        bridge.drawLabel(scope, key.action ?: "", key.labelColor,
+                        bridge.drawLabel(scope, key.action?.let(io.mo.xatype.keyboard.KeyboardShortcuts::label) ?: "", key.labelColor,
                             ConfigManager.getShortcutLabelSize() * dm.scaledDensity,
                             offsetX = ConfigManager.getShortcutLabelX() * dm.density,
                             bottomInset = (4f - ConfigManager.getShortcutLabelY()) * dm.density,

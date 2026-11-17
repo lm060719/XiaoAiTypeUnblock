@@ -17,6 +17,7 @@ import io.mo.xatype.hooks.EmojiCandidateHook
 import io.mo.xatype.hooks.Keyboard18Hook
 import io.mo.xatype.hooks.KeyboardBottomSpacingHook
 import io.mo.xatype.hooks.KeyboardToolbarHeightHook
+import io.mo.xatype.hooks.OneHandHook
 import io.mo.xatype.hooks.KeyboardHeightUnblockHook
 import io.mo.xatype.hooks.KeyboardSelectionHook
 import io.mo.xatype.hooks.KeyboardShortcutsHook
@@ -214,6 +215,13 @@ class XiaoAiTypeModule : XposedModule() {
             KeyboardHeightUnblockHook.install(this, classLoader)
         } catch (t: Throwable) {
             XposedUtils.logError(this, "Error installing KeyboardHeightUnblockHook", t)
+        }
+
+        try {
+            OneHandHook.install(this)
+        } catch (t: Throwable) {
+            HostSymbols.markUnavailable(HostSymbols.ONE_HAND_DIMENSIONS, t)
+            XposedUtils.logError(this, "Native one-hand layout unavailable", t)
         }
 
         try {

@@ -1,9 +1,12 @@
 package io.mo.xatype.hooks
 
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.dict.OnlineDictApplier
@@ -90,11 +93,13 @@ object OnlineDictImportHook {
             report(app, revision, "输入法用户词接口不匹配，当前版本不兼容", 0)
             return
         }
-        // A native crash kills the process before any result is written; without this marker the
-        // same request would crash the keyboard again on every start.
+        // A native crash kills the process before any result is written. Record the PID as well:
+        // restarting the IME while a large import runs is a normal force-stop, not a crash.
         val attempt = File(dir, "attempt-revision")
-        if (attempt.isFile && attempt.readText().trim().toLongOrNull() == revision) {
-            XposedUtils.logWarn(module, "[OnlineDict] Request $revision crashed the input method before; giving up")
+        val previous = attempt.takeIf { it.isFile }?.readText()?.trim()?.split(' ')
+        if (previous?.firstOrNull()?.toLongOrNull() == revision &&
+            !wasForceStopped(app, previous.getOrNull(1)?.toIntOrNull())) {
+            XposedUtils.logWarn(module, "[OnlineDict] Request $revision ended unexpectedly; giving up")
             dir.mkdirs()
             applied.writeText(revision.toString())
             attempt.delete()
@@ -102,7 +107,7 @@ object OnlineDictImportHook {
             return
         }
         dir.mkdirs()
-        attempt.writeText(revision.toString())
+        attempt.writeText("$revision ${Process.myPid()}")
         XposedUtils.log(module, "[OnlineDict] Applying request $revision ($action) on ${engineLooper.thread.name}")
         val result = (if (action == OnlineDictStore.ACTION_IMPORT)
             app.contentResolver.openInputStream(OnlineDictContentProvider.WORDS_URI) else null).use { words ->
@@ -116,6 +121,15 @@ object OnlineDictImportHook {
             applied.writeText(revision.toString())
         }
         report(app, revision, result.message, result.imported)
+    }
+
+    private fun wasForceStopped(app: Context, previousPid: Int?): Boolean {
+        if (previousPid == null) return false
+        return runCatching {
+            val manager = app.getSystemService(ActivityManager::class.java)
+            manager.getHistoricalProcessExitReasons(null, previousPid, 1)
+                .any { it.pid == previousPid && it.reason == ApplicationExitInfo.REASON_USER_REQUESTED }
+        }.getOrDefault(false)
     }
 
     private fun report(app: Context, revision: Long, message: String, imported: Int) {

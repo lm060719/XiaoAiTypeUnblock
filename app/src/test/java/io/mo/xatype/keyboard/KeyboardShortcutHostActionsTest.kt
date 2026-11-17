@@ -52,4 +52,14 @@ class KeyboardShortcutHostActionsTest {
         adapter.finishInput(target)
         assertEquals(listOf("finish"), target.events)
     }
+
+    @Test fun `cancel discards pending input without selecting or committing even with stalled candidates`() {
+        for (candidates in listOf(true, false)) {
+            val target = Callbacks(mutableListOf("pending", "suffix"), hasCandidates = candidates, stall = true)
+            assertTrue(adapter.hasPending(target))
+            adapter.cancelInput(target)
+            assertFalse(adapter.hasPending(target))
+            assertEquals(listOf("clear", "refresh", "finish"), target.events)
+        }
+    }
 }

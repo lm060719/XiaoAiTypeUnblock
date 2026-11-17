@@ -107,7 +107,7 @@ object KeyboardShortcutsHook {
             // A null key resumes the native handler's own state machine.
             val key = chain.args[0] ?: return@intercept chain.proceed()
             val action = label.get(key) as String
-            if (action !in KeyboardShortcuts.actions || (kind.get(key) as Enum<*>).name != "CHAR" ||
+            if (!KeyboardShortcuts.isAction(action) || (kind.get(key) as Enum<*>).name != "CHAR" ||
                 (popup.get(key) as? List<*>)?.contains(action) != true)
                 return@intercept chain.proceed()
             val ime = service ?: return@intercept chain.proceed()
@@ -126,18 +126,26 @@ object KeyboardShortcutsHook {
             if (coroutines == null) {
                 runCatching {
                     val connection = ime.currentInputConnection ?: return@runCatching
-                    actions.finishInput(target)
-                    KeyboardShortcutActions.perform(connection, action)
+                    if (KeyboardShortcuts.cancelsPending(action) && actions.hasPending(target)) {
+                        actions.cancelInput(target)
+                    } else {
+                        actions.finishInput(target)
+                        KeyboardShortcutActions.perform(connection, action)
+                    }
                 }.onFailure { XposedUtils.logError(module, "Key shortcut failed: $action", it) }
                 return@intercept null
             }
+            val editor = ime.currentInputEditorInfo
             fun act() = runCatching {
-                ime.currentInputConnection?.let { KeyboardShortcutActions.perform(it, action) }
+                if (ime.currentInputEditorInfo === editor)
+                    ime.currentInputConnection?.let { KeyboardShortcutActions.perform(it, action) }
             }.onFailure { XposedUtils.logError(module, "Key shortcut failed: $action", it) }
             val caller = chain.args[2]!!
             coroutines.suspendHook(caller, { XposedUtils.logError(module, "Key shortcut failed: $action", it) }) { finish ->
                 // Selecting candidates is the main input's pipeline; reply/translation boxes act directly.
-                if (mainCallbacks?.invoke(ime) !== target) {
+                if (KeyboardShortcuts.cancelsPending(action) && actions.hasPending(target)) {
+                    actions.cancelInput(coroutines, coroutines.context(caller), target, finish)
+                } else if (mainCallbacks?.invoke(ime) !== target) {
                     act()
                     finish(Result.success(null))
                 } else actions.finishInput(coroutines, coroutines.context(caller), ime, target) { result ->

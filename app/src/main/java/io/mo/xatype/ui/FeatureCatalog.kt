@@ -39,7 +39,9 @@ internal object FeatureCatalog {
         null, Detail(
             "按住对应按键向下滑，字母会随距离渐变为功能图标；轻震后松手执行，往回滑可取消。可在「自定义快捷键」中把操作改到任意字母键。",
             notes = listOf("适用于拼音九键、18 键、14 键、拼音/英文 26 键与虎码/五笔。18/14 键切到英文、虎码/五笔均使用 26 键快捷操作。",
-                "复制、剪切优先处理已选文字；没有选区时先全选。剪切使用系统编辑操作。"),
+                "复制、剪切优先处理已选文字；没有选区时先全选。剪切使用系统编辑操作。",
+                "方向键先将组词上屏，再移动文本光标。Esc、撤销、恢复及对应组合键在组词时仅取消组词，再次操作才发送给应用。",
+                "可设置 Ctrl、Alt、Shift 组合键，每次下滑发送完整组合；撤销、恢复和按键行为由目标应用决定。"),
             extra = ::shortcutTable
         ))
 
@@ -94,8 +96,9 @@ internal object FeatureCatalog {
         }
         table.addView(line(listOf("操作") + ShortcutKeyboard.entries.map { it.title }, header = true))
         // The user's current assignment; see ShortcutKeysActivity.
-        val rows = KeyboardShortcuts.actionOrder.map { action ->
-            listOf(action) + ShortcutKeyboard.entries.map { ShortcutMappings.keysFor(context, it, action) }
+        val custom = ShortcutKeyboard.entries.flatMap { ShortcutMappings.load(context, it).values }
+        val rows = (KeyboardShortcuts.actionOrder + custom).distinct().map { action ->
+            listOf(KeyboardShortcuts.label(action)) + ShortcutKeyboard.entries.map { ShortcutMappings.keysFor(context, it, action) }
         }
         rows.forEach { cells ->
             table.addView(line(cells, header = false), LinearLayout.LayoutParams(

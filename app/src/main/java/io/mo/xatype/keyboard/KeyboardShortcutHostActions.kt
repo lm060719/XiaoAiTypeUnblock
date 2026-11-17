@@ -32,6 +32,24 @@ class KeyboardShortcutHostActions(loader: ClassLoader, private val abi: Keyboard
     /** Input awaits a candidate choice. */
     fun hasPending(target: Any) = pending.invoke(target) == true
 
+    /** Discard composition through the engine, without selecting a candidate or committing raw text. */
+    fun cancelInput(target: Any) {
+        check(!suspending)
+        current.invoke(target)?.let { clear!!.invoke(it) }
+        refresh.invoke(target)
+        finish.invoke(target)
+    }
+
+    fun cancelInput(coroutines: HostCoroutines, context: Any, target: Any, done: (Result<Any?>) -> Unit) {
+        check(suspending)
+        val steps = current.invoke(target)?.let { handle ->
+            listOf<(Any, Any?) -> Any?>({ continuation, _ -> clearSession!!.invoke(handle, continuation) })
+        }.orEmpty()
+        coroutines.sequence(context, steps) { result ->
+            done(result.mapCatching { refresh.invoke(target); finish.invoke(target) })
+        }
+    }
+
     /** Commit [text] through the native pipeline (main editor or the host's own input boxes). */
     fun commitText(target: Any, text: String) {
         check(!suspending)

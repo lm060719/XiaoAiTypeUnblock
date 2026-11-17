@@ -23,6 +23,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.AppCompatEditText
+import androidx.core.widget.doAfterTextChanged
 import io.mo.xatype.BuildConfig
 import io.mo.xatype.R
 import io.mo.xatype.compat.AdaptationStatus
@@ -78,6 +80,11 @@ class MainActivity : AppCompatActivity() {
             topBar = findViewById(R.id.toolbar), bottomBar = findViewById(R.id.navBar))
         kit = SettingsKit(this)
         prefs = ConfigManager.getLocalPrefs(this)
+        val testInput = findViewById<AppCompatEditText>(R.id.keyboardTestInput)
+        val clearTest = findViewById<Button>(R.id.clearKeyboardTest)
+        clearTest.isEnabled = !testInput.text.isNullOrEmpty()
+        testInput.doAfterTextChanged { clearTest.isEnabled = !it.isNullOrEmpty() }
+        clearTest.setOnClickListener { testInput.text?.clear() }
         updater = AppUpdater(this, ::refreshUpdate)
 
         initRestartBar()
@@ -397,7 +404,9 @@ class MainActivity : AppCompatActivity() {
         if (!::purifyCount.isInitialized) return
         purifyCount.text = "${purifyKeys.count { prefs.getBoolean(it, false) }}/${purifyKeys.size}"
         val predictionEnabled = PredictionMode.resolve(prefs.getString(ConfigManager.KEY_PREDICTION_MODE, null)) != PredictionMode.KEEP
-        keyboardCount.text = "${keyboardKeys.count { prefs.getBoolean(it, false) } + if (predictionEnabled) 1 else 0}/${keyboardKeys.size + 1}"
+        val oneHandEnabled = prefs.getInt(ConfigManager.KEY_ONE_HAND_SIDE, 0) in 1..2
+        keyboardCount.text = "${keyboardKeys.count { prefs.getBoolean(it, false) } +
+            (if (predictionEnabled) 1 else 0) + (if (oneHandEnabled) 1 else 0)}/${keyboardKeys.size + 2}"
         appearanceState.text = if (prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)) "已启用" else "未启用"
     }
 
@@ -503,6 +512,7 @@ class MainActivity : AppCompatActivity() {
         ), first = true)
 
         kit.group(root, "尺寸与布局", listOf(
+            oneHandRow(),
             featureSwitch(FeatureCatalog.keyboardHeight).view,
             toolbarHeightRow(),
             bottomSpacingRow()
@@ -546,6 +556,38 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return row
+    }
+
+    private fun oneHandRow(): View {
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val labels = listOf("关闭", "左手", "右手")
+        fun selected() = prefs.getInt(ConfigManager.KEY_ONE_HAND_SIDE, 0).coerceIn(labels.indices)
+        fun rebuild() {
+            container.removeAllViews()
+            container.addView(kit.navRow("单手模式", labels[selected()], R.drawable.ic_nav_keyboard) {
+                InfoSheet.choose(this, "单手模式", labels, selected(), listOf("恢复原生布局",
+                    "竖屏时缩窄并靠左，横屏和悬浮键盘保持原生布局",
+                    "竖屏时缩窄并靠右，横屏和悬浮键盘保持原生布局")) { index ->
+                    prefs.edit().putInt(ConfigManager.KEY_ONE_HAND_SIDE, index).apply()
+                    rebuild()
+                    markRestartNeeded()
+                }
+            })
+            if (selected() != 0) {
+                val policy = io.mo.xatype.hooks.OneHandPolicy
+                container.addView(shortcutLabelSlider("键盘宽度", policy.WIDTH_RANGE,
+                    prefs.getInt(ConfigManager.KEY_ONE_HAND_WIDTH, policy.DEFAULT_WIDTH).coerceIn(policy.WIDTH_RANGE),
+                    "单手键盘宽度，70 到 90 百分比", { "$it%" }) {
+                    prefs.edit().putInt(ConfigManager.KEY_ONE_HAND_WIDTH, it).apply()
+                })
+                container.addView(kit.resourceLabel("重启输入法后生效；键盘最小宽度为 240 dp。", R.dimen.settings_description_size, R.color.text_secondary).apply {
+                    val pad = kit.dimen(R.dimen.settings_row_padding)
+                    setPadding(pad, 0, pad, kit.dimen(R.dimen.space_sm))
+                })
+            }
+        }
+        rebuild()
+        return container
     }
 
     private fun t9ShuangpinSchemeRow(): View {
@@ -762,7 +804,7 @@ class MainActivity : AppCompatActivity() {
             val pad = kit.dimen(R.dimen.settings_row_padding)
             setPadding(pad - kit.dp(8), 0, pad, 0)
         }
-        body.addView(seek, LinearLayout.LayoutParams(0, kit.dp(40), 1f))
+        body.addView(seek, LinearLayout.LayoutParams(0, kit.dimen(R.dimen.settings_touch_height), 1f))
         column.addView(body)
         var lastTick = seek.progress / 8
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {

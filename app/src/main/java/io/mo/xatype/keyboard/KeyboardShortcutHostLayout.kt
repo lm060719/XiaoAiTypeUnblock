@@ -61,7 +61,7 @@ class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardA
     }
 
     fun actionKey(source: Any, action: String): Any {
-        require(action in KeyboardShortcuts.actions)
+        require(KeyboardShortcuts.isAction(action))
         val args = fields.map { it.get(source) }.toTypedArray()
         args[0] = action.first().code
         args[1] = action

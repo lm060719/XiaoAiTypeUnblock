@@ -17,6 +17,7 @@ object AdaptationStatus {
 
     /** User-facing feature behind each symbol key. */
     private val FEATURES = mapOf(
+        HostSymbols.ONE_HAND_DIMENSIONS to "单手模式",
         HostSymbols.T9_SHUANGPIN_INIT to "九键双拼",
         HostSymbols.T9_SHUANGPIN_BOOLEAN to "九键双拼",
         HostSymbols.T9_SHUANGPIN_STRING to "九键双拼",

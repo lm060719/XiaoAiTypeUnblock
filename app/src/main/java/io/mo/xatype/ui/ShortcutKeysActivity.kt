@@ -132,8 +132,8 @@ class ShortcutKeysActivity : AppCompatActivity() {
         }
         body.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dimen(R.dimen.space_md) })
 
-        val summary = KeyboardShortcuts.actionOrder.joinToString("　") { action ->
-            "$action ${ShortcutMappings.keysFor(this, selected, action)}"
+        val summary = mapping.values.distinct().joinToString("　") { action ->
+            "${KeyboardShortcuts.label(action)} ${ShortcutMappings.keysFor(this, selected, action)}"
         }
         body.addView(kit.label(summary, 13f, R.color.text_primary).apply {
             setLineSpacing(kit.dp(3).toFloat(), 1f)
@@ -203,7 +203,7 @@ class ShortcutKeysActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
             foreground = kit.selectableBackground()
-            contentDescription = "${selected.keyLabel(key)} 键，" + (action?.let { "下滑$it" } ?: "未设置")
+            contentDescription = "${selected.keyLabel(key)} 键，" + (action?.let { "下滑${KeyboardShortcuts.label(it)}" } ?: "未设置")
             setOnClickListener { choose(key) }
         }
         val label = if (selected == ShortcutKeyboard.NINE) selected.keyLabel(key).replace(' ', '\n') else key.uppercase()
@@ -211,9 +211,10 @@ class ShortcutKeysActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             maxLines = 2
         })
-        cell.addView(kit.label(action ?: "—", 10f, if (bound) R.color.primary else R.color.text_secondary, bold = bound).apply {
+        cell.addView(kit.label(action?.let(KeyboardShortcuts::label) ?: "—", 10f, if (bound) R.color.primary else R.color.text_secondary, bold = bound).apply {
             gravity = Gravity.CENTER
             maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         })
         return LinearLayout(this).apply {
             val gap = kit.dp(2)
@@ -235,9 +236,19 @@ class ShortcutKeysActivity : AppCompatActivity() {
 
     private fun choose(key: String) {
         val mapping = ShortcutMappings.load(this, selected)
-        val options = listOf("不设置") + KeyboardShortcuts.actionOrder
-        val current = mapping[key]?.let { options.indexOf(it) } ?: 0
-        InfoSheet.choose(this, "${selected.title} ${selected.keyLabel(key)} 键下滑", options, current) { index ->
+        val options = listOf("不设置") + KeyboardShortcuts.actionOrder + "自定义组合键…"
+        val current = mapping[key]?.let { options.indexOf(it).takeIf { index -> index >= 0 } ?: options.lastIndex } ?: 0
+        InfoSheet.choose(this, "${selected.title} ${selected.keyLabel(key)} 键下滑", options, current) selection@{ index ->
+            if (index == options.lastIndex) {
+                val keyboard = selected
+                ShortcutChordEditor.show(this, mapping[key]) { action ->
+                    val updated = ShortcutMappings.load(this, keyboard).toMutableMap()
+                    updated[key] = action
+                    ShortcutMappings.save(this, keyboard, updated)
+                    render()
+                }
+                return@selection
+            }
             val updated = mapping.toMutableMap()
             if (index == 0) updated.remove(key) else updated[key] = options[index]
             ShortcutMappings.save(this, selected, updated)

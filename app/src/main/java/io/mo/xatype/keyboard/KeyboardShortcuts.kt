@@ -44,20 +44,42 @@ enum class ShortcutKeyboard(
         if (stored == null) return defaults
         return stored.split(',').mapNotNull { entry ->
             val (key, action) = entry.split('=', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
-            (key to action).takeIf { key in keys && action in KeyboardShortcuts.actions }
+            (key to action).takeIf { key in keys && KeyboardShortcuts.isAction(action) }
         }.toMap()
     }
 
     fun encode(mapping: Map<String, String>): String = keys.mapNotNull { key ->
-        mapping[key]?.takeIf { it in KeyboardShortcuts.actions }?.let { "$key=$it" }
+        mapping[key]?.takeIf(KeyboardShortcuts::isAction)?.let { "$key=$it" }
     }.joinToString(",")
 }
 
 /** Shared release actions for the native nine/26-key (including shape input) and custom 18/14-key layouts. */
 object KeyboardShortcuts {
     /** Every action, in the order offered by the settings editor. */
-    val actionOrder = listOf("全选", "复制", "剪切", "粘贴", "段首", "段尾")
+    val actionOrder = listOf("全选", "复制", "剪切", "粘贴", "段首", "段尾",
+        "向左", "向右", "向上", "向下", "Esc", "撤销", "恢复", "Tab", "Enter")
     val actions = actionOrder.toSet()
+    fun isAction(action: String) = action in actions || ShortcutKeyChord.parse(action) != null
+    fun label(action: String) = ShortcutKeyChord.parse(action)?.label ?: action
+
+    /** These actions cancel pending composition without committing or editing the application. */
+    fun cancelsPending(action: String): Boolean {
+        if (action in setOf("Esc", "撤销", "恢复")) return true
+        val chord = ShortcutKeyChord.parse(action) ?: return false
+        return (!chord.ctrl && !chord.alt && !chord.shift && chord.key == "Esc") ||
+            (chord.ctrl && !chord.alt && (chord.key == "Z" || (!chord.shift && chord.key == "Y")))
+    }
+
+    fun chord(action: String): ShortcutKeyChord? = when (action) {
+        "向左" -> ShortcutKeyChord("Left")
+        "向右" -> ShortcutKeyChord("Right")
+        "向上" -> ShortcutKeyChord("Up")
+        "向下" -> ShortcutKeyChord("Down")
+        "撤销" -> ShortcutKeyChord("Z", ctrl = true)
+        "恢复" -> ShortcutKeyChord("Z", ctrl = true, shift = true)
+        "Esc", "Tab", "Enter" -> ShortcutKeyChord(action)
+        else -> ShortcutKeyChord.parse(action)
+    }
     val t9Letters = mapOf('2' to "abc", '3' to "def", '4' to "ghi", '5' to "jkl",
         '6' to "mno", '7' to "pqrs", '8' to "tuv", '9' to "wxyz")
 
