@@ -76,8 +76,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // The test keyboard overlays this page; keep its bottom navigation in place.
         SettingsWindow.apply(window, findViewById(R.id.settingsRoot),
-            topBar = findViewById(R.id.toolbar), bottomBar = findViewById(R.id.navBar))
+            topBar = findViewById(R.id.toolbar), bottomBar = findViewById(R.id.navBar),
+            insetIme = false)
         kit = SettingsKit(this)
         prefs = ConfigManager.getLocalPrefs(this)
         val testInput = findViewById<AppCompatEditText>(R.id.keyboardTestInput)

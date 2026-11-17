@@ -19,7 +19,8 @@ internal object SettingsWindow {
         root: View,
         topBar: View? = null,
         bottomBar: View? = null,
-        insetTop: Boolean = true
+        insetTop: Boolean = true,
+        insetIme: Boolean = true
     ) {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
@@ -49,7 +50,7 @@ internal object SettingsWindow {
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
             val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            val typing = imeBottom > bars.bottom
+            val typing = insetIme && imeBottom > bars.bottom
             view.setPadding(
                 initialRoot.left + bars.left,
                 initialRoot.top + if (insetTop && topBar == null) bars.top else 0,

@@ -50,3 +50,11 @@ F-101（severity=`n/a_re`，evidence_ids=`E-101`，confidence=高，location=中
 F-102（severity=`n/a_re`，evidence_ids=`E-102,E-103`，confidence=高，location=测试清理，status=完成）：测试改动的设置已恢复，采集范围内未发现模块或输入法致命异常。
 
 P-101（path_type=`callflow`）：写入临时映射 → 确认输入法进程重启且键盘可见 → 注入真实手势 → 校验目标 EditText 与按键边界 → 恢复设置并重启输入法。依据 E-101 / E-102。
+
+## 后续修正：2.2.3.12 的底部导航保持原位
+
+按用户要求，主页面使用 `adjustNothing` 并关闭根布局的 IME 留白。键盘覆盖主页面底部，Tab 的显示状态、坐标和高度保持不变；其他 Activity 沿用原来的 IME 避让。
+
+在真机 `66064e1f`、输入法 `0.2.1448.5cf769fe / 21448` 上执行 `am instrument -w -e case insets io.mo.xatype.test/io.mo.xatype.Issue9DeviceInstrumentation`，概览、键盘、外观三项均通过。每页展开与收起键盘前后，Tab 边界均为 `Rect(0, 2870 - 1440, 3200)`，根布局均为 `Rect(0, 0 - 1440, 3200)`，输入框边界不变，Tab 始终为 `View.VISIBLE`。截图与测量保存在本机 `work/keyboard-tab-insets/`。
+
+`:app:assembleDebug`、`:app:assembleDebugAndroidTest` 与 289 项单元测试通过，`git diff --check` 通过。手机保留新版本 `2.2.3.12 / 72`，临时测试 APK 已卸载；本次没有修改快捷键或单手模式设置。

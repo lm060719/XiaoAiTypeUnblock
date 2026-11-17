@@ -85,6 +85,7 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
             snapshot(arguments.getString("name", "probe"));
             status("Captured real-device editor and keyboard");
             if ("suite".equals(arguments.getString("case"))) suite();
+            if ("insets".equals(arguments.getString("case"))) fixedNavigation();
             result.putString("result", failed == 0 ? "PASS" : "FAIL");
             result.putInt("failed", failed);
             if (failed > 0) resultCode = Activity.RESULT_CANCELED;
@@ -106,7 +107,7 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
                     edit.commit();
                 }
                 if (directory != null) write("results.json",results.toString(2));
-                if (automation != null && arguments.containsKey("case")) restartKeyboard();
+                if (automation != null && "suite".equals(arguments.getString("case"))) restartKeyboard();
             } catch (Throwable restoreFailure) {
                 result.putString("restoreFailure",restoreFailure.toString()); resultCode=Activity.RESULT_CANCELED;
             }
@@ -151,6 +152,42 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
         final boolean[] visible=new boolean[1];
         runOnMainSync(() ->visible[0]=input.getRootWindowInsets()!=null && input.getRootWindowInsets().isVisible(android.view.WindowInsets.Type.ime()));
         return visible[0];
+    }
+    private void hideKeyboard() {
+        runOnMainSync(() -> ((InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE))
+            .hideSoftInputFromWindow(input.getWindowToken(),0));
+        for(int i=0;i<40 && imeVisible();i++) SystemClock.sleep(100);
+        require(!imeVisible(),"Keyboard did not close");
+        SystemClock.sleep(500);
+    }
+    private void fixedNavigation() throws Exception {
+        hideKeyboard();
+        final View nav=activity.findViewById(io.mo.xatype.R.id.navBar);
+        final View root=activity.findViewById(io.mo.xatype.R.id.settingsRoot);
+        final Rect baselineNav=bounds(nav), baselineRoot=bounds(root), baselineInput=bounds(input);
+        snapshot("navigation-keyboard-closed");
+        JSONArray measurements=new JSONArray();
+        for(String tab:new String[]{"概览","键盘","外观"}) {
+            test("fixed navigation with keyboard on " + tab,() -> {
+                hideKeyboard();tapModule(tab);showKeyboard();
+                Rect shownNav=bounds(nav), shownRoot=bounds(root), shownInput=bounds(input);
+                final int[] state=new int[2];
+                runOnMainSync(() -> {state[0]=nav.getVisibility();state[1]=nav.getPaddingBottom();});
+                measurements.put(new JSONObject().put("tab",tab).put("beforeNav",baselineNav.toString())
+                    .put("openNav",shownNav.toString()).put("beforeRoot",baselineRoot.toString())
+                    .put("openRoot",shownRoot.toString()).put("visibility",state[0]).put("bottomPadding",state[1]));
+                require(baselineNav.equals(shownNav),"Navigation moved: " + baselineNav + " -> " + shownNav);
+                require(baselineRoot.equals(shownRoot),"Page resized: " + baselineRoot + " -> " + shownRoot);
+                require(baselineInput.equals(shownInput),"Test input moved: " + baselineInput + " -> " + shownInput);
+                require(state[0]==View.VISIBLE,"Navigation was hidden");
+                snapshot("navigation-keyboard-open-" + measurements.length());
+                hideKeyboard();
+                require(baselineNav.equals(bounds(nav)),"Navigation did not keep its bounds after closing keyboard");
+                tapModule("概览");
+            });
+        }
+        write("navigation-insets.json",measurements.toString(2));
+        snapshot("navigation-keyboard-restored");
     }
     private void showKeyboard() {
         runOnMainSync(() -> {
@@ -210,6 +247,7 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
         Rect rect=new Rect();node.getBoundsInScreen(rect);tap(rect.centerX(),rect.centerY());SystemClock.sleep(300);
     }
     private void suite() throws Exception {
+        hideKeyboard();
         test("test text survives tab switches",() -> {edit("qa-123",6);tapModule("键盘");tapModule("外观");require("qa-123".equals(text()),"text lost");tapModule("概览");});
         test("clear test input",() -> {Rect clear=bounds(activity.findViewById(io.mo.xatype.R.id.clearKeyboardTest));tap(clear.centerX(),clear.centerY());require(text().isEmpty(),"clear did not erase test text");});
         configure("pref_keyboard_shortcuts",true);configure("pref_shortcut_labels",true);
