@@ -1,10 +1,14 @@
 package io.mo.xatype.ui
 
+import android.content.SharedPreferences
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -32,6 +36,18 @@ class OnlineDictActivity : AppCompatActivity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val cancelled = AtomicBoolean(false)
     private var busyMessage: String? = null
+    private var busyProgress: Int? = null
+    private lateinit var statusTitle: TextView
+    private lateinit var statusDetail: TextView
+    private lateinit var statusProgress: ProgressBar
+    private val statusListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (!isDestroyed && ::statusProgress.isInitialized) {
+            when (key) {
+                OnlineDictStore.HOST_RUNNING, OnlineDictStore.HOST_REVISION -> render()
+                OnlineDictStore.HOST_TIME -> refreshStatus()
+            }
+        }
+    }
     private var checkedThisVisit = false
     private var importSource: OnlineDictSource? = null
     private var pickingFiles = false
@@ -70,6 +86,16 @@ class OnlineDictActivity : AppCompatActivity() {
         setContentView(root)
         SettingsWindow.apply(window, root, topBar = toolbar)
         render()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        OnlineDictStore.prefs(this).registerOnSharedPreferenceChangeListener(statusListener)
+    }
+
+    override fun onStop() {
+        OnlineDictStore.prefs(this).unregisterOnSharedPreferenceChangeListener(statusListener)
+        super.onStop()
     }
 
     override fun onResume() {
@@ -162,10 +188,51 @@ class OnlineDictActivity : AppCompatActivity() {
         state.getLong(OnlineDictStore.HOST_REVISION) != state.getLong(OnlineDictStore.REVISION)
 
     private fun statusRow(state: Bundle, current: OnlineDictSource?): View {
+        val row = kit.row().apply {
+            orientation = LinearLayout.VERTICAL
+            isClickable = false
+            isFocusable = false
+            foreground = null
+        }
+        statusTitle = kit.resourceLabel("", R.dimen.settings_title_size, R.color.text_primary, bold = true)
+        statusDetail = kit.resourceLabel("", R.dimen.settings_description_size, R.color.text_secondary)
+        statusProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 1000
+            progressTintList = ColorStateList.valueOf(kit.color(R.color.primary))
+            indeterminateTintList = progressTintList
+            progressBackgroundTintList = ColorStateList.valueOf(kit.color(R.color.card_stroke))
+        }
+        row.addView(statusTitle, LinearLayout.LayoutParams(-1, -2))
+        row.addView(statusDetail, LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dimen(R.dimen.space_xs) })
+        row.addView(statusProgress, LinearLayout.LayoutParams(-1, kit.dimen(R.dimen.space_lg)).apply {
+            topMargin = kit.dimen(R.dimen.space_sm)
+        })
+        updateStatus(state, current)
+        return row
+    }
+
+    private fun refreshStatus() {
+        val state = OnlineDictStore.snapshot(this)
+        updateStatus(state, OnlineDictSource.byId(state.getString(OnlineDictStore.SOURCE)))
+    }
+
+    private fun updateStatus(state: Bundle, current: OnlineDictSource?) {
         val title: String
         val lines = ArrayList<String>()
+        val hostRunning = pending(state) && state.getBoolean(OnlineDictStore.HOST_RUNNING)
+        var progress = busyProgress
         when {
             busyMessage != null -> { title = busyMessage!! }
+            hostRunning -> {
+                title = hostLine(state)
+                val done = state.getInt(OnlineDictStore.HOST_DONE)
+                val total = state.getInt(OnlineDictStore.HOST_TOTAL)
+                if (total > 0) {
+                    progress = (done.toLong() * statusProgress.max / total).toInt()
+                    lines += "$done / $total 条 · ${done.toLong() * 100 / total}%"
+                }
+                lines += "请等待完成，期间不要再次重启输入法"
+            }
             current == null && state.getString(OnlineDictStore.ACTION) != OnlineDictStore.ACTION_CLEAR -> {
                 title = "尚未导入"
                 lines += "选择在线来源或手动导入词库文件"
@@ -174,18 +241,19 @@ class OnlineDictActivity : AppCompatActivity() {
             else -> {
                 title = "${current.title} ${state.getString(OnlineDictStore.LABEL)}"
                 lines += "已整理 ${state.getInt(OnlineDictStore.COUNT)} 条词"
-                lines += if (pending(state)) "已排队或正在导入；重启输入法后请等待完成，期间不要再次重启" else hostLine(state)
+                lines += if (pending(state)) "已排队，等待输入法启动；已重启时请稍候，期间不要再次重启" else hostLine(state)
             }
         }
         val latestTime = state.getLong(OnlineDictStore.CHECK_TIME)
         if (latestTime > 0 && current != null) lines += "上次检查：" +
             DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(latestTime))
-        val row = kit.row()
-        row.isClickable = false
-        row.foreground = null
-        row.addView(kit.titleBlock(title, lines.joinToString("\n")),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        return row
+        statusTitle.text = title
+        statusDetail.text = lines.joinToString("\n")
+        statusDetail.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
+        statusProgress.visibility = if (busyMessage != null || hostRunning) View.VISIBLE else View.GONE
+        statusProgress.isIndeterminate = progress == null
+        progress?.let { statusProgress.progress = it.coerceIn(0, statusProgress.max) }
+        statusProgress.contentDescription = title
     }
 
     private fun hostLine(state: Bundle): String {
@@ -305,7 +373,9 @@ class OnlineDictActivity : AppCompatActivity() {
         try {
             OnlineDictClient.download(release, archive, { done, total ->
                 val mb = done / 1048576.0
-                setBusy(if (total > 0) "正在下载 %.1f / %.1f MB".format(mb, total / 1048576.0) else "正在下载 %.1f MB".format(mb))
+                val progress = if (total > 0) (done * 1000 / total).toInt().coerceIn(0, 1000) else null
+                setBusy(if (total > 0) "正在下载 %.1f / %.1f MB · %d%%".format(mb, total / 1048576.0, progress!! / 10)
+                    else "正在下载 %.1f MB".format(mb), progress)
             }, cancelled::get)
             setBusy("正在整理词条…")
             val cap = OnlineDictStore.snapshot(this).getInt(OnlineDictStore.MAX_WORDS)
@@ -320,22 +390,25 @@ class OnlineDictActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------- plumbing
 
-    private fun setBusy(message: String) = runOnUiThread {
+    private fun setBusy(message: String, progress: Int? = null) = runOnUiThread {
         if (isDestroyed || busyMessage == null) return@runOnUiThread
         busyMessage = message
-        render()
+        busyProgress = progress
+        refreshStatus()
     }
 
     /** Runs [operation] off the main thread; a returned string is shown as a toast. */
     private fun runTask(message: String, local: Boolean = false, operation: () -> String?) {
         if (busyMessage != null) return
         busyMessage = message
+        busyProgress = null
         render()
         worker.execute {
             val result = runCatching(operation)
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 busyMessage = null
+                busyProgress = null
                 render()
                 result.onSuccess { text -> text?.let(::toast) ?: run {
                     if (OnlineDictStore.snapshot(this).let(::pending)) toast("已排队，重启输入法后开始导入")

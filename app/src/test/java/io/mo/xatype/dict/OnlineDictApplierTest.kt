@@ -131,4 +131,54 @@ class OnlineDictApplierTest {
         assertTrue(result.retry)
         assertTrue(engine.batchSizes.isEmpty())
     }
+
+    @Test fun `progress follows actual batches and excludes existing and over limit words`() {
+        val engine = FakeEngine(store = linkedSetOf("已有词"))
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val phases = mutableListOf<String>()
+        val result = applier(engine, limit = 502).apply(
+            OnlineDictStore.ACTION_IMPORT, words(*many(800), "已有词")
+        ) { message, done, total ->
+            phases += message
+            if (message == "正在导入词条…") {
+                assertEquals(done + 1, engine.store.size)
+                progress += done to total
+            }
+        }
+        assertTrue(result.ok)
+        assertEquals(0 to 501, progress.first())
+        assertEquals(501 to 501, progress.last())
+        assertEquals(engine.batchSizes.runningFold(0, Int::plus), progress.map { it.first })
+        assertTrue(progress.all { it.second == 501 })
+        assertEquals("正在保存词库…", phases.last())
+    }
+
+    @Test fun `clear progress counts each processed batch without claiming deletion success`() {
+        val engine = FakeEngine(undeletable = mutableSetOf("词0"))
+        val dir = temp.newFolder()
+        applier(engine, dir).apply(OnlineDictStore.ACTION_IMPORT, words(*many(450)))
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val result = applier(engine, dir).apply(OnlineDictStore.ACTION_CLEAR, null) { _, done, total ->
+            if (total > 0) progress += done to total
+        }
+        assertEquals(listOf(0, 200, 400, 450), progress.map { it.first })
+        assertTrue(progress.all { it.second == 450 })
+        assertFalse(result.ok)
+        assertEquals(setOf("词0"), engine.store)
+    }
+
+    @Test fun `eviction switches to recovery without reporting full import progress`() {
+        val engine = FakeEngine(store = linkedSetOf(*many(300, "旧")), capacity = 400)
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val phases = mutableListOf<String>()
+        val result = applier(engine, limit = 5_000).apply(
+            OnlineDictStore.ACTION_IMPORT, words(*many(2_000))
+        ) { message, done, total ->
+            phases += message
+            if (message == "正在导入词条…") progress += done to total
+        }
+        assertFalse(result.ok)
+        assertTrue(progress.none { it.first == it.second })
+        assertEquals("正在恢复原有词条…", phases.last())
+    }
 }

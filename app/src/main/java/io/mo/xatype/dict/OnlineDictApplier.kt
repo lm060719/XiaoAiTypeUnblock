@@ -46,11 +46,13 @@ class OnlineDictApplier(
 
     private val record = File(dir, "imported-words.txt")
 
-    fun apply(action: String, words: InputStream?): Result {
+    fun apply(action: String, words: InputStream?,
+              onProgress: (message: String, done: Int, total: Int) -> Unit = { _, _, _ -> }): Result {
         if (engine.words() == null) return Result(false, "输入法词库尚未就绪，下次启动输入法时重试", retry = true)
         dir.mkdirs()
         val initial = engine.words().orEmpty().size
-        val removal = removeRecorded()
+        onProgress("正在清理上次导入的词…", 0, 0)
+        val removal = removeRecorded(onProgress)
         if (action == OnlineDictStore.ACTION_CLEAR) {
             val note = if (removal.failed > 0) "，${removal.failed} 个未能删除，下次清除时重试" else ""
             return Result(removal.failed == 0, "已清除 ${removal.removed} 个导入词$note",
@@ -58,6 +60,7 @@ class OnlineDictApplier(
         }
         if (words == null) return Result(false, "没有可导入的词库文件")
 
+        onProgress("正在读取待导入词条…", 0, 0)
         val fileWords = LinkedHashSet<String>()
         words.bufferedReader(Charsets.UTF_8).useLines { lines ->
             for (line in lines) {
@@ -87,6 +90,7 @@ class OnlineDictApplier(
         var failed = 0
         var slowest = 0L
         var lost = emptyList<String>()
+        onProgress("正在导入词条…", 0, planned.size)
         try {
             while (index < planned.size) {
                 val part = planned.subList(index, minOf(planned.size, index + size))
@@ -104,6 +108,7 @@ class OnlineDictApplier(
                 val now = engine.words().orEmpty().toHashSet()
                 lost = existingList.filter { it !in now }
                 if (lost.isNotEmpty()) break
+                onProgress("正在导入词条…", index, planned.size)
                 pause(PAUSE_MS) // Let keyboard input run between batches.
             }
         } finally {
@@ -111,6 +116,7 @@ class OnlineDictApplier(
         }
 
         var restored = 0
+        onProgress(if (lost.isNotEmpty()) "正在恢复原有词条…" else "正在保存词库…", 0, 0)
         if (lost.isNotEmpty()) restored = restore(lost, planned.subList(0, index), chunk)
         engine.save()
         val after = engine.words().orEmpty().toHashSet()
@@ -155,13 +161,17 @@ class OnlineDictApplier(
         val failed get() = remaining.size
     }
 
-    private fun removeRecorded(): Removal {
+    private fun removeRecorded(onProgress: (String, Int, Int) -> Unit): Removal {
         if (!record.isFile) return Removal(0, emptyList())
         val recorded = record.readLines(Charsets.UTF_8).filter { it.isNotEmpty() }
         val before = engine.words().orEmpty().toHashSet()
         val present = recorded.filter { it in before }
+        var processed = 0
+        onProgress("正在清理上次导入的词…", 0, present.size)
         present.chunked(DELETE_CHUNK).forEach { part ->
             engine.delete(part)
+            processed += part.size
+            onProgress("正在清理上次导入的词…", processed, present.size)
             pause(PAUSE_MS)
         }
         engine.save()

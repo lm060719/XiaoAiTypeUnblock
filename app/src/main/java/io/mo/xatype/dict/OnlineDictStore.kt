@@ -25,6 +25,9 @@ object OnlineDictStore {
     const val HOST_STATUS = "host_status"
     const val HOST_TIME = "host_time"
     const val HOST_IMPORTED = "host_imported"
+    const val HOST_RUNNING = "host_running"
+    const val HOST_DONE = "host_done"
+    const val HOST_TOTAL = "host_total"
     const val LATEST_VERSION = "latest_version"
     const val LATEST_LABEL = "latest_label"
     const val CHECK_TIME = "check_time"
@@ -66,6 +69,9 @@ object OnlineDictStore {
             putString(HOST_STATUS, sp.getString(HOST_STATUS, "").orEmpty())
             putLong(HOST_TIME, sp.getLong(HOST_TIME, 0))
             putInt(HOST_IMPORTED, sp.getInt(HOST_IMPORTED, 0))
+            putBoolean(HOST_RUNNING, sp.getBoolean(HOST_RUNNING, false))
+            putInt(HOST_DONE, sp.getInt(HOST_DONE, 0))
+            putInt(HOST_TOTAL, sp.getInt(HOST_TOTAL, 0))
             putString(LATEST_VERSION, sp.getString(LATEST_VERSION, "").orEmpty())
             putString(LATEST_LABEL, sp.getString(LATEST_LABEL, "").orEmpty())
             putLong(CHECK_TIME, sp.getLong(CHECK_TIME, 0))
@@ -114,7 +120,8 @@ object OnlineDictStore {
                 putBoolean(AUTO_UPDATE, false)
                 remove(LATEST_VERSION); remove(LATEST_LABEL); remove(CHECK_TIME)
             } }
-            .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存导入请求" }
+            .remove(HOST_STATUS).remove(HOST_TIME)
+            .remove(HOST_RUNNING).remove(HOST_DONE).remove(HOST_TOTAL).commit()) { "无法保存导入请求" }
     }
 
     /** Queues the already downloaded word file again, e.g. after a failed or abandoned import. */
@@ -123,7 +130,8 @@ object OnlineDictStore {
         val sp = prefs(context)
         check(hasWords(context) && sp.getString(SOURCE, "").orEmpty().isNotEmpty()) { "没有已保存的词库，请重新导入" }
         check(sp.edit().putString(ACTION, ACTION_IMPORT).putLong(REVISION, sp.getLong(REVISION, 0) + 1)
-            .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存导入请求" }
+            .remove(HOST_STATUS).remove(HOST_TIME)
+            .remove(HOST_RUNNING).remove(HOST_DONE).remove(HOST_TOTAL).commit()) { "无法保存导入请求" }
     }
 
     /** Queues removal of everything this feature imported. User-typed words are not touched. */
@@ -134,7 +142,8 @@ object OnlineDictStore {
         check(sp.edit().putString(SOURCE, "").putString(VERSION, "").putString(LABEL, "").putInt(COUNT, 0)
             .remove(LOCAL).remove(LATEST_VERSION).remove(LATEST_LABEL).remove(CHECK_TIME)
             .putString(ACTION, ACTION_CLEAR).putLong(REVISION, sp.getLong(REVISION, 0) + 1)
-            .remove(HOST_STATUS).remove(HOST_TIME).commit()) { "无法保存清除请求" }
+            .remove(HOST_STATUS).remove(HOST_TIME)
+            .remove(HOST_RUNNING).remove(HOST_DONE).remove(HOST_TOTAL).commit()) { "无法保存清除请求" }
     }
 
     /** Streams the queued word file to the keyboard process, avoiding the Binder size limit. */
@@ -147,13 +156,19 @@ object OnlineDictStore {
 
     fun hasWords(context: Context) = wordsFile(context).baseFile.isFile
 
-    /** Ignores results for an older request, so a slow import cannot overwrite a newer status. */
+    /** Progress never acknowledges completion; ignores reports for a superseded request. */
+    @Synchronized
     fun report(context: Context, extras: Bundle?) {
         extras ?: return
         val sp = prefs(context)
         if (extras.getLong(REVISION, -1) != sp.getLong(REVISION, 0)) return
-        sp.edit().putLong(HOST_REVISION, extras.getLong(REVISION))
+        val running = extras.getBoolean(HOST_RUNNING, false)
+        val total = extras.getInt(HOST_TOTAL, 0).coerceAtLeast(0)
+        sp.edit().apply { if (!running) putLong(HOST_REVISION, extras.getLong(REVISION)) }
             .putString(HOST_STATUS, extras.getString(HOST_STATUS).orEmpty().take(300))
+            .putBoolean(HOST_RUNNING, running)
+            .putInt(HOST_DONE, extras.getInt(HOST_DONE, 0).coerceIn(0, total))
+            .putInt(HOST_TOTAL, total)
             .putInt(HOST_IMPORTED, extras.getInt(HOST_IMPORTED, 0))
             .putLong(HOST_TIME, System.currentTimeMillis()).apply()
     }

@@ -109,9 +109,17 @@ object OnlineDictImportHook {
         dir.mkdirs()
         attempt.writeText("$revision ${Process.myPid()}")
         XposedUtils.log(module, "[OnlineDict] Applying request $revision ($action) on ${engineLooper.thread.name}")
-        val result = (if (action == OnlineDictStore.ACTION_IMPORT)
-            app.contentResolver.openInputStream(OnlineDictContentProvider.WORDS_URI) else null).use { words ->
-            OnlineDictApplier(engine, dir).apply(action, words)
+        report(app, revision, "正在准备词库…", 0, running = true)
+        val result = try {
+            (if (action == OnlineDictStore.ACTION_IMPORT)
+                app.contentResolver.openInputStream(OnlineDictContentProvider.WORDS_URI) else null).use { words ->
+                OnlineDictApplier(engine, dir).apply(action, words) { message, done, total ->
+                    report(app, revision, message, 0, running = true, done = done, total = total)
+                }
+            }
+        } catch (t: Throwable) {
+            report(app, revision, "词库操作失败，请重新导入", 0)
+            throw t
         }
         XposedUtils.log(module, "[OnlineDict] Request $revision finished: ok=${result.ok} imported=${result.imported} " +
             "words ${result.before}->${result.after} slowest=${result.slowestMs}ms: ${result.message}")
@@ -132,12 +140,16 @@ object OnlineDictImportHook {
         }.getOrDefault(false)
     }
 
-    private fun report(app: Context, revision: Long, message: String, imported: Int) {
+    private fun report(app: Context, revision: Long, message: String, imported: Int,
+                       running: Boolean = false, done: Int = 0, total: Int = 0) {
         runCatching {
             app.contentResolver.call(OnlineDictContentProvider.CONTENT_URI, "report", null, Bundle().apply {
                 putLong(OnlineDictStore.REVISION, revision)
                 putString(OnlineDictStore.HOST_STATUS, message)
                 putInt(OnlineDictStore.HOST_IMPORTED, imported)
+                putBoolean(OnlineDictStore.HOST_RUNNING, running)
+                putInt(OnlineDictStore.HOST_DONE, done)
+                putInt(OnlineDictStore.HOST_TOTAL, total)
             })
         }
     }
