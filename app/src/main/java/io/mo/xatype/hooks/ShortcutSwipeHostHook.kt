@@ -13,6 +13,7 @@ import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.KeyboardShortcutLayout
 import io.mo.xatype.keyboard.ShortcutSwipeGesture
 import io.mo.xatype.keyboard.ShortcutSwipeHostBridge
+import io.mo.xatype.keyboard.ShortcutLabelPosition
 import io.mo.xatype.util.XposedUtils
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
@@ -38,6 +39,8 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
         var labelModifier: Any? = null
         @Volatile var labelColor: Int = 0xFFFFFFFF.toInt()
         var width = Float.MAX_VALUE
+        var bounds: RectF? = null
+        var letterBounds: RectF? = null
         var blockNative = false
         var lastRendered = 0L
     }
@@ -99,7 +102,8 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                 key.originalModifier = args[MODIFIER_INDEX]
                 key.decoratedModifier = bridge.positioned(args[MODIFIER_INDEX]!!) {
                     key.coordinates = WeakReference(it)
-                    key.width = bridge.bounds(it)?.width() ?: Float.MAX_VALUE
+                    key.bounds = bridge.bounds(it)
+                    key.width = key.bounds?.width() ?: Float.MAX_VALUE
                 }
                 // Geometry/parent modifiers change on resize and layout switches.
                 key.labelModifier = null
@@ -117,7 +121,11 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                             ConfigManager.getShortcutLabelSize() * dm.scaledDensity,
                             offsetX = ConfigManager.getShortcutLabelX() * dm.density,
                             bottomInset = (4f - ConfigManager.getShortcutLabelY()) * dm.density,
-                            referenceHeight = reference)
+                            referenceHeight = reference,
+                            centerFraction = key.bounds?.let { bounds ->
+                                ShortcutLabelPosition.centerFraction(bounds.left, bounds.right,
+                                    key.letterBounds?.centerX())
+                            } ?: 0.5f)
                     } catch (failure: Throwable) {
                         if (!labelFailureReported) {
                             labelFailureReported = true
@@ -150,7 +158,10 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             val args = chain.args.toTypedArray()
             val color = bridge.argb(args[2] as Long)
             key.labelColor = color
-            args[1] = bridge.drawing(args[1]!!) { scope ->
+            // Native staggered rows extend the edge keys' hit regions beyond their keycaps.
+            // Anchor the shortcut to the actual letter rather than the larger hit region.
+            val positioned = bridge.positioned(args[1]!!) { key.letterBounds = bridge.bounds(it) }
+            args[1] = bridge.drawing(positioned) { scope ->
                 if (drawFailureReported) { bridge.drawContent(scope); return@drawing }
                 try {
                     val density = key.owner.get()?.resources?.displayMetrics?.density ?: 1f

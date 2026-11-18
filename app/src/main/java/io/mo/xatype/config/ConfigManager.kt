@@ -35,6 +35,7 @@ object ConfigManager {
     const val KEY_TELEMETRY_BLOCK = "pref_telemetry_block"
     const val KEY_KEYBOARD_HEIGHT_UNBLOCK = "pref_keyboard_height_unblock"
     const val KEY_ONE_HAND_SIDE = "pref_one_hand_side"
+    const val KEY_ONE_HAND_LAST_SIDE = "pref_one_hand_last_side"
     const val KEY_ONE_HAND_WIDTH = "pref_one_hand_width"
     const val KEY_KEYBOARD_SHORTCUTS = "pref_keyboard_shortcuts"
     const val KEY_NATIVE_VIBRATION_LIMIT = "pref_native_vibration_limit"
@@ -213,6 +214,25 @@ object ConfigManager {
 
     fun isKeyboardHeightUnblockEnabled() = bool(KEY_KEYBOARD_HEIGHT_UNBLOCK)
     fun getOneHandSide() = int(KEY_ONE_HAND_SIDE)
+    fun getOneHandLastSide() = io.mo.xatype.hooks.OneHandPolicy.rememberedSide(
+        getOneHandSide(), int(KEY_ONE_HAND_LAST_SIDE))
+
+    /** Preserve the last active direction even when turning the layout off, including old installs. */
+    fun editOneHandSide(prefs: SharedPreferences, side: Int): SharedPreferences.Editor {
+        require(side in 0..2)
+        val policy = io.mo.xatype.hooks.OneHandPolicy
+        val previous = policy.rememberedSide(prefs.getInt(KEY_ONE_HAND_SIDE, policy.OFF),
+            prefs.getInt(KEY_ONE_HAND_LAST_SIDE, policy.RIGHT))
+        return prefs.edit().putInt(KEY_ONE_HAND_SIDE, side)
+            .putInt(KEY_ONE_HAND_LAST_SIDE, policy.rememberedSide(side, previous))
+    }
+    fun setOneHandSide(context: Context, side: Int) {
+        require(side in 0..2)
+        val extras = Bundle().apply { putInt(KEY_ONE_HAND_SIDE, side) }
+        checkNotNull(context.contentResolver.call(PROVIDER_URI,
+            io.mo.xatype.provider.LogContentProvider.METHOD_SET_ONE_HAND, null, extras))
+        syncFromProvider(context, force = true)
+    }
     fun getOneHandWidth() = int(KEY_ONE_HAND_WIDTH)
     fun isKeyboardShortcutsEnabled() = bool(KEY_KEYBOARD_SHORTCUTS)
     fun isNativeVibrationLimitEnabled() = bool(KEY_NATIVE_VIBRATION_LIMIT)

@@ -26,6 +26,7 @@ class LogContentProvider : ContentProvider() {
         val CONTENT_URI: Uri = Uri.parse("content://$AUTHORITY")
 
         const val METHOD_GET_CONFIG = "get_config"
+        const val METHOD_SET_ONE_HAND = "set_one_hand"
         const val BG_IMAGE_FILENAME = "bg_image.png"
         private const val BG_IMAGE_PATH = "/$BG_IMAGE_FILENAME"
     }
@@ -50,6 +51,13 @@ class LogContentProvider : ContentProvider() {
         return when (method) {
             AdaptationStatus.METHOD_REPORT -> { saveAdaptationReport(extras); Bundle() }
             METHOD_GET_CONFIG -> readConfig(extras)
+            METHOD_SET_ONE_HAND -> {
+                ProviderAccess.require(context, ProviderAccess.IME_ONLY)
+                val side = requireNotNull(extras).getInt(ConfigManager.KEY_ONE_HAND_SIDE, -1)
+                require(side in 0..2)
+                check(ConfigManager.editOneHandSide(ConfigManager.getLocalPrefs(checkNotNull(context)), side).commit())
+                Bundle()
+            }
             else -> super.call(method, arg, extras)
         }
     }

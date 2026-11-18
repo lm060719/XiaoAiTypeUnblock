@@ -123,6 +123,7 @@ object KeyboardShortcutsHook {
                     layoutId.invoke(target) as? String, keyboard18 = false) == null) return@intercept coroutines?.unit
             // Consume stale popup actions after disabling as well, never insert their labels.
             if (!ConfigManager.isKeyboardShortcutsEnabled()) return@intercept coroutines?.unit
+            if (OneHandHook.perform(ime, action)) return@intercept coroutines?.unit
             if (coroutines == null) {
                 runCatching {
                     val connection = ime.currentInputConnection ?: return@runCatching

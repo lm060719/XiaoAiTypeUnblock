@@ -11,6 +11,7 @@ class ConfigSchemaTest {
         val defaults = ConfigSchema.normalize(emptyMap())
         assertEquals(0, defaults[ConfigManager.KEY_ONE_HAND_SIDE])
         assertEquals(80, defaults[ConfigManager.KEY_ONE_HAND_WIDTH])
+        assertEquals(2, defaults[ConfigManager.KEY_ONE_HAND_LAST_SIDE])
         val repaired = ConfigSchema.normalize(mapOf(ConfigManager.KEY_ONE_HAND_SIDE to 99,
             ConfigManager.KEY_ONE_HAND_WIDTH to -1))
         assertEquals(2, repaired[ConfigManager.KEY_ONE_HAND_SIDE])

@@ -23,6 +23,13 @@ object ShortcutGlyph {
             fun line(x1: Float, y1: Float, x2: Float, y2: Float) = canvas.drawLine(x1, y1, x2, y2, paint)
             fun box(l: Float, t: Float, r: Float, b: Float) = canvas.drawRoundRect(RectF(l, t, r, b), 1.8f, 1.8f, paint)
             when (action) {
+                io.mo.xatype.hooks.OneHandPolicy.LEFT_ACTION, io.mo.xatype.hooks.OneHandPolicy.RIGHT_ACTION -> {
+                    if (action == io.mo.xatype.hooks.OneHandPolicy.RIGHT_ACTION) {
+                        canvas.translate(24f, 0f); canvas.scale(-1f, 1f)
+                    }
+                    box(2f, 4f, 22f, 20f); box(4f, 7f, 13f, 17f)
+                    line(20f, 12f, 15f, 12f); line(15f, 12f, 17f, 10f); line(15f, 12f, 17f, 14f)
+                }
                 "复制" -> { box(8f, 8f, 20f, 21f); line(16f, 4f, 4f, 4f); line(4f, 4f, 4f, 16f) }
                 "粘贴" -> {
                     box(5f, 5f, 19f, 21f); box(9f, 3f, 15f, 7f)

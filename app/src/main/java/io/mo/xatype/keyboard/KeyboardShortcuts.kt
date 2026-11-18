@@ -44,12 +44,12 @@ enum class ShortcutKeyboard(
         if (stored == null) return defaults
         return stored.split(',').mapNotNull { entry ->
             val (key, action) = entry.split('=', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
-            (key to action).takeIf { key in keys && KeyboardShortcuts.isAction(action) }
+            (key to KeyboardShortcuts.canonicalAction(action)).takeIf { key in keys && KeyboardShortcuts.isAction(action) }
         }.toMap()
     }
 
     fun encode(mapping: Map<String, String>): String = keys.mapNotNull { key ->
-        mapping[key]?.takeIf(KeyboardShortcuts::isAction)?.let { "$key=$it" }
+        mapping[key]?.takeIf(KeyboardShortcuts::isAction)?.let { "$key=${KeyboardShortcuts.canonicalAction(it)}" }
     }.joinToString(",")
 }
 
@@ -57,10 +57,16 @@ enum class ShortcutKeyboard(
 object KeyboardShortcuts {
     /** Every action, in the order offered by the settings editor. */
     val actionOrder = listOf("全选", "复制", "剪切", "粘贴", "段首", "段尾",
-        "向左", "向右", "向上", "向下", "Esc", "撤销", "恢复", "Tab", "Enter")
+        "向左", "向右", "向上", "向下", "Esc", "撤销", "恢复", "Tab", "Enter",
+        io.mo.xatype.hooks.OneHandPolicy.LEFT_ACTION, io.mo.xatype.hooks.OneHandPolicy.RIGHT_ACTION)
     val actions = actionOrder.toSet()
-    fun isAction(action: String) = action in actions || ShortcutKeyChord.parse(action) != null
-    fun label(action: String) = ShortcutKeyChord.parse(action)?.label ?: action
+    fun canonicalAction(action: String) = when (io.mo.xatype.hooks.OneHandPolicy.actionSide(action)) {
+        io.mo.xatype.hooks.OneHandPolicy.LEFT -> io.mo.xatype.hooks.OneHandPolicy.LEFT_ACTION
+        io.mo.xatype.hooks.OneHandPolicy.RIGHT -> io.mo.xatype.hooks.OneHandPolicy.RIGHT_ACTION
+        else -> action
+    }
+    fun isAction(action: String) = canonicalAction(action) in actions || ShortcutKeyChord.parse(action) != null
+    fun label(action: String) = ShortcutKeyChord.parse(action)?.label ?: canonicalAction(action)
 
     /** These actions cancel pending composition without committing or editing the application. */
     fun cancelsPending(action: String): Boolean {

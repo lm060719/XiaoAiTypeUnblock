@@ -86,6 +86,7 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
             status("Captured real-device editor and keyboard");
             if ("suite".equals(arguments.getString("case"))) suite();
             if ("insets".equals(arguments.getString("case"))) fixedNavigation();
+            if ("onehand".equals(arguments.getString("case"))) oneHandSwitches();
             result.putString("result", failed == 0 ? "PASS" : "FAIL");
             result.putInt("failed", failed);
             if (failed > 0) resultCode = Activity.RESULT_CANCELED;
@@ -107,7 +108,8 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
                     edit.commit();
                 }
                 if (directory != null) write("results.json",results.toString(2));
-                if (automation != null && "suite".equals(arguments.getString("case"))) restartKeyboard();
+                if (automation != null && ("suite".equals(arguments.getString("case")) ||
+                    "onehand".equals(arguments.getString("case")))) restartKeyboard();
             } catch (Throwable restoreFailure) {
                 result.putString("restoreFailure",restoreFailure.toString()); resultCode=Activity.RESULT_CANCELED;
             }
@@ -204,6 +206,8 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
         require(imeVisible() && find("com.xiaomi.type","Q")!=null,"Keyboard did not become visible");
     }
     private AccessibilityNodeInfo find(String pkg,String caption) {
+        // Compose reuses virtual node IDs during live layout changes. Discard old geometry.
+        if (android.os.Build.VERSION.SDK_INT >= 33) automation.clearCache();
         for(AccessibilityWindowInfo window:automation.getWindows()) {
             AccessibilityNodeInfo found=findIn(window.getRoot(),pkg,caption);
             if(found!=null)return found;
@@ -245,6 +249,83 @@ public class Issue9DeviceInstrumentation extends Instrumentation {
         AccessibilityNodeInfo node=find("io.mo.xatype",caption);
         if(node==null)throw new AssertionError("Module control missing: " + caption);
         Rect rect=new Rect();node.getBoundsInScreen(rect);tap(rect.centerX(),rect.centerY());SystemClock.sleep(300);
+    }
+    private void oneHandSwitches() throws Exception {
+        configure("pref_keyboard_shortcuts",true);
+        configure("pref_one_hand_side",0);
+        configure("pref_one_hand_last_side",2);
+        configure("pref_one_hand_width",80);
+        configure("pref_shortcut_labels",true);
+        // Old saved bindings must display the new short labels and continue working.
+        configure("pref_shortcut_map_26","q=左手模式,w=右手模式,d=Esc");
+        restartKeyboard();
+        edit("",0);
+        Rect baselineQ=keyBox("Q"),baselineP=keyBox("P");
+        int full=baselineP.right-baselineQ.left;
+        String[] pid={shell("pidof com.xiaomi.type").trim()};
+        test("single menu button defaults to right and toggles off",() -> {
+            menuSwitch("单手模式");assertOneHand(2,full,baselineQ,baselineP);
+            menuSwitch("单手模式");assertOneHand(0,full,baselineQ,baselineP);
+        });
+        test("menu remembers left after switching off",() -> {
+            swipe("Q");assertOneHand(1,full,baselineQ,baselineP);
+            menuSwitch("单手模式");assertOneHand(0,full,baselineQ,baselineP);
+            menuSwitch("单手模式");assertOneHand(1,full,baselineQ,baselineP);snapshot("menu-left");
+            menuSwitch("单手模式");assertOneHand(0,full,baselineQ,baselineP);
+            require(prefs.getInt("pref_one_hand_last_side",-1)==1,"left history lost");
+        });
+        test("menu remembers right across input method restart while off",() -> {
+            swipe("W");assertOneHand(2,full,baselineQ,baselineP);
+            menuSwitch("单手模式");assertOneHand(0,full,baselineQ,baselineP);
+            restartKeyboard();pid[0]=shell("pidof com.xiaomi.type").trim();
+            menuSwitch("单手模式");assertOneHand(2,full,baselineQ,baselineP);snapshot("menu-right");
+            menuSwitch("单手模式");assertOneHand(0,full,baselineQ,baselineP);
+        });
+        test("swipe left right and same side off keep editor intact",() -> {
+            edit("keep text",4);
+            swipe("Q");assertOneHand(1,full,baselineQ,baselineP);
+            swipe("W");assertOneHand(2,full,baselineQ,baselineP);snapshot("swipe-right");
+            swipe("W");assertOneHand(0,full,baselineQ,baselineP);
+            require("keep text".equals(text()) && selection(false)==4,"layout action edited text or selection");
+        });
+        test("swipe preserves pending composition and narrow key hit targets",() -> {
+            edit("",0);press("N");String before=text();
+            swipe("Q");assertOneHand(1,full,baselineQ,baselineP);
+            require(before.equals(text()),"switch committed pending composition");
+            press("I");swipe("D");require(text().isEmpty(),"narrow keys failed or composition was committed");
+            swipe("Q");assertOneHand(0,full,baselineQ,baselineP);
+        });
+        test("live switches do not restart the input method",() ->
+            require(pid[0].equals(shell("pidof com.xiaomi.type").trim()),"host process changed"));
+        edit("",0);
+    }
+    private void assertOneHand(int side,int full,Rect baselineQ,Rect baselineP) throws Exception {
+        Rect q=keyBox("Q"),p=keyBox("P");float ratio=(p.right-q.left)/(float)full;
+        for(int i=0;i<25 && (Math.abs(ratio-(side==0?1f:.8f))>=.055f ||
+            (side==1 && Math.abs(q.left-baselineQ.left)>=60) ||
+            (side==2 && Math.abs(p.right-baselineP.right)>=60));i++) {
+            SystemClock.sleep(120);q=keyBox("Q");p=keyBox("P");ratio=(p.right-q.left)/(float)full;
+        }
+        status("Geometry side="+side+" Q="+q+" P="+p+" baselineQ="+baselineQ+" baselineP="+baselineP);
+        snapshot("geometry-side-"+side);
+        require(Math.abs(ratio-(side==0?1f:.8f))<.055f,"side="+side+" measured ratio="+ratio);
+        require(side!=1 || Math.abs(q.left-baselineQ.left)<60,"left edge mismatch");
+        require(side!=2 || Math.abs(p.right-baselineP.right)<60,"right edge mismatch");
+        require(prefs.getInt("pref_one_hand_side",-1)==side,"direction not persisted");
+    }
+    private void menuSwitch(String caption) throws Exception {
+        Rect q=keyBox("Q"),p=keyBox("P");
+        tap(q.left+q.width()*.7f,q.top-q.height()*.45f);SystemClock.sleep(400);
+        for(int page=0;page<4 && find("com.xiaomi.type",caption)==null;page++) {
+            Bitmap screen=automation.takeScreenshot();int width=screen.getWidth(),height=screen.getHeight();screen.recycle();
+            gesture(q.left+(p.right-q.left)*.8f,height*.81f,q.left+(p.right-q.left)*.2f,height*.81f,350);SystemClock.sleep(500);
+        }
+        require(find("com.xiaomi.type","左手模式")==null && find("com.xiaomi.type","右手模式")==null,
+            "old directional menu buttons remain");
+        snapshot("menu-entries");press(caption);SystemClock.sleep(650);
+        for(int i=0;i<25 && find("com.xiaomi.type","Q")==null;i++) SystemClock.sleep(120);
+        snapshot("menu-return");
+        require(find("com.xiaomi.type","Q")!=null,"menu did not return to keyboard");
     }
     private void suite() throws Exception {
         hideKeyboard();

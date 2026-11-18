@@ -568,11 +568,11 @@ class MainActivity : AppCompatActivity() {
         fun selected() = prefs.getInt(ConfigManager.KEY_ONE_HAND_SIDE, 0).coerceIn(labels.indices)
         fun rebuild() {
             container.removeAllViews()
-            container.addView(kit.navRow("单手模式", labels[selected()], R.drawable.ic_nav_keyboard) {
+            container.addView(kit.navRow("单手模式", "${labels[selected()]} · 也可从键盘菜单即时切换", R.drawable.ic_nav_keyboard) {
                 InfoSheet.choose(this, "单手模式", labels, selected(), listOf("恢复原生布局",
                     "竖屏时缩窄并靠左，横屏和悬浮键盘保持原生布局",
                     "竖屏时缩窄并靠右，横屏和悬浮键盘保持原生布局")) { index ->
-                    prefs.edit().putInt(ConfigManager.KEY_ONE_HAND_SIDE, index).apply()
+                    ConfigManager.editOneHandSide(prefs, index).apply()
                     rebuild()
                     markRestartNeeded()
                 }

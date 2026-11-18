@@ -144,6 +144,7 @@ object Keyboard18Hook {
                 (popupField.get(key) as? List<*>)?.contains(label) == true) {
                 val editor = session.service.currentInputEditorInfo
                 if (!ConfigManager.isKeyboardShortcutsEnabled()) keys.consumed()
+                else if (OneHandHook.perform(session.service, label)) keys.consumed()
                 else if (KeyboardShortcuts.cancelsPending(label) && synchronized(session.engine) { session.engine.raw.isNotEmpty() }) {
                     perform(listOf(engineOp({ session.engine.clear(); session.engine.snapshot() }) { host.replaceRaw("") }))
                 } else perform(listOf(flush(), KeyOp.Action {

@@ -44,6 +44,26 @@ internal object HostFingerprints {
             type.getInstance(loader).getDeclaredConstructor(int, int, int, int, int, int)
             listOf(listOf(type.descriptor))
         }
+        collector.put(HostSymbols.ONE_HAND_MENU_GRID, HostSymbols.ONE_HAND_MENU_CARD,
+            HostSymbols.ONE_HAND_MENU_PANEL, HostSymbols.ONE_HAND_MENU_CHUNK) {
+            val grid = single(bridge.findMethod {
+                matcher { returnType("void"); paramCount(14); usingNumbers(1632205046) }
+            }, "apps menu grid")
+            val card = single(bridge.findMethod {
+                matcher { returnType("void"); paramCount(8); usingNumbers(-613515399) }
+            }, "apps menu card")
+            val parameters = card.getMethodInstance(loader).parameterTypes
+            check(parameters[0].isEnum && parameters[1] == Float::class.javaPrimitiveType &&
+                parameters[4] == Map::class.java && parameters[5].isInterface)
+            val panel = single(bridge.findMethod {
+                matcher { returnType("void"); paramCount(17); usingNumbers(-1570908958) }
+            }, "apps menu pagination")
+            val chunk = single(panel.invokes.filter {
+                it.paramTypeNames == listOf("java.lang.Iterable", "int") &&
+                    it.returnTypeName == "java.util.ArrayList"
+            }.distinctBy { it.descriptor }, "apps menu page grouping")
+            listOf(listOf(grid.descriptor), listOf(card.descriptor), listOf(panel.descriptor), listOf(chunk.descriptor))
+        }
         collector.put(HostSymbols.KEYBOARD_KEY_PREVIEW, HostSymbols.KEYBOARD_KEY_PREVIEW_FILL) {
             keyPreview(bridge, loader)
         }

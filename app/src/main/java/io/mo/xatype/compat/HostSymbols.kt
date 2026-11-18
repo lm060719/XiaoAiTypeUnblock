@@ -1,7 +1,11 @@
 package io.mo.xatype.compat
 
 /** Members of the input method (com.xiaomi.type), located by [HostFingerprints]. */
-object HostSymbols : SymbolTable(14, HostFingerprints::resolve) {
+object HostSymbols : SymbolTable(15, HostFingerprints::resolve) {
+    const val ONE_HAND_MENU_GRID = "keyboard.oneHandMenuGrid"
+    const val ONE_HAND_MENU_CARD = "keyboard.oneHandMenuCard"
+    const val ONE_HAND_MENU_PANEL = "keyboard.oneHandMenuPanel"
+    const val ONE_HAND_MENU_CHUNK = "keyboard.oneHandMenuChunk"
     const val ONE_HAND_DIMENSIONS = "keyboard.oneHandDimensions"
     const val KEYBOARD_KEY_PREVIEW = "keyboard.keyPreview"
     /** The bubble's background color field where it draws from a cached bitmap (0.2.1358); empty before. */
@@ -64,7 +68,8 @@ object HostSymbols : SymbolTable(14, HostFingerprints::resolve) {
     const val TOOLBAR_HEIGHT_CALLERS = "keyboard.toolbarHeightCallers"
 
     override val keys = listOf(
-        ONE_HAND_DIMENSIONS, KEYBOARD_HAPTIC_INTENSITY,
+        ONE_HAND_DIMENSIONS, ONE_HAND_MENU_GRID, ONE_HAND_MENU_CARD,
+        ONE_HAND_MENU_PANEL, ONE_HAND_MENU_CHUNK, KEYBOARD_HAPTIC_INTENSITY,
         KEYBOARD_KEY_PREVIEW, KEYBOARD_KEY_PREVIEW_FILL, KOTLIN_COROUTINES,
         AI_SAFETY_PARSERS, VOICE_MODERATION, ASR_ERROR_MAPPER, ASR_ERROR_CALLBACK,
         OS_VERSION_GATE, HEIGHT_RECT, HEIGHT_CLAMP, HEIGHT_RECT_GETTER, HEIGHT_LAYOUT,
