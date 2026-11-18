@@ -55,6 +55,13 @@ internal object FeatureCatalog {
     val keyboardHeight = Feature(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, "解除键盘高度上限",
         "可继续向上拉伸")
 
+    val keyboardHaptics = Feature(ConfigManager.KEY_NATIVE_VIBRATION_LIMIT, "提高原生振动上限",
+        "输入法原有振动滑块最高可调到 200",
+        Detail("开启后，将输入法原有的振动强度滑块从 0～100 扩展到 0～200。0～100 的含义保持不变，继续使用原生振动算法和试振功能。",
+            notes = listOf("重启输入法后，在输入法的按键反馈设置中选择「自定义」振动模式，再调整原有滑块。",
+                "关闭后，实际使用值限制在原生上限 100；已保存的更高数值会保留，重新开启后可继续使用。",
+                "超过 100 的效果由系统和马达决定，部分设备可能限制最大强度。")))
+
     val t9Shuangpin = Feature(ConfigManager.KEY_T9_SHUANGPIN, "九键双拼", "在拼音九键中使用双拼")
 
     val emojiCandidates = Feature(ConfigManager.KEY_EMOJI_CANDIDATES, "Emoji 候选增强",
@@ -69,7 +76,7 @@ internal object FeatureCatalog {
             notes = listOf("关闭后恢复原生高度，保留已选数值。修改后重启输入法生效。",
                 "同步调整键盘总高度，保留字母按键的高度；悬浮键盘保持原生布局。")))
 
-    val keyboardFeatures get() = listOf(keyboardShortcuts, shortcutLabels, keyboardHandwriting, emojiCandidates, keyboardHeight, bottomSpacing, toolbarHeight, t9Shuangpin)
+    val keyboardFeatures get() = listOf(keyboardShortcuts, shortcutLabels, keyboardHandwriting, emojiCandidates, keyboardHeight, bottomSpacing, toolbarHeight, t9Shuangpin, keyboardHaptics)
 
     private fun shortcutTable(kit: SettingsKit): View {
         val context = kit.context

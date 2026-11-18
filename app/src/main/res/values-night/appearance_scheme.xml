@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="scheme_action_surface">#2A2F3A</color>
+    <color name="scheme_delete_surface">#44282C</color>
+    <color name="scheme_delete_text">#FFB4AB</color>
+</resources>

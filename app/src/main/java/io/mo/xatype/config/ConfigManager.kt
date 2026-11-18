@@ -37,6 +37,7 @@ object ConfigManager {
     const val KEY_ONE_HAND_SIDE = "pref_one_hand_side"
     const val KEY_ONE_HAND_WIDTH = "pref_one_hand_width"
     const val KEY_KEYBOARD_SHORTCUTS = "pref_keyboard_shortcuts"
+    const val KEY_NATIVE_VIBRATION_LIMIT = "pref_native_vibration_limit"
     const val KEY_KEYBOARD_HANDWRITING = "pref_keyboard_handwriting"
     /** dp an upward first stroke travels before handwriting claims it; shorter swipes stay the host's symbols. */
     const val KEY_HANDWRITING_UP_DISTANCE = "pref_handwriting_up_distance"
@@ -214,6 +215,7 @@ object ConfigManager {
     fun getOneHandSide() = int(KEY_ONE_HAND_SIDE)
     fun getOneHandWidth() = int(KEY_ONE_HAND_WIDTH)
     fun isKeyboardShortcutsEnabled() = bool(KEY_KEYBOARD_SHORTCUTS)
+    fun isNativeVibrationLimitEnabled() = bool(KEY_NATIVE_VIBRATION_LIMIT)
     fun isKeyboardHandwritingEnabled() = bool(KEY_KEYBOARD_HANDWRITING)
     fun getHandwritingUpDistance() = int(KEY_HANDWRITING_UP_DISTANCE)
     fun getHandwritingSideDistance() = int(KEY_HANDWRITING_SIDE_DISTANCE)

@@ -19,7 +19,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.inputmethod.InputMethodManager
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -449,7 +448,7 @@ class AppearancePage(
     private fun showSchemes(panel: LinearLayout)
     {
         panel.removeAllViews()
-        panel.addView(kit.navRow("保存当前为新配置", null, null) {
+        panel.addView(kit.navRow("保存当前为新配置", null, R.drawable.ic_scheme_save) {
             askSchemeName(panel, "保存新配置", "") { name ->
                 AppearancePresetStore.save(prefs, name)
             }
@@ -495,8 +494,8 @@ class AppearancePage(
                         }
                     }.show()
             })
-            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            actions.addView(schemeAction("覆盖保存") {
+            val actions = SchemeActionRow(this)
+            actions.addView(SchemeActionButton(this, "覆盖保存", R.drawable.ic_scheme_save, SchemeActionButton.Tone.PRIMARY) {
                 AlertDialog.Builder(activity)
                     .setTitle("覆盖「" + scheme.name + "」")
                     .setMessage("将用当前浅色、深色外观替换这套已保存的配置。此操作不可撤销。")
@@ -509,17 +508,16 @@ class AppearancePage(
                         }
                         else Toast.makeText(this, "覆盖保存失败", Toast.LENGTH_SHORT).show()
                     }.show()
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            actions.addView(schemeAction("重命名") {
+            })
+            actions.addView(SchemeActionButton(this, "重命名", R.drawable.ic_scheme_edit) {
                 askSchemeName(panel, "重命名配置", scheme.name) { name ->
                     AppearancePresetStore.rename(prefs, scheme.id, name)
                 }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            })
             panel.addView(actions)
-            val fileActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            fileActions.addView(schemeAction("导出") { exportScheme(scheme) },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            fileActions.addView(schemeAction("删除") {
+            val fileActions = SchemeActionRow(this)
+            fileActions.addView(SchemeActionButton(this, "导出", R.drawable.ic_scheme_export) { exportScheme(scheme) })
+            fileActions.addView(SchemeActionButton(this, "删除", R.drawable.ic_scheme_delete, SchemeActionButton.Tone.DESTRUCTIVE) {
                 AlertDialog.Builder(activity)
                     .setTitle("删除「" + scheme.name + "」")
                     .setMessage("只删除这一套存档，不会改变当前键盘外观。删除后不能恢复。")
@@ -532,19 +530,9 @@ class AppearancePage(
                         }
                         else Toast.makeText(this, "删除配置失败", Toast.LENGTH_SHORT).show()
                     }.show()
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            })
             panel.addView(fileActions)
         }
-    }
-
-    private fun schemeAction(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.settings_description_size))
-        setTextColor(getColor(R.color.text_primary))
-        isAllCaps = false
-        minWidth = 0
-        minimumHeight = kit.dimen(R.dimen.settings_touch_height)
-        setOnClickListener { onClick() }
     }
 
     private fun schemeTransferPending(): Boolean {

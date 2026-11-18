@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="scheme_action_surface">#F0F2F6</color>
+    <color name="scheme_delete_surface">#FFF0F0</color>
+    <color name="scheme_delete_text">#B3261E</color>
+    <dimen name="scheme_action_radius">20dp</dimen>
+    <dimen name="scheme_action_gap">8dp</dimen>
+    <dimen name="scheme_action_min_height">52dp</dimen>
+    <dimen name="scheme_action_min_width">128dp</dimen>
+    <dimen name="scheme_action_padding_horizontal">12dp</dimen>
+    <dimen name="scheme_action_padding_vertical">12dp</dimen>
+    <dimen name="scheme_action_icon_size">18dp</dimen>
+    <dimen name="scheme_action_text_size">14sp</dimen>
+</resources>

@@ -21,6 +21,21 @@ internal object HostFingerprints {
 
     fun resolve(bridge: DexKitBridge, loader: ClassLoader): FingerprintResult {
         val collector = FingerprintCollector()
+        collector.put(HostSymbols.KEYBOARD_HAPTIC_INTENSITY) {
+            val dispatch = single(bridge.findMethod {
+                matcher {
+                    paramCount(2)
+                    returnType("void")
+                    usingEqStrings("vibration_enabled", "vibration_mode", "vibration_intensity")
+                }
+            }, "native haptic dispatcher")
+            val reader = single(dispatch.invokes.filter {
+                it.isMethod && it.returnTypeName == "int" &&
+                    it.paramTypeNames == listOf("int", "java.lang.String")
+            }.distinctBy { it.descriptor }, "native haptic intensity reader")
+            check(Modifier.isStatic(reader.getMethodInstance(loader).modifiers))
+            listOf(listOf(reader.descriptor))
+        }
         collector.put(HostSymbols.ONE_HAND_DIMENSIONS) {
             val type = single(bridge.findClass {
                 matcher { usingStrings("KeyboardDimensionAdjustment(heightDelta=") }

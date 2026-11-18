@@ -19,6 +19,7 @@ import io.mo.xatype.hooks.KeyboardBottomSpacingHook
 import io.mo.xatype.hooks.KeyboardToolbarHeightHook
 import io.mo.xatype.hooks.OneHandHook
 import io.mo.xatype.hooks.KeyboardHeightUnblockHook
+import io.mo.xatype.hooks.KeyboardHapticsHook
 import io.mo.xatype.hooks.KeyboardSelectionHook
 import io.mo.xatype.hooks.KeyboardShortcutsHook
 import io.mo.xatype.hooks.KeyboardStyleHook
@@ -131,6 +132,13 @@ class XiaoAiTypeModule : XposedModule() {
         } catch (t: Throwable) {
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_SWIPE, t)
             XposedUtils.logError(this, "Letter shortcuts unavailable for this host ABI", t)
+        }
+
+        try {
+            KeyboardHapticsHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            HostSymbols.markUnavailable(HostSymbols.KEYBOARD_HAPTICS, t)
+            XposedUtils.logError(this, "Custom keyboard haptics unavailable for this host", t)
         }
 
         try {

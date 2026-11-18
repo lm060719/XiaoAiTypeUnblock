@@ -76,7 +76,7 @@ internal class ShapeUiStyle(val context: Context) {
 }
 
 /** Cached superellipse path; large surfaces meet their straight edges with smooth corners. */
-private class SmoothSurface(color: Int, private val radius: Float) : Drawable() {
+internal class SmoothSurface(color: Int, private val radius: Float) : Drawable() {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
     private val path = Path()
     override fun onBoundsChange(bounds: Rect) {

@@ -104,6 +104,7 @@ object ConfigSchema {
             io.mo.xatype.hooks.OneHandPolicy.WIDTH_RANGE))
         add(Bool(ConfigManager.KEY_KEYBOARD_HEIGHT_UNBLOCK, false))
         add(Bool(ConfigManager.KEY_KEYBOARD_SHORTCUTS, false))
+        add(Bool(ConfigManager.KEY_NATIVE_VIBRATION_LIMIT, false))
         add(Bool(ConfigManager.KEY_KEYBOARD_HANDWRITING, false))
         add(Int32(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, ConfigManager.HANDWRITING_UP_DISTANCE_DEFAULT,
             HANDWRITING_UP_DISTANCE_RANGE))

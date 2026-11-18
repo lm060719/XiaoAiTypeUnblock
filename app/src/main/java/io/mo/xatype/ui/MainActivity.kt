@@ -513,6 +513,8 @@ class MainActivity : AppCompatActivity() {
             shortcutLabelRow()
         ), first = true)
 
+        kit.group(root, "按键反馈", listOf(featureSwitch(FeatureCatalog.keyboardHaptics).view))
+
         kit.group(root, "尺寸与布局", listOf(
             oneHandRow(),
             featureSwitch(FeatureCatalog.keyboardHeight).view,

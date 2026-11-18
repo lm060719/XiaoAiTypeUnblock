@@ -25,6 +25,8 @@ object AdaptationStatus {
         HostSymbols.KEYBOARD_EMOJI to "Emoji 候选增强",
         HostSymbols.KEYBOARD_PERSONAL_DICTIONARY to "个人字典",
         HostSymbols.KEYBOARD_PREDICTION to "上屏后联想",
+        HostSymbols.KEYBOARD_HAPTICS to "原生振动强度上限",
+        HostSymbols.KEYBOARD_HAPTIC_INTENSITY to "原生振动强度上限",
         HostSymbols.KEYBOARD_LAYOUT to "18/14键布局",
         HostSymbols.KEYBOARD_ACTIONS to "快捷操作输入收尾",
         HostSymbols.KEYBOARD_PICKER to "独立键盘选择",
