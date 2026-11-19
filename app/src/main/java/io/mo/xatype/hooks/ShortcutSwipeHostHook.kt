@@ -1,6 +1,8 @@
 package io.mo.xatype.hooks
 
+import android.content.res.Configuration
 import android.graphics.RectF
+import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -13,7 +15,6 @@ import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.KeyboardShortcutLayout
 import io.mo.xatype.keyboard.ShortcutSwipeGesture
 import io.mo.xatype.keyboard.ShortcutSwipeHostBridge
-import io.mo.xatype.keyboard.ShortcutLabelPosition
 import io.mo.xatype.util.XposedUtils
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
@@ -119,20 +120,22 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             args[MODIFIER_INDEX] = if (action != null && ConfigManager.isShortcutLabelsEnabled()) {
                 if (key.labelModifier == null) key.labelModifier = bridge.drawing(key.decoratedModifier!!) { scope ->
                     try {
-                        val dm = key.owner.get()?.resources?.displayMetrics
-                        if (dm == null) { bridge.drawContent(scope); return@drawing }
+                        val resources = key.owner.get()?.resources
+                        if (resources == null) { bridge.drawContent(scope); return@drawing }
+                        val dm = resources.displayMetrics
                         val reference = if (floating()) dockedKeyHeight.takeIf { it > 0f }
                             ?: REFERENCE_KEY_HEIGHT_DP * dm.density
                         else 0f.also { bridge.keyHeight(scope).takeIf { it > 0f }?.let { dockedKeyHeight = it } }
                         bridge.drawLabel(scope, key.action?.let(io.mo.xatype.keyboard.KeyboardShortcuts::label) ?: "", key.labelColor,
-                            ConfigManager.getShortcutLabelSize() * dm.scaledDensity,
+                            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, ConfigManager.getShortcutLabelSize().toFloat(), dm),
                             offsetX = ConfigManager.getShortcutLabelX() * dm.density,
                             bottomInset = (4f - ConfigManager.getShortcutLabelY()) * dm.density,
                             referenceHeight = reference,
-                            centerFraction = key.bounds?.let { bounds ->
-                                ShortcutLabelPosition.centerFraction(bounds.left, bounds.right,
-                                    key.letterBounds?.centerX())
-                            } ?: 0.5f)
+                            keyBounds = key.bounds,
+                            letterBounds = key.letterBounds,
+                            landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+                            density = dm.density,
+                            minimumTextSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, MIN_COMPACT_LABEL_SIZE_SP, dm))
                     } catch (failure: Throwable) {
                         if (!labelFailureReported) {
                             labelFailureReported = true
@@ -275,6 +278,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
         const val MODIFIER_INDEX = 2
         /** A typical docked letter key, used until one has been drawn docked. */
         const val REFERENCE_KEY_HEIGHT_DP = 56f
+        const val MIN_COMPACT_LABEL_SIZE_SP = 8f
         /** Text's Modifier is its second parameter. */
         const val TEXT_MODIFIER_SHIFT = 1 + 3 * 1
 

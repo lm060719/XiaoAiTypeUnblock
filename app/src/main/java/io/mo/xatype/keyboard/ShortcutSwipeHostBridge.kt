@@ -2,6 +2,7 @@ package io.mo.xatype.keyboard
 
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.view.View
@@ -49,6 +50,7 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     } }
+    private val labelGlyphBounds by lazy { Rect() }
 
     fun label(instance: Any) = keys.label(instance)
     fun letter(instance: Any) = keys.letter(instance)
@@ -116,19 +118,16 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
         ShortcutGlyph.draw(canvas, action, width / 2f, height / 2f, iconSize, color, progress)
     }
 
-    /**
-     * Draw the action text after the key's own content. [offsetX] is measured from the
-     * letter's horizontal centre and [bottomInset] from the key's bottom edge, both in pixels.
-     */
     /** The drawn key's height in pixels. */
     fun keyHeight(scope: Any): Float = Float.fromBits((drawSize.invoke(scope) as Long).toInt())
 
     /**
-     * Draw [text] near the key's bottom edge. With a [referenceHeight], a shorter key (the floating
-     * keyboard) scales the text and its offsets down in proportion, so it keeps clear of the letter.
+     * Draw [text] after the key's content, avoiding the native letter's measured layout in landscape.
+     * [offsetX] is relative to the letter centre, and [bottomInset] is relative to the key bottom.
      */
     fun drawLabel(scope: Any, text: String, color: Int, textSizePx: Float, offsetX: Float, bottomInset: Float,
-                  referenceHeight: Float = 0f, centerFraction: Float = 0.5f) {
+                  referenceHeight: Float, keyBounds: RectF?, letterBounds: RectF?, landscape: Boolean, density: Float,
+                  minimumTextSizePx: Float) {
         content.invoke(scope)
         if (text.isEmpty() || textSizePx <= 0f) return
         val size = drawSize.invoke(scope) as Long
@@ -136,29 +135,60 @@ class ShortcutSwipeHostBridge(private val loader: ClassLoader, private val abi: 
         val height = Float.fromBits(size.toInt())
         if (width <= 0f || height <= 0f) return
         val scale = if (referenceHeight > 0f) (height / referenceHeight).coerceIn(MIN_LABEL_SCALE, 1f) else 1f
-        drawScaledLabel(scope, text, color, textSizePx * scale, offsetX * scale, bottomInset * scale, width, height,
-            centerFraction)
-    }
-
-    private fun drawScaledLabel(scope: Any, text: String, color: Int, textSizePx: Float, offsetX: Float,
-                                bottomInset: Float, width: Float, height: Float, centerFraction: Float) {
-        val canvas = nativeCanvas.get(canvasGetter.invoke(context.invoke(scope))) as Canvas
-        labelPaint.textSize = textSizePx
+        labelPaint.textSize = textSizePx * scale
         val measured = labelPaint.measureText(text)
-        if (measured > width * 0.92f && measured > 0f) {
-            labelPaint.textSize = textSizePx * (width * 0.92f) / measured
+        val maxLabelWidth = width * MAX_LABEL_WIDTH_FRACTION
+        if (measured > maxLabelWidth) labelPaint.textSize *= maxLabelWidth / measured
+
+        val position = if (landscape) {
+            val letter = localLetterBounds(keyBounds, letterBounds, width, height)
+            val edgeInset = LABEL_EDGE_INSET_DP * density * scale
+            val gap = LABEL_LETTER_GAP_DP * density * scale
+            fun placement() = ShortcutLabelPosition.place(width, height, letter, glyphBounds(text),
+                offsetX * scale, bottomInset * scale, edgeInset, gap)
+
+            placement() ?: run {
+                val compactSize = minimumTextSizePx * scale
+                if (labelPaint.textSize <= compactSize) return
+                labelPaint.textSize = compactSize
+                placement() ?: return
+            }
+        } else {
+            val center = keyBounds?.let { ShortcutLabelPosition.centerFraction(it.left, it.right, letterBounds?.centerX()) }
+                ?: 0.5f
+            ShortcutLabelPosition.portraitPlacement(width, height, center, labelPaint.measureText(text) / 2f,
+                labelPaint.ascent(), offsetX * scale, bottomInset * scale)
         }
         labelPaint.color = color
-        val metrics = labelPaint.fontMetrics
-        val half = labelPaint.measureText(text) / 2f
-        val x = (width * centerFraction + offsetX).coerceIn(half.coerceAtMost(width / 2f), (width - half).coerceAtLeast(width / 2f))
-        val minBaseline = minOf(-metrics.ascent + 1f, height - 1f)
-        val baseline = (height - bottomInset).coerceIn(minBaseline, height - 1f)
-        canvas.drawText(text, x, baseline, labelPaint)
+        val canvas = nativeCanvas.get(canvasGetter.invoke(context.invoke(scope))) as Canvas
+        canvas.drawText(text, position.x, position.baseline, labelPaint)
+    }
+
+    private fun glyphBounds(text: String): ShortcutLabelPosition.Bounds {
+        val halfAdvance = labelPaint.measureText(text) / 2f
+        labelPaint.getTextBounds(text, 0, text.length, labelGlyphBounds)
+        return ShortcutLabelPosition.Bounds(minOf(labelGlyphBounds.left.toFloat(), 0f) - halfAdvance,
+            labelGlyphBounds.top.toFloat(), maxOf(labelGlyphBounds.right - halfAdvance, halfAdvance),
+            labelGlyphBounds.bottom.toFloat())
+    }
+
+    private fun localLetterBounds(key: RectF?, letter: RectF?, width: Float,
+                                  height: Float): ShortcutLabelPosition.Bounds? {
+        if (key == null || letter == null || !key.contains(letter.centerX(), letter.centerY())) return null
+        val scaleX = width / key.width()
+        val scaleY = height / key.height()
+        val center = width * ShortcutLabelPosition.centerFraction(key.left, key.right, letter.centerX())
+        val halfLetterWidth = letter.width() * scaleX / 2f
+        return ShortcutLabelPosition.Bounds(center - halfLetterWidth, (letter.top - key.top) * scaleY,
+            center + halfLetterWidth, (letter.bottom - key.top) * scaleY)
     }
 
     private companion object {
         /** Floating keys are about two thirds of the docked height; never shrink below half. */
         const val MIN_LABEL_SCALE = 0.5f
+        const val MAX_LABEL_WIDTH_FRACTION = 0.92f
+        // The native keycap is inset from the touch bounds, including at rounded corners.
+        const val LABEL_EDGE_INSET_DP = 6f
+        const val LABEL_LETTER_GAP_DP = 1f
     }
 }
