@@ -18,6 +18,7 @@ import io.mo.xatype.hooks.EmojiCandidateHook
 import io.mo.xatype.hooks.Keyboard18Hook
 import io.mo.xatype.hooks.KeyboardBottomSpacingHook
 import io.mo.xatype.hooks.KeyboardToolbarHeightHook
+import io.mo.xatype.hooks.KeyboardToolbarMenuHook
 import io.mo.xatype.hooks.OneHandHook
 import io.mo.xatype.hooks.KeyboardHeightUnblockHook
 import io.mo.xatype.hooks.KeyboardHapticsHook
@@ -244,6 +245,13 @@ class XiaoAiTypeModule : XposedModule() {
         } catch (t: Throwable) {
             HostSymbols.markUnavailable(HostSymbols.ONE_HAND_DIMENSIONS, t)
             XposedUtils.logError(this, "Native one-hand layout unavailable", t)
+        }
+
+        try {
+            KeyboardToolbarMenuHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            HostSymbols.markUnavailable(HostSymbols.ONE_HAND_MENU_GRID, t)
+            XposedUtils.logError(this, "Keyboard toolbar menu entries unavailable for this host", t)
         }
 
         try {

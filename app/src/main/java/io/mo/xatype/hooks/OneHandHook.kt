@@ -133,9 +133,5 @@ object OneHandHook {
             chain.proceed(args)
         }
         XposedUtils.log(module, "OneHandHook: installed native dimension adjustment")
-        runCatching { OneHandMenuHook.install(module) }.onFailure {
-            HostSymbols.markUnavailable(HostSymbols.ONE_HAND_MENU_GRID, it)
-            XposedUtils.logError(module, "One-hand menu unavailable", it)
-        }
     }
 }
