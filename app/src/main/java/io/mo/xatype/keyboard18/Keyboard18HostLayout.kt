@@ -33,7 +33,7 @@ class Keyboard18HostLayout(loader: ClassLoader, private val abi: KeyboardAbi = K
     private fun value(instance: Any, name: String): Any? = instance.javaClass.abiField(abi, name)
         .apply { isAccessible = true }.get(instance)
 
-    /** Require the generated code/label/hint combination, so other layouts keep native styling. */
+    /** Generated private codes keep grouped styling even when the slot supplies a different hint. */
     fun groupOf(instance: Any): String? {
         if (!key.isInstance(instance) || fields.getValue("f").get(instance) !== charKind) return null
         val code = fields.getValue("a").getInt(instance)
@@ -41,12 +41,11 @@ class Keyboard18HostLayout(loader: ClassLoader, private val abi: KeyboardAbi = K
         val hint = fields.getValue("g").get(instance)
         // Plain letter codes keep the original 18-key fallback only; 14-key hints such as "?"
         // also appear on native 26-key letters, which must keep native styling.
-        val owners = GroupedKeys.of(code)?.let(::listOf) ?: listOf(Keyboard18Keys)
-        return owners.firstNotNullOfOrNull { keys ->
-            val group = keys.groupOf(code) ?: return@firstNotNullOfOrNull null
-            group.takeIf { (label == Keyboard18Style.label(group) || label == Keyboard18Style.label(group, true)) &&
-                hint == keys.hint(group) }
-        }
+        val owner = GroupedKeys.of(code)
+        val keys = owner ?: Keyboard18Keys
+        val group = keys.groupOf(code) ?: return null
+        return group.takeIf { (label == Keyboard18Style.label(group) || label == Keyboard18Style.label(group, true)) &&
+            (owner != null || hint == keys.hint(group)) }
     }
     fun rebuild(original: Any, english: Boolean, semicolon: Boolean = false, keys: GroupedKeys = Keyboard18Keys): Any {
         if (english || value(original, "a") != "qwerty") return original

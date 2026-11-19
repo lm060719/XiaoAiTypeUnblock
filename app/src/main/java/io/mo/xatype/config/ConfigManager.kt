@@ -12,6 +12,7 @@ import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.keyboard.PredictionMode
 import io.mo.xatype.keyboard.PersonalDictionary
 import io.mo.xatype.keyboard.ShortcutKeyboard
+import io.mo.xatype.keyboard.KeyboardPositions
 import io.mo.xatype.util.XposedUtils
 
 /**
@@ -259,6 +260,8 @@ object ConfigManager {
     fun getShortcutLabelSize() = int(KEY_SHORTCUT_LABEL_SIZE)
     fun getShortcutLabelX() = int(KEY_SHORTCUT_LABEL_X)
     fun getShortcutLabelY() = int(KEY_SHORTCUT_LABEL_Y)
+
+    internal fun getKeyboardPositions(keyboard: KeyboardPositions): String? = current()[keyboard.prefKey] as? String
 
     /** Key-to-action mapping of [keyboard]'s downward-swipe shortcuts. Called for every rendered key. */
     fun getShortcutMapping(keyboard: ShortcutKeyboard): Map<String, String> {

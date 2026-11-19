@@ -24,6 +24,19 @@ class KeyboardShortcutHostLayout(loader: ClassLoader, private val abi: KeyboardA
         Boolean::class.javaPrimitiveType, Integer::class.java,
         *fields.drop(18).map { it.type }.toTypedArray())
     fun label(instance: Any) = fields[1].get(instance) as String
+    internal fun code(instance: Any) = fields[0].getInt(instance)
+    internal fun kind(instance: Any) = (fields[5].get(instance) as Enum<*>).name
+
+    /** Move the primary key and its long-press menu. The slot supplies geometry and swipe-up hints. */
+    internal fun keyInSlot(source: Any, slot: Any): Any {
+        val args = fields.map { it.get(source) }.toTypedArray()
+        for (index in 2..4) args[index] = fields[index].get(slot)
+        for (index in 6..7) args[index] = fields[index].get(slot)
+        // Native repeatable keys send their first action on touch-down, before a swipe can win.
+        if (args[11] == true && (args[6] != null || letter(slot))) args[11] = false
+        fields.getOrNull(18)?.let { args[18] = it.get(slot) } // absorbsAdjacentGap
+        return constructor.newInstance(*args)
+    }
 
     /** A letter or grouped-letter key (26/18/14-key, 虎码/五笔), never a function or separator key. */
     fun letter(instance: Any): Boolean {

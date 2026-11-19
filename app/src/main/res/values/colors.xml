@@ -9,6 +9,7 @@
     <color name="surface_light">#FFFFFF</color>
     <color name="surface_raised">#FFFFFF</color>
     <color name="card_stroke">#E0E4EB</color>
+    <color name="key_positions_key_outline">#828C9C</color>
     <color name="text_primary">#1C1E21</color>
     <color name="text_secondary">#5F6878</color>
     <color name="status_active">#10B981</color>

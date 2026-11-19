@@ -8,6 +8,7 @@
     <color name="surface_light">#1B1E25</color>
     <color name="surface_raised">#242833</color>
     <color name="card_stroke">#2E3440</color>
+    <color name="key_positions_key_outline">#637187</color>
     <color name="text_primary">#E8ECF3</color>
     <color name="text_secondary">#A4ADBD</color>
     <color name="status_active_container">#163428</color>

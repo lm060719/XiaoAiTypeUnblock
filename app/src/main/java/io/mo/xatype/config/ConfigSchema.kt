@@ -2,6 +2,7 @@ package io.mo.xatype.config
 
 import android.content.SharedPreferences
 import android.os.Bundle
+import io.mo.xatype.keyboard.KeyboardPositions
 import io.mo.xatype.keyboard.PredictionMode
 import io.mo.xatype.keyboard.ShortcutKeyboard
 
@@ -126,6 +127,7 @@ object ConfigSchema {
         add(Int32(ConfigManager.KEY_SHORTCUT_LABEL_X, 0, -40..40))
         add(Int32(ConfigManager.KEY_SHORTCUT_LABEL_Y, -2, -40..40))
         ShortcutKeyboard.entries.forEach { add(Text(it.prefKey, null)) }
+        KeyboardPositions.entries.forEach { add(Text(it.prefKey, null)) }
 
         // Appearance
         add(Bool(ConfigManager.KEY_STYLE_ENABLED, false))

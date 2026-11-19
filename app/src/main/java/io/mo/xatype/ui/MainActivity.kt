@@ -435,6 +435,9 @@ class MainActivity : AppCompatActivity() {
         kit.group(root, "按键反馈", listOf(featureSwitch(FeatureCatalog.keyboardHaptics).view))
 
         kit.group(root, "尺寸与布局", listOf(
+            kit.navRow(getString(R.string.key_positions_title), R.drawable.ic_nav_keyboard) {
+                startActivity(Intent(this, KeyboardPositionsActivity::class.java))
+            },
             oneHandRow(),
             featureSwitch(FeatureCatalog.keyboardHeight).view,
             toolbarHeightRow(),

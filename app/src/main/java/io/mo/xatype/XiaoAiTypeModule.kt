@@ -22,6 +22,7 @@ import io.mo.xatype.hooks.OneHandHook
 import io.mo.xatype.hooks.KeyboardHeightUnblockHook
 import io.mo.xatype.hooks.KeyboardHapticsHook
 import io.mo.xatype.hooks.KeyboardSelectionHook
+import io.mo.xatype.hooks.KeyboardPositionsHook
 import io.mo.xatype.hooks.KeyboardShortcutsHook
 import io.mo.xatype.hooks.KeyboardStyleHook
 import io.mo.xatype.hooks.OnlineDictImportHook
@@ -132,6 +133,12 @@ class XiaoAiTypeModule : XposedModule() {
         } catch (t: Throwable) {
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_LAYOUT, t)
             XposedUtils.logError(this, "18-key keyboard unavailable for this host ABI", t)
+        }
+
+        try {
+            KeyboardPositionsHook.install(this, classLoader)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Custom key positions unavailable for this host ABI", t)
         }
 
         try {

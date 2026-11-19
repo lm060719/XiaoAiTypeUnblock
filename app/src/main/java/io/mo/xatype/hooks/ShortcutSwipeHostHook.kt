@@ -30,7 +30,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                             private val suppress: () -> Boolean = { false }) {
     /** The last docked key height, the reference for labels on the smaller floating keyboard. */
     @Volatile private var dockedKeyHeight = 0f
-    private class Key(val owner: WeakReference<View>, var source: Any, var action: String?,
+    private class Key(val owner: WeakReference<View>, var source: Any, var slot: Any, var action: String?,
                       var callback: Any, val state: Any, val layout: KeyboardShortcutLayout) {
         var letter = false
         var coordinates: WeakReference<Any>? = null
@@ -82,16 +82,23 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
             if (!swipe && !tracking) return@intercept chain.proceed()
             val source = chain.getArg(0)!!
             val currentLayout = layout() ?: return@intercept chain.proceed()
-            val action = if (swipe) bridge.action(source, currentLayout) else null
+            val slot = KeyboardPositionsHook.originalSlot(source)
+            val action = if (swipe) bridge.action(slot, currentLayout) else null
             val letter = tracking && bridge.letter(source)
-            if (action == null && !letter) return@intercept chain.proceed()
+            if (action == null && !letter && keys.isEmpty()) return@intercept chain.proceed()
             val owner = bridge.view(chain.getArg(composerIndex)!!)
-            val code = source.javaClass.abiField(abi, "a").getInt(source)
-            val id = "${currentLayout}:${code}:${bridge.label(source)}"
+            val code = slot.javaClass.abiField(abi, "a").getInt(slot)
+            val id = "${currentLayout}:${code}:${bridge.label(slot)}"
+            if (action == null && !letter) {
+                keys[owner]?.remove(id)
+                return@intercept chain.proceed()
+            }
             val key = keys.getOrPut(owner) { LinkedHashMap() }.getOrPut(id) {
-                Key(WeakReference(owner), source, action, bridge.unwrap(chain.getArg(callbackIndex)!!), bridge.progressState(), currentLayout)
+                Key(WeakReference(owner), source, slot, action, bridge.unwrap(chain.getArg(callbackIndex)!!),
+                    bridge.progressState(), currentLayout)
             }
             key.source = source
+            key.slot = slot
             key.action = action
             key.letter = letter
             key.callback = bridge.unwrap(chain.getArg(callbackIndex)!!)
@@ -237,7 +244,7 @@ class ShortcutSwipeHostHook(private val enabled: () -> Boolean, private val layo
                     val cancelled = current.nativeCancelled
                     reset()
                     if (result == ShortcutSwipeGesture.Release.ACTION) runCatching {
-                        bridge.dispatch(current.key.callback, bridge.actionKey(current.key.source, current.key.action!!))
+                        bridge.dispatch(current.key.callback, bridge.actionKey(current.key.slot, current.key.action!!))
                     }.onFailure { XposedUtils.logError(module, "Swipe shortcut failed: ${current.key.action}", it) }
                     return@intercept if (cancelled) true else chain.proceed()
                 }
