@@ -1,6 +1,7 @@
 package io.mo.xatype.hooks
 
 import android.content.Context
+import android.inputmethodservice.InputMethodService
 import android.util.AttributeSet
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.compat.HostSymbols
@@ -12,8 +13,27 @@ import io.mo.xatype.util.XposedUtils
 
 /** Extend the native preference; the original manager still owns all haptic playback. */
 object KeyboardHapticsHook {
+    @Volatile private var hostBinding: KeyboardHapticBinding? = null
+
+    internal fun keyPressFeedback(module: XposedInterface, service: InputMethodService): () -> Unit {
+        val play = runCatching { hostBinding?.keyPressFeedback(service) }.getOrElse {
+            XposedUtils.logError(module, "Unable to bind clipboard keyboard feedback", it)
+            null
+        } ?: return {}
+        var available = true
+        return {
+            if (available) {
+                runCatching(play).onFailure {
+                    available = false
+                    XposedUtils.logError(module, "Unable to play clipboard keyboard feedback", it)
+                }
+            }
+        }
+    }
+
     fun install(module: XposedInterface, loader: ClassLoader) {
         val binding = KeyboardHapticBinding(Class.forName("com.mi.ime.MiInputMethodService", false, loader))
+        hostBinding = binding
         val reader = checkNotNull(HostSymbols.method(HostSymbols.KEYBOARD_HAPTIC_INTENSITY))
         val preference = Class.forName("androidx.preference.SeekBarPreference", false, loader)
         val constructor = preference.getDeclaredConstructor(Context::class.java, AttributeSet::class.java)

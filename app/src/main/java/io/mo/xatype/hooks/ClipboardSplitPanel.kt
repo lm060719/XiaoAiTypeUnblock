@@ -6,21 +6,20 @@ import android.content.res.Configuration
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Build
 import android.os.Handler
 import android.text.TextUtils
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.View
-import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import io.mo.xatype.ui.SpringAnimator
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -29,6 +28,7 @@ internal class ClipboardSplitPanel(
     private val parent: FrameLayout,
     private val words: List<String>,
     roundBottom: Boolean,
+    private val keyPressFeedback: () -> Unit,
     private val commit: (String) -> Boolean
 ) {
     private val context = host.context
@@ -36,13 +36,27 @@ internal class ClipboardSplitPanel(
         Configuration.UI_MODE_NIGHT_YES
     private val palette = if (dark) darkPalette else lightPalette
     private val pane = LinearLayout(context)
-    private val scroll = ScrollView(context)
-    private val flow = WordFlow(context, dp(CHIP_GAP))
+    private val scroll = ClipboardWordScrollView(context)
+    private val selection = ClipboardWordSelection(words)
+    private val confirm = ClipboardConfirmSlider(
+        context, palette.chip, palette.text, palette.selection, palette.onSelection,
+        onSlideStarted = keyPressFeedback, onConfirm = ::submit
+    )
+    private val flow = ClipboardWordFlow(context, dp(CHIP_GAP)) { index, chip ->
+        toggle(chip, page * PAGE_SIZE + index)
+    }
     private val previous = button("上一页") { showPage(page - 1) }
     private val next = button("下一页") { showPage(page + 1) }
     private val pageLabel = TextView(context)
     private val lastPage = words.lastIndex / PAGE_SIZE
     private var page = 0
+    private var submitted = false
+    private val dismissal = SpringAnimator(
+        SpringAnimator.STANDARD_STIFFNESS, SpringAnimator.STANDARD_DAMPING, precision = 0.005f
+    ) { progress ->
+        pane.alpha = 1f - progress
+        pane.translationY = host.translationY + dp(DISMISS_TRAVEL) * progress
+    }.apply { onEnd = ::close }
     private val onHostLayout = View.OnLayoutChangeListener {
             _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
         if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) alignPane()
@@ -76,7 +90,11 @@ internal class ClipboardSplitPanel(
                 text = "拆分"
                 textSize = TITLE_SIZE
                 setTextColor(palette.text)
-            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            addView(confirm, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply {
+                marginStart = dp(HEADER_GAP)
+                marginEnd = dp(HEADER_GAP)
+            })
             addView(button("返回") { close() })
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         scroll.addView(flow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -119,6 +137,7 @@ internal class ClipboardSplitPanel(
 
     private fun close() {
         if (pane.parent !== parent) return
+        dismissal.stop()
         host.removeOnLayoutChangeListener(onHostLayout)
         host.removeOnAttachStateChangeListener(onHostDetach)
         parent.removeView(pane)
@@ -126,24 +145,45 @@ internal class ClipboardSplitPanel(
     }
 
     private fun showPage(index: Int) {
+        if (submitted) return
+        flow.finishDrag()
         page = index
         flow.removeAllViews()
         val start = page * PAGE_SIZE
-        for (word in words.subList(start, minOf(start + PAGE_SIZE, words.size))) {
-            val chip = button(word, chip = true) {
-                if (runCatching { commit(word) }.getOrDefault(false)) {
-                    it.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                } else {
-                    Toast.makeText(context, "无法输入到当前输入框", Toast.LENGTH_SHORT).show()
-                    close()
-                }
+        for (wordIndex in start until minOf(start + PAGE_SIZE, words.size)) {
+            val chip = button(words[wordIndex], chip = true) {
+                toggle(it, wordIndex)
             }
+            chip.isSelected = wordIndex in selection
+            chip.setOnLongClickListener { flow.startDrag(it) }
             flow.addView(chip)
         }
         scroll.scrollTo(0, 0)
         previous.isEnabled = page > 0
         next.isEnabled = page < lastPage
         pageLabel.text = String.format(Locale.getDefault(), "%d / %d", page + 1, lastPage + 1)
+    }
+
+    private fun toggle(chip: View, index: Int) {
+        if (submitted) return
+        val hadSelection = selection.hasSelection
+        chip.isSelected = selection.toggle(index)
+        if (hadSelection != selection.hasSelection) confirm.setSelectionAvailable(selection.hasSelection)
+        keyPressFeedback()
+    }
+
+    private fun submit() {
+        if (submitted || !selection.hasSelection || pane.parent !== parent) return
+        submitted = true
+        if (!runCatching { commit(selection.text()) }.getOrDefault(false)) {
+            Toast.makeText(context, "无法输入到当前输入框", Toast.LENGTH_SHORT).show()
+            close()
+            return
+        }
+        confirm.showConfirmed()
+        keyPressFeedback()
+        host.visibility = View.VISIBLE
+        dismissal.start(0f, 1f)
     }
 
     private fun button(label: String, chip: Boolean = false, action: (View) -> Unit): Button =
@@ -153,74 +193,51 @@ internal class ClipboardSplitPanel(
             textSize = BUTTON_SIZE
             gravity = Gravity.CENTER
             isFocusable = true
+            isHapticFeedbackEnabled = false
             minimumWidth = 0
             minimumHeight = 0
             minWidth = dp(TOUCH_SIZE)
             minHeight = dp(TOUCH_SIZE)
             setTextColor(ColorStateList(
-                arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
-                intArrayOf(palette.disabledText, palette.text)
+                arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf(android.R.attr.state_selected), intArrayOf()),
+                intArrayOf(palette.disabledText, palette.onSelection, palette.text)
             ))
             if (chip) {
                 maxLines = 2
                 ellipsize = TextUtils.TruncateAt.END
             }
-            val shape = GradientDrawable().apply {
-                setColor(if (chip) palette.chip else palette.surface)
-                cornerRadius = dp(CHIP_RADIUS).toFloat()
-                if (chip) setStroke(dp(CHIP_STROKE), palette.outline)
-            }
-            val ripple = RippleDrawable(ColorStateList.valueOf(palette.ripple), shape, null)
             val verticalInset = if (chip) dp(CHIP_VERTICAL_INSET) else 0
-            background = InsetDrawable(ripple, 0, verticalInset, 0, verticalInset)
+            background = buttonBackground(chip, verticalInset)
             setPadding(dp(BUTTON_PADDING), verticalInset, dp(BUTTON_PADDING), verticalInset)
-            setOnClickListener(action)
+            setOnClickListener {
+                if (!submitted) {
+                    if (!chip) keyPressFeedback()
+                    action(it)
+                }
+            }
         }
+
+    private fun buttonBackground(chip: Boolean, verticalInset: Int): InsetDrawable {
+        val normal = GradientDrawable().apply {
+            setColor(if (chip) palette.chip else palette.surface)
+            cornerRadius = dp(CHIP_RADIUS).toFloat()
+            if (chip) setStroke(dp(CHIP_STROKE), palette.outline)
+        }
+        val states = StateListDrawable().apply {
+            if (chip) {
+                val selected = GradientDrawable().apply {
+                    setColor(palette.selection)
+                    cornerRadius = dp(CHIP_RADIUS).toFloat()
+                }
+                addState(intArrayOf(android.R.attr.state_selected), selected)
+            }
+            addState(intArrayOf(), normal)
+        }
+        val ripple = RippleDrawable(ColorStateList.valueOf(palette.ripple), states, null)
+        return InsetDrawable(ripple, 0, verticalInset, 0, verticalInset)
+    }
 
     private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).roundToInt()
-
-    private class WordFlow(context: Context, private val columnGap: Int) : ViewGroup(context) {
-        override fun generateDefaultLayoutParams() = LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
-
-        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            val width = MeasureSpec.getSize(widthMeasureSpec)
-            for (index in 0 until childCount) {
-                getChildAt(index).measure(
-                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST),
-                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-                )
-            }
-            setMeasuredDimension(width, resolveSize(rows(width, place = false), heightMeasureSpec))
-        }
-
-        override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-            rows(right - left, place = true)
-        }
-
-        private fun rows(width: Int, place: Boolean): Int {
-            val rtl = layoutDirection == View.LAYOUT_DIRECTION_RTL
-            var x = 0
-            var y = 0
-            var rowHeight = 0
-            for (index in 0 until childCount) {
-                val child = getChildAt(index)
-                val childWidth = child.measuredWidth
-                val childHeight = child.measuredHeight
-                if (x > 0 && x + childWidth > width) {
-                    x = 0
-                    y += rowHeight
-                    rowHeight = 0
-                }
-                if (place) {
-                    val childLeft = if (rtl) width - x - childWidth else x
-                    child.layout(childLeft, y, childLeft + childWidth, y + childHeight)
-                }
-                x += childWidth + columnGap
-                rowHeight = maxOf(rowHeight, childHeight)
-            }
-            return y + rowHeight
-        }
-    }
 
     private data class Palette(
         val surface: Int,
@@ -228,6 +245,8 @@ internal class ClipboardSplitPanel(
         val text: Int,
         val disabledText: Int,
         val outline: Int,
+        val selection: Int,
+        val onSelection: Int,
         val ripple: Int
     )
 
@@ -244,12 +263,16 @@ internal class ClipboardSplitPanel(
         const val BUTTON_PADDING = 8
         const val CHIP_VERTICAL_INSET = 5
         const val CHIP_GAP = 4
+        const val HEADER_GAP = 8
+        const val DISMISS_TRAVEL = 8
         val lightPalette = Palette(
             surface = 0xFFFDFDFE.toInt(),
             chip = 0xFFE6ECF6.toInt(),
             text = 0xFF18202D.toInt(),
             disabledText = 0xFF747B86.toInt(),
             outline = 0xFF748094.toInt(),
+            selection = 0xFF1559A3.toInt(),
+            onSelection = 0xFFFFFFFF.toInt(),
             ripple = 0x2218202D
         )
         val darkPalette = Palette(
@@ -258,6 +281,8 @@ internal class ClipboardSplitPanel(
             text = 0xFFF2F5FA.toInt(),
             disabledText = 0xFF929BAA.toInt(),
             outline = 0xFF8693AA.toInt(),
+            selection = 0xFFA9CBFF.toInt(),
+            onSelection = 0xFF152D50.toInt(),
             ripple = 0x32F2F5FA
         )
     }

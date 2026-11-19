@@ -71,7 +71,7 @@ internal object ClipboardSplitHook {
                 card.setOnLongClickListener {
                     runCatching open@{
                         val original = text.invoke(null, entry) as? String ?: return@open false
-                        showSplitPanel(popup, service, original)
+                        showSplitPanel(module, popup, service, original)
                     }.getOrElse {
                         XposedUtils.logWarn(module, "[Clipboard Split] Could not open the split panel")
                         Toast.makeText(service, "暂时无法拆分文字", Toast.LENGTH_SHORT).show()
@@ -85,7 +85,9 @@ internal object ClipboardSplitHook {
     }
 
     @SuppressLint("DiscouragedApi") // The ID belongs to the separately installed clipboard APK.
-    private fun showSplitPanel(popup: PopupWindow, service: InputMethodService, text: String): Boolean {
+    private fun showSplitPanel(
+        module: XposedInterface, popup: PopupWindow, service: InputMethodService, text: String
+    ): Boolean {
         val root = popup.contentView ?: return false
         val id = root.resources.getIdentifier("inside_view", "id", "com.miui.phrase")
         val inside = root.findViewById<View>(id) ?: return false
@@ -99,9 +101,10 @@ internal object ClipboardSplitHook {
             Toast.makeText(service, "请先选中输入框", Toast.LENGTH_SHORT).show()
             return true
         }
-        ClipboardSplitPanel(inside, parent, words, roundBottom = popup.width > 0) { word ->
+        val feedback = KeyboardHapticsHook.keyPressFeedback(module, service)
+        ClipboardSplitPanel(inside, parent, words, roundBottom = popup.width > 0, keyPressFeedback = feedback) { selectedText ->
             popup.isShowing && service.currentInputEditorInfo === editor &&
-                service.currentInputConnection === connection && connection.commitText(word, 1)
+                service.currentInputConnection === connection && connection.commitText(selectedText, 1)
         }.show()
         return true
     }

@@ -40,6 +40,10 @@ def verify(path):
             assert {"KEY_PRESS", "LONG_PRESS", "ERROR", "SUCCESS", "BUTTON_LARGE"} <= set(names), names
             assert "vibration_enabled" in method["strs"], descriptor
     assert len(dispatchers) == 1, dispatchers
+    scope_type = re.findall(r"L[^;]+;", dispatchers[0].split("(")[1])[-1]
+    scope_getters = [m for m in methods if m.startswith(service + "->getServiceScope$")
+                     and m.endswith("()" + scope_type)]
+    assert len(scope_getters) == 1, scope_getters
     dispatch = methods[dispatchers[0]]
     readers = {call.replace(" ", "") for call in dispatch.get("inv", dispatch.get("calls", []))
                if call.replace(" ", "").endswith("(ILjava/lang/String;)I")}
@@ -57,7 +61,7 @@ def verify(path):
     assert 100 in methods[constructor]["consts"], "native default maximum"
     pages = [m for m, entry in methods.items() if "kf_vibration_intensity" in entry["strs"]]
     assert len(pages) == 1, pages
-    print(f"PASS {path}: {next(iter(readers))}; native SeekBarPreference constructor and vibration page")
+    print(f"PASS {path}: {next(iter(readers))}; native key press scope, slider constructor and vibration page")
 
 
 if __name__ == "__main__":
