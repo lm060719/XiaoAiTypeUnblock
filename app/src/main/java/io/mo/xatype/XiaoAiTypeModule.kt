@@ -10,6 +10,7 @@ import io.mo.xatype.hooks.AiAbilityUnlockHook
 import io.mo.xatype.hooks.AiSafetyHook
 import io.mo.xatype.hooks.ClipboardPermanentHook
 import io.mo.xatype.hooks.ClipboardSensitiveHook
+import io.mo.xatype.hooks.ClipboardSplitHook
 import io.mo.xatype.hooks.CloudBlacklistHook
 import io.mo.xatype.hooks.HyperOsVersionHook
 import io.mo.xatype.hooks.InputDiagnosticsHook
@@ -105,6 +106,12 @@ class XiaoAiTypeModule : XposedModule() {
         // com.miui.phrase owns persistence. The remaining hooks target only the
         // Xiaomi input method process.
         if (param.packageName == PHRASE_PACKAGE) return
+
+        try {
+            ClipboardSplitHook.install(this)
+        } catch (t: Throwable) {
+            XposedUtils.logError(this, "Error installing ClipboardSplitHook", t)
+        }
 
         try {
             KeyboardSelectionHook.install(this, classLoader)

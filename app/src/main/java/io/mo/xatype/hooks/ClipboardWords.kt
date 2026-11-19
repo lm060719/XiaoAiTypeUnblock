@@ -1,0 +1,24 @@
+package io.mo.xatype.hooks
+
+import android.icu.text.BreakIterator
+import java.util.Locale
+
+internal fun clipboardWords(text: String): List<String> {
+    val boundaries = BreakIterator.getWordInstance(Locale.SIMPLIFIED_CHINESE)
+    boundaries.setText(text)
+    return buildList {
+        var start = boundaries.first()
+        var end = boundaries.next()
+        while (end != BreakIterator.DONE) {
+            val word = text.substring(start, end)
+            if (word.any {
+                    !it.isWhitespace() && !it.isISOControl() && Character.getType(it) != Character.FORMAT.toInt()
+                }
+            ) {
+                add(word)
+            }
+            start = end
+            end = boundaries.next()
+        }
+    }
+}
