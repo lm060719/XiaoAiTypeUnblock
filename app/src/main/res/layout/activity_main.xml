@@ -137,39 +137,20 @@
         android:layout_marginEnd="@dimen/space_md"
         android:layout_marginBottom="@dimen/space_sm"
         android:background="@drawable/bg_restart_bar"
-        android:gravity="center_vertical"
-        android:minHeight="52dp"
-        android:orientation="horizontal"
-        android:paddingStart="@dimen/space_lg"
-        android:paddingEnd="@dimen/space_xs"
+        android:orientation="vertical"
         android:visibility="gone">
-
-        <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_restart"
-            android:tint="@color/primary" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_md"
-            android:layout_weight="1"
-            android:text="配置已更新，重启输入法后生效"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp" />
 
         <Button
             android:id="@+id/btnRestartBar"
             style="?android:attr/borderlessButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:minWidth="0dp"
-            android:paddingStart="@dimen/space_md"
-            android:paddingEnd="@dimen/space_md"
-            android:text="立即重启"
-            android:textColor="@color/primary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:minHeight="@dimen/settings_touch_height"
+            android:paddingStart="@dimen/space_lg"
+            android:paddingEnd="@dimen/space_lg"
+            android:text="@string/restart_to_apply"
+            android:textColor="@color/text_primary"
             android:textSize="14sp"
             android:textStyle="bold" />
 

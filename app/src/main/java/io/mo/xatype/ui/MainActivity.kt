@@ -24,6 +24,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatEditText
+import androidx.core.view.ViewCompat
 import androidx.core.widget.doAfterTextChanged
 import io.mo.xatype.BuildConfig
 import io.mo.xatype.R
@@ -52,22 +53,12 @@ class MainActivity : AppCompatActivity() {
     private var restartButtons = mutableListOf<View>()
     private var restartPending = false
 
-    // Home tab views refreshed on resume and on every settings change.
     private lateinit var statusCard: LinearLayout
     private lateinit var statusDot: View
     private lateinit var statusTitle: TextView
     private lateinit var statusDesc: TextView
-    private lateinit var purifyCount: TextView
-    private lateinit var keyboardCount: TextView
-    private lateinit var appearanceState: TextView
     private lateinit var updater: AppUpdater
-    private lateinit var updateBanner: LinearLayout
-    private lateinit var updateRow: LinearLayout
-
-    private val purifyKeys = FeatureCatalog.purifyGroups.flatMap { (_, features) -> features.map { it.key } }
-    private val keyboardKeys = FeatureCatalog.keyboardFeatures.map { it.key }
-
-    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshOverview() }
+    private lateinit var updateValue: TextView
 
     private val backToHome = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() = selectTab(TAB_HOME)
@@ -108,7 +99,6 @@ class MainActivity : AppCompatActivity() {
 
         if (savedInstanceState?.getBoolean(STATE_RESTART_PENDING) == true) markRestartNeeded()
         selectTab(savedInstanceState?.getInt(STATE_TAB, TAB_HOME) ?: TAB_HOME, animate = false)
-        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         refreshUpdate()
         // Only on a fresh launch: rotation and process restore go straight to the page.
         if (savedInstanceState == null && prefs.getBoolean(ConfigManager.KEY_SPLASH_ANIMATION, true) &&
@@ -122,7 +112,6 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Reports arrive whenever the input method restarts.
         refreshStatus()
-        refreshOverview()
         updater.maybeAutoCheck()
     }
 
@@ -134,7 +123,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         appearancePage.destroy()
         updater.destroy()
         super.onDestroy()
@@ -210,7 +198,10 @@ class MainActivity : AppCompatActivity() {
             }
             iconHolder.addView(icon, FrameLayout.LayoutParams(kit.dp(22), kit.dp(22), Gravity.CENTER))
             item.addView(iconHolder, LinearLayout.LayoutParams(kit.dp(56), kit.dp(30)))
-            val label = kit.label(tab.label, 12f, R.color.text_secondary).apply { setPadding(0, kit.dp(4), 0, 0) }
+            val label = kit.label(tab.label, 12f, R.color.text_secondary).apply {
+                setPadding(0, kit.dimen(R.dimen.space_xs), 0, 0)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
             item.addView(label, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
             bar.addView(item, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
             navItems += NavItem(item, indicator, icon, label)
@@ -251,7 +242,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         backToHome.isEnabled = currentTab != TAB_HOME
-        if (currentTab == TAB_HOME) refreshOverview()
     }
 
     // ------------------------------------------------------------- home
@@ -268,8 +258,11 @@ class MainActivity : AppCompatActivity() {
         }
         statusDot = View(this)
         titleRow.addView(statusDot, LinearLayout.LayoutParams(kit.dp(12), kit.dp(12)))
-        statusTitle = kit.label("", 17f, R.color.text_primary, bold = true).apply { setPadding(kit.dp(10), 0, 0, 0) }
-        titleRow.addView(statusTitle)
+        statusTitle = kit.label("", 17f, R.color.text_primary, bold = true).apply {
+            setPadding(kit.dimen(R.dimen.space_sm), 0, 0, 0)
+            ViewCompat.setAccessibilityHeading(this, true)
+        }
+        titleRow.addView(statusTitle, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         statusCard.addView(titleRow)
         statusDesc = kit.label("", 13f, R.color.text_secondary).apply {
             setPadding(0, kit.dp(6), 0, 0)
@@ -277,48 +270,34 @@ class MainActivity : AppCompatActivity() {
         }
         statusCard.addView(statusDesc)
         val restart = Button(this).apply {
-            text = "重启超级小爱输入法"
+            text = "重启输入法"
             textSize = 14f
             isAllCaps = false
             setTextColor(getColor(R.color.on_primary))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setBackgroundResource(R.drawable.bg_button_primary)
             stateListAnimator = null
+            minHeight = kit.dimen(R.dimen.settings_touch_height)
             setOnClickListener { restartInputMethod() }
         }
         restartButtons += restart
-        statusCard.addView(restart, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, kit.dp(48)).apply {
+        statusCard.addView(restart, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = kit.dimen(R.dimen.space_lg)
         })
         root.addView(statusCard, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = kit.dimen(R.dimen.space_sm)
         })
-        // Shown only while a newer release is known.
-        updateBanner = kit.card().apply { visibility = View.GONE }
-        root.addView(updateBanner, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = kit.dimen(R.dimen.space_md)
-        })
-
-        root.addView(kit.sectionHeader("已开启"))
-        val tiles = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            isBaselineAligned = false
-        }
-        purifyCount = overviewTile(tiles, R.drawable.ic_nav_shield, "净化功能", TAB_PURIFY)
-        keyboardCount = overviewTile(tiles, R.drawable.ic_nav_keyboard, "键盘增强", TAB_KEYBOARD)
-        appearanceState = overviewTile(tiles, R.drawable.ic_nav_palette, "外观个性化", TAB_APPEARANCE)
-        root.addView(tiles)
 
         val launcherAlias = ComponentName(this, "$packageName.ui.LauncherAlias")
         kit.group(root, "模块设置", listOf(
-            prefSwitch(ConfigManager.KEY_VERBOSE_LOG, "输出详细调试日志", "",
-                needsRestart = false).view,
-            kit.switchRow("启动动画", null, prefs.getBoolean(ConfigManager.KEY_SPLASH_ANIMATION, true)) { checked ->
+            prefSwitch(ConfigManager.KEY_VERBOSE_LOG, "输出详细调试日志", needsRestart = false).view,
+            kit.switchRow("启动动画", prefs.getBoolean(ConfigManager.KEY_SPLASH_ANIMATION, true)) { checked ->
                 prefs.edit().putBoolean(ConfigManager.KEY_SPLASH_ANIMATION, checked).apply()
             }.view,
             // Component state, not a preference: the launcher reads it directly.
-            kit.switchRow("隐藏桌面图标", "可从 LSPosed 管理器进入设置",
-                packageManager.getComponentEnabledSetting(launcherAlias) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            kit.switchRow("隐藏桌面图标",
+                packageManager.getComponentEnabledSetting(launcherAlias) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                detail = SettingsKit.Detail("隐藏后，可从 LSPosed 管理器的模块列表打开设置。")
             ) { hide ->
                 packageManager.setComponentEnabledSetting(
                     launcherAlias,
@@ -331,85 +310,28 @@ class MainActivity : AppCompatActivity() {
                     if (hide) "已隐藏桌面图标，可在 LSPosed 管理器的模块列表中进入" else "已恢复桌面图标",
                     Toast.LENGTH_SHORT
                 ).show()
-            }.view
+            }.view,
+            kit.navRow("输入法与外观诊断", R.drawable.ic_bug) {
+                startActivity(Intent(this, io.mo.xatype.diagnostics.DiagnosticsActivity::class.java))
+            }
         ))
 
-        updateRow = kit.navRow("检查更新", null, R.drawable.ic_shape_import) { updater.check(manual = true) }
+        updateValue = kit.rowValue("")
         kit.group(root, "版本更新", listOf(
-            updateRow,
-            kit.switchRow("自动检查更新", "打开设置时检查 GitHub 上的新版本", updater.autoCheck) { checked ->
+            kit.navRow("检查更新", value = updateValue) {
+                val available = updater.available()
+                if (available != null) updater.show(available) else updater.check(manual = true)
+            },
+            kit.switchRow("打开设置时自动检查更新", updater.autoCheck) { checked ->
                 updater.autoCheck = checked
                 if (checked) updater.maybeAutoCheck()
             }.view
         ))
-
-        kit.group(root, "更多", listOf(
-            kit.navRow("输入法与外观诊断", "采集 / 导出日志", R.drawable.ic_bug) {
-                startActivity(Intent(this, io.mo.xatype.diagnostics.DiagnosticsActivity::class.java))
-            }
-        ))
     }
 
-    /** A small card with a count; tapping it opens [tab]. Returns the value view. */
-    private fun overviewTile(parent: LinearLayout, iconRes: Int, title: String, tab: Int): TextView {
-        val tile = kit.card().apply {
-            val pad = kit.dimen(R.dimen.space_md)
-            setPadding(pad, pad, pad, pad)
-            isClickable = true
-            isFocusable = true
-            foreground = kit.selectableBackground()
-            setOnClickListener { selectTab(tab) }
-        }
-        val size = kit.dp(32)
-        tile.addView(kit.iconTile(iconRes).apply {
-            val pad = kit.dp(6)
-            setPadding(pad, pad, pad, pad)
-        }, LinearLayout.LayoutParams(size, size))
-        val value = kit.label("", 20f, R.color.text_primary, bold = true).apply {
-            setPadding(0, kit.dimen(R.dimen.space_sm), 0, 0)
-            maxLines = 1
-        }
-        tile.addView(value)
-        tile.addView(kit.label(title, 12f, R.color.text_secondary).apply { maxLines = 1 })
-        val index = parent.childCount
-        parent.addView(tile, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-            if (index > 0) marginStart = kit.dimen(R.dimen.space_sm)
-        })
-        tile.contentDescription = title
-        return value
-    }
-
-    /** The home banner and the check row follow the latest release found. */
     private fun refreshUpdate() {
-        if (!::updateBanner.isInitialized) return
-        val release = updater.available()
-        updateBanner.removeAllViews()
-        updateBanner.visibility = if (release == null) View.GONE else View.VISIBLE
-        if (release != null) {
-            updateBanner.addView(kit.navRow("发现新版本 ${release.tag}", "查看更新日志并安装", R.drawable.ic_shape_import) {
-                updater.show(release)
-            })
-        }
-        val subtitle = "当前版本 ${BuildConfig.VERSION_NAME}" + if (release != null) " · 可更新到 ${release.tag}" else ""
-        val parent = updateRow.parent as? ViewGroup ?: return
-        val index = parent.indexOfChild(updateRow)
-        val params = updateRow.layoutParams
-        parent.removeView(updateRow)
-        updateRow = kit.navRow("检查更新", subtitle, R.drawable.ic_shape_import) {
-            val available = updater.available()
-            if (available != null) updater.show(available) else updater.check(manual = true)
-        }
-        parent.addView(updateRow, index, params)
-    }
-
-    private fun refreshOverview() {
-        if (!::purifyCount.isInitialized) return
-        purifyCount.text = "${purifyKeys.count { prefs.getBoolean(it, false) }}/${purifyKeys.size}"
-        val predictionEnabled = PredictionMode.resolve(prefs.getString(ConfigManager.KEY_PREDICTION_MODE, null)) != PredictionMode.KEEP
-        val oneHandEnabled = prefs.getInt(ConfigManager.KEY_ONE_HAND_SIDE, 0) in 1..2
-        keyboardCount.text = "${keyboardKeys.count { prefs.getBoolean(it, false) } +
-            (if (predictionEnabled) 1 else 0) + (if (oneHandEnabled) 1 else 0)}/${keyboardKeys.size + 2}"
-        appearanceState.text = if (prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)) "已启用" else "未启用"
+        if (!::updateValue.isInitialized) return
+        updateValue.text = updater.available()?.let { "可更新至 ${it.tag}" } ?: BuildConfig.VERSION_NAME
     }
 
     private fun refreshStatus() {
@@ -427,11 +349,11 @@ class MainActivity : AppCompatActivity() {
             val adaptation = adaptationSummary(versionCode)
             ready = adaptation.second
             statusTitle.text = if (ready) "模块已生效" else "小爱输入法已安装"
-            statusDesc.text = "版本 $versionName ($versionCode)\n${adaptation.first}"
+            statusDesc.text = listOfNotNull("输入法 $versionName ($versionCode)", adaptation.first).joinToString("\n")
         } catch (_: PackageManager.NameNotFoundException) {
             ready = false
             statusTitle.text = "未检测到超级小爱输入法"
-            statusDesc.text = "请确认已安装 com.xiaomi.type 并启用模块"
+            statusDesc.text = "请安装超级小爱输入法（com.xiaomi.type）"
         }
         statusDot.setBackgroundResource(if (ready) R.drawable.dot_active else R.drawable.dot_inactive)
         statusCard.background = GradientDrawable().apply {
@@ -440,11 +362,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Reads what the hooked processes reported about locating their targets.
-     * @return the status text, and whether every feature was located.
-     */
-    private fun adaptationSummary(imeVersionCode: Long): Pair<String, Boolean> {
+    /** Returns any outstanding adaptation issue and whether the module is ready. */
+    private fun adaptationSummary(imeVersionCode: Long): Pair<String?, Boolean> {
         val prefs = getSharedPreferences(AdaptationStatus.PREFS_NAME, Context.MODE_PRIVATE)
         fun report(pkg: String) = prefs.getString(pkg, null)
             ?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -481,7 +400,7 @@ class MainActivity : AppCompatActivity() {
             List(keys.length()) { keys.getString(it) }
         }
         return if (missing.isEmpty()) {
-            "已完成自动适配，功能按各自开关启用" to true
+            null to true
         } else {
             "尚未适配或安装失败：" + AdaptationStatus.featureNames(missing).joinToString("、") to false
         }
@@ -501,16 +420,16 @@ class MainActivity : AppCompatActivity() {
         // Key shortcuts are independent of experimental keyboards and appearance.
         kit.group(root, "输入增强", listOf(
             featureSwitch(FeatureCatalog.keyboardShortcuts).view,
-            kit.navRow("自定义快捷键", null, R.drawable.ic_nav_keyboard) {
+            kit.navRow("自定义快捷键", R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, ShortcutKeysActivity::class.java))
             },
-            kit.navRow("个人字典", null, R.drawable.ic_text_fields) {
+            shortcutLabelRow(),
+            kit.navRow("个人字典", R.drawable.ic_text_fields) {
                 startActivity(Intent(this, PersonalDictionaryActivity::class.java))
             },
             handwritingRow(),
             featureSwitch(FeatureCatalog.emojiCandidates).view,
-            predictionModeRow(),
-            shortcutLabelRow()
+            predictionModeRow()
         ), first = true)
 
         kit.group(root, "按键反馈", listOf(featureSwitch(FeatureCatalog.keyboardHaptics).view))
@@ -525,17 +444,17 @@ class MainActivity : AppCompatActivity() {
         kit.group(root, "输入方案", listOf(
             featureSwitch(FeatureCatalog.t9Shuangpin).view,
             t9ShuangpinSchemeRow(),
-            kit.navRow("形码输入", null, R.drawable.ic_text_fields) {
+            kit.navRow("形码输入", R.drawable.ic_text_fields) {
                 startActivity(Intent(this, ShapeInputActivity::class.java))
             },
-            kit.navRow("18 键键盘", null, R.drawable.ic_nav_keyboard) {
+            kit.navRow("18 键键盘", R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, Keyboard18Activity::class.java))
             },
-            kit.navRow("14 键键盘", null, R.drawable.ic_nav_keyboard) {
+            kit.navRow("14 键键盘", R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, Keyboard18Activity::class.java)
                     .putExtra(Keyboard18Activity.EXTRA_LAYOUT, Keyboard18Activity.LAYOUT_14))
             },
-            kit.navRow("在线词库", "雾凇拼音 / 万象拼音，二选一", R.drawable.ic_shape_import) {
+            kit.navRow("在线词库", R.drawable.ic_shape_import) {
                 startActivity(Intent(this, OnlineDictActivity::class.java))
             }
         ))
@@ -544,235 +463,127 @@ class MainActivity : AppCompatActivity() {
     private fun predictionModeRow(): View {
         val modes = PredictionMode.entries
         fun selected() = PredictionMode.resolve(prefs.getString(ConfigManager.KEY_PREDICTION_MODE, null))
-        lateinit var row: View
-        row = kit.navRow("上屏后联想", "${selected().title} · ${selected().summary}", null) {
-            InfoSheet.choose(this, "上屏后联想", modes.map { it.title }, modes.indexOf(selected()),
-                modes.map { it.summary }) { index ->
+        val value = kit.rowValue(selected().title)
+        return kit.navRow("上屏后联想", value = value) {
+            InfoSheet.choose(this, "上屏后联想", modes.map { it.title }, modes.indexOf(selected())) { index ->
                 prefs.edit().putString(ConfigManager.KEY_PREDICTION_MODE, modes[index].name).apply()
-                val parent = row.parent as? ViewGroup
-                if (parent != null) {
-                    val position = parent.indexOfChild(row)
-                    val params = row.layoutParams
-                    parent.removeView(row)
-                    parent.addView(predictionModeRow(), position, params)
-                }
+                value.text = modes[index].title
                 markRestartNeeded()
             }
         }
-        return row
     }
 
     private fun oneHandRow(): View {
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val labels = listOf("关闭", "左手", "右手")
         fun selected() = prefs.getInt(ConfigManager.KEY_ONE_HAND_SIDE, 0).coerceIn(labels.indices)
-        fun rebuild() {
-            container.removeAllViews()
-            container.addView(kit.navRow("单手模式", "${labels[selected()]} · 也可从键盘菜单即时切换", R.drawable.ic_nav_keyboard) {
-                InfoSheet.choose(this, "单手模式", labels, selected(), listOf("恢复原生布局",
-                    "竖屏时缩窄并靠左，横屏和悬浮键盘保持原生布局",
-                    "竖屏时缩窄并靠右，横屏和悬浮键盘保持原生布局")) { index ->
-                    ConfigManager.editOneHandSide(prefs, index).apply()
-                    rebuild()
-                    markRestartNeeded()
-                }
-            })
-            if (selected() != 0) {
-                val policy = io.mo.xatype.hooks.OneHandPolicy
-                container.addView(shortcutLabelSlider("键盘宽度", policy.WIDTH_RANGE,
-                    prefs.getInt(ConfigManager.KEY_ONE_HAND_WIDTH, policy.DEFAULT_WIDTH).coerceIn(policy.WIDTH_RANGE),
-                    "单手键盘宽度，70 到 90 百分比", { "$it%" }) {
-                    prefs.edit().putInt(ConfigManager.KEY_ONE_HAND_WIDTH, it).apply()
-                })
-                container.addView(kit.resourceLabel("重启输入法后生效；键盘最小宽度为 240 dp。", R.dimen.settings_description_size, R.color.text_secondary).apply {
-                    val pad = kit.dimen(R.dimen.settings_row_padding)
-                    setPadding(pad, 0, pad, kit.dimen(R.dimen.space_sm))
-                })
+        val policy = io.mo.xatype.hooks.OneHandPolicy
+        val width = settingSlider("单手键盘宽度", policy.WIDTH_RANGE,
+            prefs.getInt(ConfigManager.KEY_ONE_HAND_WIDTH, policy.DEFAULT_WIDTH),
+            "单手键盘宽度百分比", { "$it%" }) {
+            prefs.edit().putInt(ConfigManager.KEY_ONE_HAND_WIDTH, it).apply()
+        }
+        width.visibility = if (selected() == 0) View.GONE else View.VISIBLE
+        val value = kit.rowValue(labels[selected()])
+        val row = kit.navRow("单手模式", value = value, detail = SettingsKit.Detail(
+            "也可从键盘菜单即时切换。适用于竖屏的非悬浮键盘，最小宽度为 240 dp。"
+        )) {
+            InfoSheet.choose(this, "单手模式", labels, selected()) { index ->
+                ConfigManager.editOneHandSide(prefs, index).apply()
+                value.text = labels[index]
+                width.visibility = if (index == 0) View.GONE else View.VISIBLE
+                markRestartNeeded()
             }
         }
-        rebuild()
-        return container
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(row)
+            addView(width)
+        }
     }
 
     private fun t9ShuangpinSchemeRow(): View {
         val schemes = T9ShuangpinScheme.entries
         fun selected() = T9ShuangpinScheme.resolve(
             prefs.getString(ConfigManager.KEY_T9_SHUANGPIN_SCHEME, null))
-        lateinit var row: View
-        row = kit.navRow("九键双拼方案", selected().title, R.drawable.ic_text_fields) {
+        val value = kit.rowValue(selected().title)
+        return kit.navRow("九键双拼方案", value = value) {
             InfoSheet.choose(this, "九键双拼方案", schemes.map { it.title }, schemes.indexOf(selected())) { index ->
                 val scheme = schemes[index]
                 prefs.edit().putString(ConfigManager.KEY_T9_SHUANGPIN_SCHEME, scheme.name).apply()
-                // Rebuild the row's subtitle without rebuilding the page or losing scroll position.
-                val parent = row.parent as? ViewGroup
-                if (parent != null) {
-                    val position = parent.indexOfChild(row)
-                    val params = row.layoutParams
-                    parent.removeView(row)
-                    parent.addView(t9ShuangpinSchemeRow(), position, params)
-                }
+                value.text = scheme.title
                 markRestartNeeded()
             }
         }
-        return row
     }
 
     private fun toolbarHeightRow(): View {
         val range = ConfigManager.TOOLBAR_HEIGHT_RANGE
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val value = kit.label("", 13f, R.color.primary, bold = true)
-        val initial = prefs.getInt(ConfigManager.KEY_TOOLBAR_HEIGHT, ConfigManager.TOOLBAR_HEIGHT_DEFAULT)
-            .coerceIn(range)
-        val seek = kit.seekBar(range.last - range.first, initial - range.first,
-            "顶部功能栏高度，${range.first} 到 ${range.last} dp")
-        val toggle = featureSwitch(FeatureCatalog.toolbarHeight) { checked ->
-            seek.isEnabled = checked
-            value.text = if (checked) "${range.first + seek.progress} dp" else "原生高度"
-        }
-        container.addView(toggle.view)
-        val sliderRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            val pad = kit.dimen(R.dimen.settings_row_padding)
-            setPadding(pad - kit.dimen(R.dimen.space_sm), 0, pad, kit.dimen(R.dimen.space_sm))
-        }
-        sliderRow.addView(seek, LinearLayout.LayoutParams(0, kit.dimen(R.dimen.settings_touch_height), 1f))
-        sliderRow.addView(value, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            marginStart = kit.dimen(R.dimen.space_sm)
-        })
-        value.gravity = Gravity.END
-        container.addView(sliderRow)
-        seek.isEnabled = toggle.switch.isChecked
-        value.text = if (seek.isEnabled) "$initial dp" else "原生高度"
-        var lastTick = seek.progress / 4
-        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                if (toggle.switch.isChecked) value.text = "${range.first + progress} dp"
-                if (!fromUser) return
-                prefs.edit().putInt(ConfigManager.KEY_TOOLBAR_HEIGHT, range.first + progress).apply()
-                if (progress / 4 != lastTick) {
-                    lastTick = progress / 4
-                    SettingsKit.tickHaptic(seekBar)
-                }
+        return featureControls(FeatureCatalog.toolbarHeight,
+            settingSlider("高度", range,
+                prefs.getInt(ConfigManager.KEY_TOOLBAR_HEIGHT, ConfigManager.TOOLBAR_HEIGHT_DEFAULT),
+                "顶部功能栏高度（dp）", { "$it dp" }, tickStep = 4) {
+                prefs.edit().putInt(ConfigManager.KEY_TOOLBAR_HEIGHT, it).apply()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) = markRestartNeeded()
-        })
-        return container
+        )
     }
 
-    /** Keyboard bottom spacing is independent of appearance profiles. */
-    private fun bottomSpacingRow(): View {
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val value = kit.label("", 13f, R.color.primary, bold = true)
-        val seek = kit.seekBar(100, prefs.getInt(ConfigManager.KEY_BOTTOM_SPACING, 0).coerceIn(0, 100),
-            "键盘底部间距，0 到 100 dp")
-        val toggle = featureSwitch(FeatureCatalog.bottomSpacing) { checked ->
-            seek.isEnabled = checked
-            value.text = if (checked) "${seek.progress} dp" else "原生间距"
-        }
-        container.addView(toggle.view)
-
-        val sliderRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            val pad = kit.dimen(R.dimen.settings_row_padding)
-            setPadding(pad - kit.dp(8), 0, pad, kit.dimen(R.dimen.space_sm))
-        }
-        sliderRow.addView(seek, LinearLayout.LayoutParams(0, kit.dp(48), 1f))
-        sliderRow.addView(value, LinearLayout.LayoutParams(kit.dp(72), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            marginStart = kit.dimen(R.dimen.space_sm)
-        })
-        value.gravity = Gravity.END
-        container.addView(sliderRow)
-
-        val enabled = toggle.switch.isChecked
-        seek.isEnabled = enabled
-        value.text = if (enabled) "${seek.progress} dp" else "原生间距"
-        var lastTick = seek.progress / 10
-        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                if (toggle.switch.isChecked) value.text = "$progress dp"
-                if (!fromUser) return
-                prefs.edit().putInt(ConfigManager.KEY_BOTTOM_SPACING, progress).apply()
-                if (progress / 10 != lastTick) {
-                    lastTick = progress / 10
-                    SettingsKit.tickHaptic(seekBar)
-                }
+    private fun bottomSpacingRow(): View =
+        featureControls(FeatureCatalog.bottomSpacing,
+            settingSlider("间距", 0..100, prefs.getInt(ConfigManager.KEY_BOTTOM_SPACING, 0),
+                "键盘底部间距（dp）", { "$it dp" }, tickStep = 10) {
+                prefs.edit().putInt(ConfigManager.KEY_BOTTOM_SPACING, it).apply()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) = markRestartNeeded()
-        })
-        return container
-    }
+        )
 
     private fun featureSwitch(feature: Feature, onChange: ((Boolean) -> Unit)? = null) =
-        prefSwitch(feature.key, feature.title, feature.summary, feature.detail, onChange = onChange)
+        prefSwitch(feature.key, feature.title, feature.detail, onChange = onChange)
 
-    /** Action text shown on the shortcut keys themselves: on/off plus size and position. */
-    private fun shortcutLabelRow(): View {
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val controls = ArrayList<View>()
-        fun enableTree(view: View, on: Boolean) {
-            view.isEnabled = on
-            if (view is ViewGroup) for (index in 0 until view.childCount) enableTree(view.getChildAt(index), on)
+    private fun featureControls(feature: Feature, vararg controls: View): View {
+        val children = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            controls.forEach { addView(it) }
         }
-        fun refresh(on: Boolean) = controls.forEach { enableTree(it, on); it.alpha = if (on) 1f else 0.45f }
-        val toggle = featureSwitch(FeatureCatalog.shortcutLabels) { refresh(it) }
-        container.addView(toggle.view)
-        controls += shortcutLabelSlider("文字大小", 8..20,
+        val toggle = featureSwitch(feature) { checked ->
+            children.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        children.visibility = if (toggle.switch.isChecked) View.VISIBLE else View.GONE
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(toggle.view)
+            addView(children)
+        }
+    }
+
+    private fun shortcutLabelRow(): View = featureControls(FeatureCatalog.shortcutLabels,
+        settingSlider("文字大小", 8..20,
             prefs.getInt(ConfigManager.KEY_SHORTCUT_LABEL_SIZE, 11),
-            "快捷操作文字大小，8 到 20 sp",
-            { "$it sp" }) { size ->
+            "快捷操作文字大小（sp）", { "$it sp" }) { size ->
             prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_SIZE, size).apply()
-        }
-        controls += shortcutLabelSlider("水平位置", -40..40,
+        },
+        settingSlider("水平位置", -40..40,
             prefs.getInt(ConfigManager.KEY_SHORTCUT_LABEL_X, 0),
-            "快捷操作文字水平位置，负值向左",
-            ::labelOffset) { x ->
+            "快捷操作文字水平位置，负值向左", ::labelOffset) { x ->
             prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_X, x).apply()
-        }
-        controls += shortcutLabelSlider("垂直位置", -40..40,
+        },
+        settingSlider("垂直位置", -40..40,
             prefs.getInt(ConfigManager.KEY_SHORTCUT_LABEL_Y, -2),
-            "快捷操作文字垂直位置，负值向上",
-            ::labelOffset) { y ->
+            "快捷操作文字垂直位置，负值向上", ::labelOffset) { y ->
             prefs.edit().putInt(ConfigManager.KEY_SHORTCUT_LABEL_Y, y).apply()
         }
-        controls.forEach { container.addView(it) }
-        refresh(toggle.switch.isChecked)
-        return container
-    }
+    )
 
-    /** Handwriting switch plus the upward distance that keeps swipe-up digits and symbols. */
-    private fun handwritingRow(): View {
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val sliders = ArrayList<View>()
-        fun refresh(on: Boolean) {
-            fun enableTree(view: View) {
-                view.isEnabled = on
-                if (view is ViewGroup) for (index in 0 until view.childCount) enableTree(view.getChildAt(index))
-            }
-            sliders.forEach { enableTree(it); it.alpha = if (on) 1f else 0.45f }
-        }
-        val toggle = featureSwitch(FeatureCatalog.keyboardHandwriting) { refresh(it) }
-        container.addView(toggle.view)
-        sliders += shortcutLabelSlider("上滑起笔距离", ConfigManager.HANDWRITING_UP_DISTANCE_RANGE,
+    private fun handwritingRow(): View = featureControls(FeatureCatalog.keyboardHandwriting,
+        settingSlider("上滑起笔距离", ConfigManager.HANDWRITING_UP_DISTANCE_RANGE,
             prefs.getInt(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, ConfigManager.HANDWRITING_UP_DISTANCE_DEFAULT),
-            "向上起笔转为手写所需的距离",
-            { "$it dp" }) { distance ->
+            "上滑起笔距离（dp）", { "$it dp" }) { distance ->
             prefs.edit().putInt(ConfigManager.KEY_HANDWRITING_UP_DISTANCE, distance).apply()
-        }
-        sliders += shortcutLabelSlider("左右起笔距离", ConfigManager.HANDWRITING_SIDE_DISTANCE_RANGE,
+        },
+        settingSlider("左右起笔距离", ConfigManager.HANDWRITING_SIDE_DISTANCE_RANGE,
             prefs.getInt(ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, ConfigManager.HANDWRITING_SIDE_DISTANCE_DEFAULT),
-            "向左或向右起笔转为手写所需的距离",
-            { "$it dp" }) { distance ->
+            "左右起笔距离（dp）", { "$it dp" }) { distance ->
             prefs.edit().putInt(ConfigManager.KEY_HANDWRITING_SIDE_DISTANCE, distance).apply()
         }
-        sliders.forEach { container.addView(it) }
-        refresh(toggle.switch.isChecked)
-        return container
-    }
+    )
 
     private fun labelOffset(value: Int) = when {
         value == 0 -> "居中"
@@ -780,12 +591,13 @@ class MainActivity : AppCompatActivity() {
         else -> "$value dp"
     }
 
-    private fun shortcutLabelSlider(
+    private fun settingSlider(
         title: String,
         range: IntRange,
         initial: Int,
         description: String,
         format: (Int) -> String,
+        tickStep: Int = 8,
         save: (Int) -> Unit
     ): View {
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -797,11 +609,14 @@ class MainActivity : AppCompatActivity() {
         }
         head.addView(kit.label(title, 14f, R.color.text_primary),
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val value = kit.label(format(initial), 13f, R.color.primary, bold = true)
+        val currentValue = format(initial.coerceIn(range))
+        val value = kit.rowValue(currentValue)
         head.addView(value)
         column.addView(head)
         val seek = kit.seekBar(range.last - range.first,
             (initial - range.first).coerceIn(0, range.last - range.first), description)
+        ViewCompat.setStateDescription(seek, currentValue)
+        head.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS)
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -810,20 +625,30 @@ class MainActivity : AppCompatActivity() {
         }
         body.addView(seek, LinearLayout.LayoutParams(0, kit.dimen(R.dimen.settings_touch_height), 1f))
         column.addView(body)
-        var lastTick = seek.progress / 8
+        var lastTick = seek.progress / tickStep
+        var trackingTouch = false
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val current = range.first + progress
-                value.text = format(current)
+                val formatted = format(current)
+                value.text = formatted
+                ViewCompat.setStateDescription(seekBar, formatted)
                 if (!fromUser) return
                 save(current)
-                if (progress / 8 != lastTick) {
-                    lastTick = progress / 8
+                if (!trackingTouch) markRestartNeeded()
+                if (progress / tickStep != lastTick) {
+                    lastTick = progress / tickStep
                     SettingsKit.tickHaptic(seekBar)
                 }
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) = markRestartNeeded()
+            override fun onStartTrackingTouch(seekBar: SeekBar) {
+                trackingTouch = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                trackingTouch = false
+                markRestartNeeded()
+            }
         })
         return column
     }
@@ -832,11 +657,10 @@ class MainActivity : AppCompatActivity() {
     private fun prefSwitch(
         key: String,
         title: String,
-        summary: String?,
         detail: SettingsKit.Detail? = null,
         needsRestart: Boolean = true,
         onChange: ((Boolean) -> Unit)? = null
-    ): SettingsKit.SwitchRow = kit.switchRow(title, summary, prefs.getBoolean(key, false), detail = detail) { checked ->
+    ): SettingsKit.SwitchRow = kit.switchRow(title, prefs.getBoolean(key, false), detail = detail) { checked ->
         prefs.edit().putBoolean(key, checked).apply()
         if (key == ConfigManager.KEY_SCREENSHOT_CLIPBOARD) {
             contentResolver.notifyChange(ConfigManager.SCREENSHOT_CONFIG_URI, null)

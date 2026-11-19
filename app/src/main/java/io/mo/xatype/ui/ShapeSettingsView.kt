@@ -125,7 +125,7 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         val hero = column().apply { background = style.surface(); pad(XL) }
         body.addView(hero)
         name = text("准备码表", TITLE, style.primary, true)
-        hero.addView(name, spaced(top = SM))
+        hero.addView(name)
         skeleton = column().apply {
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             addView(View(context).apply { background = style.surface(style.outline, SMALL_RADIUS) },
@@ -143,6 +143,11 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
             visibility = GONE
         }
         hero.addView(metrics, spaced(top = LG, bottom = SM))
+        hostStatus = text("", BODY, style.secondary).apply {
+            setTextIsSelectable(true)
+            accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        hero.addView(hostStatus, spaced(top = SM))
         hero.addView(toggleRow("在键盘选择中显示虎码/五笔", "显示入口后，在小爱键盘面板中选择使用", ShapeStore.SHOW_IN_PICKER, inset = false), spaced(top = SM))
 
         val tables = group(body, "码表管理")
@@ -160,14 +165,6 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         selection.addView(toggleRow("数字选词", "按 1–9 选择对应候选", ShapeStore.DIGITS))
         selection.addView(toggleRow("分号选二", "用半角分号 ; 选择第二候选", ShapeStore.SEMICOLON))
         selection.addView(toggleRow("引号选三", "用半角单引号 ' 选择第三候选", ShapeStore.QUOTE))
-
-        val runtime = group(body, "运行状态")
-        runtime.pad(LG)
-        hostStatus = text("正在准备内置码表…", BODY, style.secondary).apply {
-            setTextIsSelectable(true)
-            accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
-        }
-        runtime.addView(hostStatus)
 
         val footerContent = column().apply {
             setPadding(style.dp(LG), style.dp(MD), style.dp(LG), style.dp(MD))
@@ -207,9 +204,9 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         toggles.forEach { (key, toggle) ->
             toggle.isChecked = snapshot.getBoolean(key, key != ShapeStore.SORT_WEIGHT)
         }
-        hostStatus.text = if (pendingRestart) "设置已保存，重启输入法后生效。" else
-            snapshot.getString(ShapeStore.STATUS, "尚未收到输入法运行结果")
-        restart.text = if (pendingRestart) "重启并应用更改" else "重启输入法"
+        hostStatus.text = snapshot.getString(ShapeStore.STATUS, "尚未收到输入法运行结果")
+        hostStatus.visibility = if (pendingRestart) GONE else VISIBLE
+        restart.text = if (pendingRestart) context.getString(R.string.restart_to_apply) else "重启输入法"
         errorCard.visibility = GONE
         binding = false
         updateEnabled()
@@ -219,7 +216,10 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         busy = value
         skeleton.visibility = if (value && !hasSnapshot) VISIBLE else GONE
         metrics.visibility = if (hasSnapshot) VISIBLE else GONE
-        if (value) hostStatus.text = message
+        if (value) {
+            hostStatus.text = message
+            hostStatus.visibility = if (hasSnapshot && message.isNotEmpty()) VISIBLE else GONE
+        }
         updateEnabled()
     }
 
@@ -228,8 +228,10 @@ internal class ShapeSettingsView(context: Context, private val actions: Actions)
         errorMessage.text = message
         errorCard.visibility = VISIBLE
         skeleton.visibility = GONE
-        if (!hasSnapshot) name.text = "尚未选择码表"
-        if (!hasSnapshot) hostStatus.text = "可重试读取、导入码表，或恢复内置虎码。"
+        if (!hasSnapshot) {
+            name.text = "尚未选择码表"
+            hostStatus.visibility = GONE
+        }
     }
 
     private fun updateEnabled() {

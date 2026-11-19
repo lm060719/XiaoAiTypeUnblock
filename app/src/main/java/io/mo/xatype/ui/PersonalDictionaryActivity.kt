@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -32,6 +33,7 @@ class PersonalDictionaryActivity : AppCompatActivity() {
     private var query = ""
     private lateinit var list: RecyclerView
     private lateinit var empty: android.widget.TextView
+    private lateinit var addFirstEntry: Button
     private val rows = Rows()
     private var dialog: AlertDialog? = null
     private var editing: PersonalDictionary.Entry? = null
@@ -70,15 +72,17 @@ class PersonalDictionaryActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(kit.dp(16), kit.dp(8), kit.dp(16), kit.dp(8))
         }
-        kit.group(controls, null, listOf(kit.switchRow("启用个人字典", "26 键全拼 · 重启输入法生效",
-            prefs.getBoolean(ConfigManager.KEY_PERSONAL_DICTIONARY, false)) { enabled ->
+        kit.group(controls, null, listOf(kit.switchRow("启用 26 键全拼个人字典",
+            prefs.getBoolean(ConfigManager.KEY_PERSONAL_DICTIONARY, false),
+            detail = SettingsKit.Detail("更改个人字典后，重启输入法生效。")) { enabled ->
             prefs.edit().putBoolean(ConfigManager.KEY_PERSONAL_DICTIONARY, enabled).apply()
         }.view))
         controls.addView(field("搜索词条", 0).apply {
             setSingleLine()
             setText(query)
             doAfterTextChanged { query = it.toString(); refresh() }
-        }, LinearLayout.LayoutParams(-1, kit.dp(56)).apply { topMargin = kit.dp(8) })
+            minHeight = kit.dimen(R.dimen.settings_touch_height)
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dimen(R.dimen.space_sm) })
         root.addView(controls)
         val content = FrameLayout(this)
         list = RecyclerView(this).apply {
@@ -87,9 +91,16 @@ class PersonalDictionaryActivity : AppCompatActivity() {
             setPadding(kit.dp(16), 0, kit.dp(16), kit.dp(16))
             clipToPadding = false
         }
-        empty = kit.label("添加词条", 16f, R.color.text_secondary).apply { gravity = Gravity.CENTER }
+        empty = kit.label("没有匹配的词条", 16f, R.color.text_secondary).apply { gravity = Gravity.CENTER }
+        addFirstEntry = Button(this).apply {
+            text = "添加词条"
+            minHeight = kit.dimen(R.dimen.settings_touch_height)
+            setTextColor(kit.color(R.color.primary))
+            setOnClickListener { edit(null) }
+        }
         content.addView(list, FrameLayout.LayoutParams(-1, -1))
         content.addView(empty, FrameLayout.LayoutParams(-1, -1))
+        content.addView(addFirstEntry, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         SettingsWindow.apply(window, root, topBar = toolbar)
@@ -128,8 +139,9 @@ class PersonalDictionaryActivity : AppCompatActivity() {
             it.shortcut.contains(query.trim(), ignoreCase = true) || it.phrase.contains(query.trim(), ignoreCase = true)
         }
         rows.submitList(matches)
-        empty.text = if (dictionary.entries.isEmpty()) "添加词条" else "没有匹配的词条"
-        empty.visibility = if (matches.isEmpty()) View.VISIBLE else View.GONE
+        val hasEntries = dictionary.entries.isNotEmpty()
+        empty.visibility = if (hasEntries && matches.isEmpty()) View.VISIBLE else View.GONE
+        addFirstEntry.visibility = if (hasEntries) View.GONE else View.VISIBLE
     }
 
     private fun save(entries: List<PersonalDictionary.Entry>): Boolean = try {

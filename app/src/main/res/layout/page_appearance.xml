@@ -93,7 +93,8 @@
         <LinearLayout
             android:id="@+id/previewHeader"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/settings_touch_height"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="6dp"
@@ -106,38 +107,20 @@
                 android:src="@drawable/ic_drag_indicator"
                 android:tint="@color/text_secondary" />
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/tvPreviewTitle"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_xs"
                 android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/tvPreviewTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:maxLines="1"
-                    android:text="实时预览"
-                    android:textColor="@color/text_primary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvPreviewHint"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp" />
-
-            </LinearLayout>
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
 
             <ImageButton
                 android:id="@+id/btnPreviewSize"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="@dimen/settings_touch_height"
+                android:layout_height="@dimen/settings_touch_height"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="切换预览大小"
                 android:padding="12dp"
@@ -147,8 +130,8 @@
 
             <ImageButton
                 android:id="@+id/btnPreviewCollapse"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="@dimen/settings_touch_height"
+                android:layout_height="@dimen/settings_touch_height"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="收起预览"
                 android:padding="10dp"

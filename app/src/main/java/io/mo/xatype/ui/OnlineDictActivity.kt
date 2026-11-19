@@ -5,6 +5,7 @@ import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -124,21 +125,21 @@ class OnlineDictActivity : AppCompatActivity() {
         body.removeAllViews()
 
         val busy = busyMessage != null
+        kit.group(body, null, listOf(statusRow(state, current)))
         val sourceRows = OnlineDictSource.entries.map { source ->
-            kit.navRow(source.title + if (source == current) "（当前）" else "", null, R.drawable.ic_text_fields) {
+            kit.navRow(source.title, R.drawable.ic_text_fields,
+                value = if (source == current) kit.rowValue("当前") else null) {
                 if (!busy) confirmSwitch(source, current)
-            }
+            }.apply { isSelected = source == current }
         }.toMutableList()
-        sourceRows += kit.navRow("手动导入词库", null, R.drawable.ic_shape_import,
+        sourceRows += kit.navRow("手动导入词库", R.drawable.ic_shape_import,
             detail = SettingsKit.Detail("从设备存储选择雾凇拼音或万象拼音词库，无需连接 GitHub。",
                 notes = listOf("支持上游 ZIP 词库包或 UTF-8 .dict.yaml 文件，可多选词表合并导入。",
                     "ZIP 中提取雾凇的 base、ext 或万象的 jichu 词表；其他压缩格式请先解压。",
                     "导入成功后替换上次导入的词，并关闭自动在线更新；重启输入法生效。"))) {
             if (!busy && !pickingFiles) chooseLocalSource()
         }
-        kit.group(body, "词库来源", sourceRows, first = true)
-
-        kit.group(body, "状态", listOf(statusRow(state, current)))
+        kit.group(body, "词库来源", sourceRows)
 
         val rows = ArrayList<View>()
         if (current != null) {
@@ -146,31 +147,30 @@ class OnlineDictActivity : AppCompatActivity() {
             val installed = state.getString(OnlineDictStore.VERSION).orEmpty()
             val hasUpdate = latest.isNotEmpty() && latest != installed
             rows += kit.navRow(if (hasUpdate) "下载并导入更新" else "检查更新",
-                null,
                 R.drawable.ic_restart) {
                 if (busy) return@navRow
                 if (hasUpdate) install(current) else checkNow(current, manual = true)
             }
             if (!pending(state) && state.getInt(OnlineDictStore.HOST_IMPORTED) == 0 &&
                 state.getString(OnlineDictStore.HOST_STATUS).orEmpty().isNotEmpty() && OnlineDictStore.hasWords(this)) {
-                rows += kit.navRow("重新导入", null, R.drawable.ic_shape_import) {
+                rows += kit.navRow("重新导入", R.drawable.ic_shape_import) {
                     if (busy) return@navRow
                     runCatching { OnlineDictStore.requeue(this) }.onFailure { toast(it.message ?: "无法保存导入请求") }
                     render()
                 }
             }
-            rows += kit.navRow("清除导入的词", null, R.drawable.ic_shape_restore) {
+            rows += kit.navRow("清除导入的词", R.drawable.ic_shape_restore) {
                 if (!busy) confirmClear()
             }
         }
         val cap = state.getInt(OnlineDictStore.MAX_WORDS)
-        rows += kit.navRow("词条数量上限（$cap 条）", null, R.drawable.ic_shape_import,
+        rows += kit.navRow("词条数量上限", value = kit.rowValue("$cap 条"),
             detail = SettingsKit.Detail("小爱输入法的用户词库总共只能存约 1.6 万个词，与你自己输入、学习的词和联系人共用，存满后会挤掉旧词。",
                 notes = listOf("导入后用户词库总数不超过 1.2 万，给你自己的新词留出空间；不够时会少导入，不会挤掉原有的词。",
                     "修改后需重新导入才会生效。", "仅保留 2–7 个汉字的词条，单字与带字母数字的词不导入。"))) {
             if (!busy) chooseCap(cap, current)
         }
-        rows += kit.switchRow("打开页面时自动更新", null,
+        rows += kit.switchRow("打开页面时自动更新",
             state.getBoolean(OnlineDictStore.AUTO_UPDATE), R.drawable.ic_restart) { value ->
             runCatching { OnlineDictStore.setAutoUpdate(this, value) }
                 .onFailure { toast(it.message ?: "无法保存设置") }
@@ -179,8 +179,11 @@ class OnlineDictActivity : AppCompatActivity() {
         kit.group(body, "更新与管理", rows)
 
         if (pending(state)) {
-            kit.group(body, null, listOf(kit.navRow("重启输入法使其生效", null,
-                R.drawable.ic_restart) { ImeRestarter.restart(this) { if (!isDestroyed) render() } }))
+            kit.group(body, null, listOf(kit.navRow(getString(R.string.restart_to_apply), R.drawable.ic_restart) {
+                ImeRestarter.restart(this) { if (!isDestroyed) render() }
+            })).apply {
+                (layoutParams as LinearLayout.LayoutParams).topMargin = kit.dimen(R.dimen.space_lg)
+            }
         }
     }
 
@@ -190,6 +193,9 @@ class OnlineDictActivity : AppCompatActivity() {
     private fun statusRow(state: Bundle, current: OnlineDictSource?): View {
         val row = kit.row().apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
+            val pad = kit.dimen(R.dimen.settings_row_padding)
+            setPadding(pad, pad, pad, pad)
             isClickable = false
             isFocusable = false
             foreground = null
@@ -229,13 +235,12 @@ class OnlineDictActivity : AppCompatActivity() {
                 val total = state.getInt(OnlineDictStore.HOST_TOTAL)
                 if (total > 0) {
                     progress = (done.toLong() * statusProgress.max / total).toInt()
-                    lines += "$done / $total 条 · ${done.toLong() * 100 / total}%"
+                    lines += "$done / $total 条"
                 }
                 lines += "请等待完成，期间不要再次重启输入法"
             }
             current == null && state.getString(OnlineDictStore.ACTION) != OnlineDictStore.ACTION_CLEAR -> {
                 title = "尚未导入"
-                lines += "选择在线来源或手动导入词库文件"
             }
             current == null -> title = if (pending(state)) "已排队清除，重启输入法后生效" else hostLine(state)
             else -> {
@@ -249,6 +254,7 @@ class OnlineDictActivity : AppCompatActivity() {
             DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(latestTime))
         statusTitle.text = title
         statusDetail.text = lines.joinToString("\n")
+        statusDetail.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
         statusDetail.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
         statusProgress.visibility = if (busyMessage != null || hostRunning) View.VISIBLE else View.GONE
         statusProgress.isIndeterminate = progress == null

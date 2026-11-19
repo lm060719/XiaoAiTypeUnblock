@@ -4,12 +4,15 @@ import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.widget.NestedScrollView
 import io.mo.xatype.R
 import io.mo.xatype.config.ConfigManager
@@ -57,12 +60,23 @@ class ShortcutKeysActivity : AppCompatActivity() {
             setBackgroundColor(kit.color(R.color.background_light))
         }
         val toolbar = Toolbar(this).apply {
-            title = "自定义快捷键"
+            title = "下滑快捷键"
             setTitleTextColor(style.primary)
             setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
             navigationIcon?.setTint(style.primary)
             setNavigationContentDescription("返回")
             setNavigationOnClickListener { finish() }
+            FeatureCatalog.keyboardShortcuts.detail?.let { detail ->
+                menu.add("快捷键帮助").apply {
+                    setIcon(R.drawable.ic_info)
+                    icon?.setTint(style.primary)
+                    setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                    setOnMenuItemClickListener {
+                        InfoSheet.show(this@ShortcutKeysActivity, "下滑快捷键", detail)
+                        true
+                    }
+                }
+            }
         }
         root.addView(toolbar, LinearLayout.LayoutParams(-1, style.dp(ShapeUiStyle.BUTTON)))
         body = LinearLayout(this).apply {
@@ -89,7 +103,8 @@ class ShortcutKeysActivity : AppCompatActivity() {
                     if (!isDestroyed) button.isEnabled = true
                 }
             }
-        }, LinearLayout.LayoutParams(-1, kit.dp(48)))
+            minHeight = kit.dimen(R.dimen.settings_touch_height)
+        }, LinearLayout.LayoutParams(-1, -2))
         root.addView(footer)
         setContentView(root)
         SettingsWindow.apply(window, root, topBar = toolbar, bottomBar = footer)
@@ -103,12 +118,7 @@ class ShortcutKeysActivity : AppCompatActivity() {
 
     private fun render() {
         body.removeAllViews()
-        body.addView(kit.label("点按键盘上的任意字母键，选择向下滑动时执行的操作。同一操作可以放在多个键上；每种键盘分别保存，重启输入法后生效。",
-            13f, R.color.text_secondary).apply {
-            setLineSpacing(kit.dp(3).toFloat(), 1f)
-            setPadding(kit.dimen(R.dimen.space_xs), kit.dimen(R.dimen.space_sm), kit.dimen(R.dimen.space_xs), 0)
-        })
-        body.addView(tabs(), LinearLayout.LayoutParams(-1, kit.dp(40)).apply { topMargin = kit.dimen(R.dimen.space_lg) })
+        body.addView(tabs())
 
         val mapping = ShortcutMappings.load(this, selected)
         val card = kit.card().apply {
@@ -132,27 +142,8 @@ class ShortcutKeysActivity : AppCompatActivity() {
         }
         body.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dimen(R.dimen.space_md) })
 
-        val summary = mapping.values.distinct().joinToString("　") { action ->
-            "${KeyboardShortcuts.label(action)} ${ShortcutMappings.keysFor(this, selected, action)}"
-        }
-        body.addView(kit.label(summary, 13f, R.color.text_primary).apply {
-            setLineSpacing(kit.dp(3).toFloat(), 1f)
-            setPadding(kit.dimen(R.dimen.space_xs), kit.dimen(R.dimen.space_md), kit.dimen(R.dimen.space_xs), 0)
-        })
-
-        val note = when (selected) {
-            ShortcutKeyboard.QWERTY -> "用于拼音/英文 26 键、虎码/五笔，以及 18/14 键切到英文后的 26 键。"
-            ShortcutKeyboard.NINE -> "用于拼音九键；数字面板不启用快捷操作。"
-            else -> "用于中文${selected.title}；切到英文后使用 26 键的设置。"
-        }
-        body.addView(kit.label(note, 12f, R.color.text_secondary).apply {
-            setPadding(kit.dimen(R.dimen.space_xs), kit.dimen(R.dimen.space_sm), kit.dimen(R.dimen.space_xs), 0)
-        })
-
         kit.group(body, null, listOf(
-            kit.navRow("恢复默认", "默认：" + selected.defaults.entries.joinToString("、") { (key, action) ->
-                "${selected.keyLabel(key).substringBefore(' ')} $action"
-            }, R.drawable.ic_shape_restore) {
+            kit.navRow("恢复默认快捷键", R.drawable.ic_shape_restore) {
                 ShortcutMappings.reset(this, selected)
                 render()
             }
@@ -181,7 +172,8 @@ class ShortcutKeysActivity : AppCompatActivity() {
                 if (active) background = rounded(kit.color(R.color.primary), null)
                 isClickable = true
                 isFocusable = true
-                contentDescription = keyboard.title + if (active) "，已选择" else ""
+                isSelected = active
+                minHeight = kit.dimen(R.dimen.settings_touch_height)
                 setOnClickListener {
                     if (keyboard == selected) return@setOnClickListener
                     SettingsKit.tickHaptic(it)
@@ -205,17 +197,21 @@ class ShortcutKeysActivity : AppCompatActivity() {
             foreground = kit.selectableBackground()
             contentDescription = "${selected.keyLabel(key)} 键，" + (action?.let { "下滑${KeyboardShortcuts.label(it)}" } ?: "未设置")
             setOnClickListener { choose(key) }
+            ViewCompat.replaceAccessibilityAction(this, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
+                "编辑下滑操作") { view, _ -> view.performClick() }
         }
         val label = if (selected == ShortcutKeyboard.NINE) selected.keyLabel(key).replace(' ', '\n') else key.uppercase()
         cell.addView(kit.label(label, if (selected == ShortcutKeyboard.NINE) 12f else 15f, R.color.text_primary, bold = true).apply {
             gravity = Gravity.CENTER
             maxLines = 2
         })
-        cell.addView(kit.label(action?.let(KeyboardShortcuts::label) ?: "—", 10f, if (bound) R.color.primary else R.color.text_secondary, bold = bound).apply {
-            gravity = Gravity.CENTER
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
+        action?.let {
+            cell.addView(kit.label(KeyboardShortcuts.label(it), 10f, R.color.primary, bold = true).apply {
+                gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+        }
         return LinearLayout(this).apply {
             val gap = kit.dp(2)
             setPadding(gap, gap, gap, gap)

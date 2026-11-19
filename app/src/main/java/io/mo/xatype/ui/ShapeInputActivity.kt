@@ -109,7 +109,7 @@ class ShapeInputActivity : AppCompatActivity() {
 
     private fun importDialog() {
         val name = EditText(this).apply {
-            hint = "例如：我的五笔86"
+            hint = "码表名称"
             setSingleLine()
             filters = arrayOf(InputFilter.LengthFilter(128))
             textSize = ShapeUiStyle.BODY

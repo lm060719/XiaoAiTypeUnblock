@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.format.DateUtils
 import android.text.format.Formatter
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -20,8 +21,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatButton
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
 import androidx.core.widget.NestedScrollView
-import io.mo.xatype.BuildConfig
 import io.mo.xatype.R
 import io.mo.xatype.ui.SettingsWindow
 import io.mo.xatype.ui.ShapeUiStyle
@@ -29,7 +30,6 @@ import io.mo.xatype.ui.ShapeUiStyle.Companion.BODY
 import io.mo.xatype.ui.ShapeUiStyle.Companion.BUTTON
 import io.mo.xatype.ui.ShapeUiStyle.Companion.CAPTION
 import io.mo.xatype.ui.ShapeUiStyle.Companion.DISABLED_ALPHA
-import io.mo.xatype.ui.ShapeUiStyle.Companion.HEADING
 import io.mo.xatype.ui.ShapeUiStyle.Companion.ICON
 import io.mo.xatype.ui.ShapeUiStyle.Companion.ICON_TILE
 import io.mo.xatype.ui.ShapeUiStyle.Companion.LG
@@ -44,17 +44,18 @@ import io.mo.xatype.ui.ShapeUiStyle.Companion.XL
 import io.mo.xatype.ui.ShapeUiStyle.Companion.XS
 import java.io.File
 
-/** Same page vocabulary as the shape-input screen: status hero, titled groups and an accent footer action. */
 class DiagnosticsActivity : AppCompatActivity() {
+    private class Metric(val view: LinearLayout, val value: TextView)
+
     private lateinit var style: ShapeUiStyle
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var badge: TextView
     private lateinit var stateTitle: TextView
     private lateinit var statusText: TextView
-    private lateinit var sizeValue: TextView
-    private lateinit var remainingValue: TextView
+    private lateinit var metrics: View
+    private lateinit var size: Metric
+    private lateinit var remaining: Metric
     private lateinit var primary: AppCompatButton
-    private lateinit var footerHint: TextView
+    private lateinit var overwriteWarning: TextView
     private val exportRows = ArrayList<View>()
     private val refresh = object : Runnable {
         override fun run() {
@@ -89,49 +90,36 @@ class DiagnosticsActivity : AppCompatActivity() {
 
         val hero = column().apply { background = style.surface(); pad(XL) }
         body.addView(hero)
-        hero.addView(row().apply {
-            addView(text("采集状态", CAPTION, style.secondary), LinearLayout.LayoutParams(0, -2, 1f))
-            badge = text("", CAPTION, style.secondary, true).apply {
-                setPadding(style.dp(MD), style.dp(XS), style.dp(MD), style.dp(XS))
-            }
-            addView(badge)
-        })
-        stateTitle = text("", TITLE, style.primary, true)
-        hero.addView(stateTitle, spaced(top = SM))
+        stateTitle = text("", TITLE, style.primary, true).apply {
+            ViewCompat.setAccessibilityHeading(this, true)
+        }
+        hero.addView(stateTitle)
         statusText = text("", BODY, style.secondary).apply {
             setLineSpacing(style.dp(XS).toFloat(), 1f)
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
         hero.addView(statusText, spaced(top = SM))
-        hero.addView(row().apply {
+        metrics = row().apply {
             gravity = Gravity.TOP
-            val size = metric("日志大小").also { sizeValue = it.second }
-            val remaining = metric("剩余时间").also { remainingValue = it.second }
-            addView(size.first, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = style.dp(LG) })
-            addView(remaining.first, LinearLayout.LayoutParams(0, -2, 1f))
-        }, spaced(top = LG))
+            size = metric("日志大小")
+            remaining = metric("剩余时间")
+            addView(size.view, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = style.dp(LG) })
+            addView(remaining.view, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        hero.addView(metrics, spaced(top = LG))
 
         body.addView(row().apply {
             background = style.surface(style.accentSurface)
             setPadding(style.dp(LG), style.dp(MD), style.dp(LG), style.dp(MD))
             addView(icon(R.drawable.ic_info, style.accent), LinearLayout.LayoutParams(style.dp(ICON), style.dp(ICON)))
-            addView(text("仅收集小爱输入法和本模块的日志、设备与版本信息。输入法日志可能包含输入的文字，" +
-                "请只用测试文字复现，不要输入密码或私人内容。", CAPTION, style.accentText),
+            addView(text("日志可能包含输入内容、设备及版本信息。请用测试文字复现。", CAPTION, style.accentText),
                 LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = style.dp(MD) })
         }, spaced(top = LG))
 
-        val steps = group(body, "复现步骤", "按顺序操作，日志更完整")
-        steps.addView(step(1, "开始采集", "自动重启小爱输入法，并开始采集"))
-        steps.addView(step(2, "复现问题", "开始复现bug场景"))
-        steps.addView(step(3, "停止并导出", "回到本页停止采集，再分享或保存日志"))
-
-        val export = group(body, "导出日志", "最长 10 分钟、最多 8 MB；再次开始会覆盖上次日志")
-        export.addView(actionRow("分享日志", "通过系统分享发送", R.drawable.ic_share) { export(false) })
-        export.addView(actionRow("保存为文件", "选择位置保存为 .txt 文件", R.drawable.ic_shape_import) { export(true) })
-
-        body.addView(text("模块版本 ${BuildConfig.VERSION_NAME}", CAPTION, style.secondary).apply {
-            gravity = Gravity.CENTER
-        }, spaced(top = LG))
+        val exports = column().apply { background = style.surface() }
+        exports.addView(actionRow("分享日志", R.drawable.ic_share) { export(false) })
+        exports.addView(actionRow("保存日志为 .txt", R.drawable.ic_shape_import) { export(true) })
+        body.addView(exports, spaced(top = LG))
 
         val footerContent = column().apply {
             setPadding(style.dp(LG), style.dp(MD), style.dp(LG), style.dp(MD))
@@ -151,9 +139,11 @@ class DiagnosticsActivity : AppCompatActivity() {
                     render()
                 }
             }
+            overwriteWarning = text("再次采集会覆盖当前日志", CAPTION, style.secondary).apply {
+                gravity = Gravity.CENTER
+            }
+            addView(overwriteWarning, spaced(bottom = SM))
             addView(primary, LinearLayout.LayoutParams(-1, -2))
-            footerHint = text("", CAPTION, style.secondary).apply { gravity = Gravity.CENTER }
-            addView(footerHint, spaced(top = SM))
         }
         val footer = FrameLayout(this).apply {
             setBackgroundColor(style.surface)
@@ -171,36 +161,30 @@ class DiagnosticsActivity : AppCompatActivity() {
         val hasLog = log.length() > 0
         val started = DiagnosticsCollector.startedAt(this)
         val failed = !running && DiagnosticLog.failed
-        val (label, title) = when {
-            running && started == 0L -> "准备中" to "正在准备采集"
-            running -> "采集中" to "正在采集"
-            failed -> "失败" to "采集失败"
-            hasLog -> "已完成" to "日志已就绪"
-            else -> "未开始" to "尚未采集"
+        val title = when {
+            running && started == 0L -> "正在准备采集"
+            running -> "正在采集"
+            failed -> "采集失败"
+            hasLog -> "日志已就绪"
+            else -> "尚未采集"
         }
-        badge.text = label
-        val (badgeSurface, badgeText) = when {
-            failed -> style.errorSurface to style.errorText
-            running || hasLog -> style.accentSurface to style.accentText
-            else -> style.background to style.secondary
-        }
-        badge.setTextColor(badgeText)
-        badge.background = style.surface(badgeSurface, SMALL_RADIUS)
-        stateTitle.text = title
+        if (stateTitle.text != title) stateTitle.text = title
         statusText.setTextColor(if (failed) style.errorText else style.secondary)
-        statusText.text = when {
-            DiagnosticLog.status != DiagnosticLog.IDLE_STATUS -> DiagnosticLog.status
-            hasLog -> "上次采集的日志仍保存在本机，可直接导出"
-            else -> "按下方步骤复现问题，日志只保存在本机，由你决定是否分享"
-        }
-        sizeValue.text = if (hasLog) Formatter.formatShortFileSize(this, log.length()) else "—"
-        remainingValue.text = if (running && started > 0) {
+        val message = DiagnosticLog.status.takeUnless { it == DiagnosticLog.IDLE_STATUS }.orEmpty()
+        if (statusText.text != message) statusText.text = message
+        statusText.visibility = if (message.isEmpty()) View.GONE else View.VISIBLE
+        val showRemaining = running && started > 0
+        metrics.visibility = if (hasLog || showRemaining) View.VISIBLE else View.GONE
+        size.view.visibility = if (hasLog) View.VISIBLE else View.GONE
+        remaining.view.visibility = if (showRemaining) View.VISIBLE else View.GONE
+        if (hasLog) size.value.text = Formatter.formatShortFileSize(this, log.length())
+        if (showRemaining) {
             val seconds = ((DiagnosticsCollector.MAX_MILLIS - (System.currentTimeMillis() - started)) / 1000)
                 .coerceAtLeast(0)
-            "%d:%02d".format(seconds / 60, seconds % 60)
-        } else "—"
+            remaining.value.text = DateUtils.formatElapsedTime(seconds)
+        }
         primary.text = if (running) "停止采集" else "开始采集并重启输入法"
-        footerHint.text = if (running) "离开本页也会继续采集 · 复现后回来停止" else ""
+        overwriteWarning.visibility = if (!running && hasLog) View.VISIBLE else View.GONE
         exportRows.forEach {
             it.isEnabled = hasLog
             it.alpha = if (hasLog) 1f else DISABLED_ALPHA
@@ -281,48 +265,16 @@ class DiagnosticsActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    private fun group(body: LinearLayout, title: String, subtitle: String): LinearLayout {
-        body.addView(column().apply {
-            setPadding(style.dp(XS), 0, style.dp(XS), 0)
-            addView(text(title, HEADING, style.primary, true))
-            addView(text(subtitle, CAPTION, style.secondary), spaced(top = XS))
-        }, spaced(top = XL, bottom = MD))
-        return column().apply {
-            background = style.surface()
-            setPadding(0, style.dp(XS), 0, style.dp(XS))
-            body.addView(this)
-        }
-    }
-
-    private fun metric(label: String): Pair<LinearLayout, TextView> {
-        val value = text("—", METRIC, style.primary, true)
-        return column().apply {
+    private fun metric(label: String): Metric {
+        val value = text("", METRIC, style.primary, true)
+        val view = column().apply {
             addView(value)
             addView(text(label, CAPTION, style.secondary), spaced(top = XS))
-        } to value
+        }
+        return Metric(view, value)
     }
 
-    private fun labels(title: String, subtitle: String) = column().apply {
-        addView(text(title, BODY, style.primary, true))
-        addView(text(subtitle, CAPTION, style.secondary).apply {
-            setLineSpacing(style.dp(XS / 2).toFloat(), 1f)
-        }, spaced(top = XS))
-    }
-
-    /** A numbered tile in the place where action rows show their icon. */
-    private fun step(number: Int, title: String, subtitle: String) = row().apply {
-        gravity = Gravity.TOP
-        setPadding(style.dp(LG), style.dp(MD), style.dp(LG), style.dp(MD))
-        addView(text("$number", BODY, style.accentText, true).apply {
-            gravity = Gravity.CENTER
-            background = style.surface(style.accentSurface, SMALL_RADIUS)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(style.dp(ICON_TILE), style.dp(ICON_TILE)).apply { marginEnd = style.dp(MD) })
-        addView(labels(title, subtitle), LinearLayout.LayoutParams(0, -2, 1f))
-        contentDescription = "第 $number 步，$title。$subtitle"
-    }
-
-    private fun actionRow(title: String, subtitle: String, iconRes: Int, action: () -> Unit): View = row().apply {
+    private fun actionRow(title: String, iconRes: Int, action: () -> Unit): View = row().apply {
         setPadding(style.dp(LG), style.dp(LG), style.dp(LG), style.dp(LG))
         minimumHeight = style.dp(TOUCH)
         background = style.ripple()
@@ -330,7 +282,7 @@ class DiagnosticsActivity : AppCompatActivity() {
             background = style.surface(style.accentSurface, SMALL_RADIUS)
             pad(MD)
         }, LinearLayout.LayoutParams(style.dp(ICON_TILE), style.dp(ICON_TILE)).apply { marginEnd = style.dp(MD) })
-        addView(labels(title, subtitle), LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text(title, BODY, style.primary, true), LinearLayout.LayoutParams(0, -2, 1f))
         addView(icon(R.drawable.ic_shape_chevron, style.secondary),
             LinearLayout.LayoutParams(style.dp(ICON), style.dp(ICON)).apply { marginStart = style.dp(SM) })
         isFocusable = true

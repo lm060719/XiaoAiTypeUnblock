@@ -4,17 +4,18 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.os.Build
-import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.view.ViewCompat
 import io.mo.xatype.R
 import kotlin.math.roundToInt
 
@@ -42,6 +43,7 @@ internal class SettingsKit(val context: Context) {
     fun sectionHeader(title: String, first: Boolean = false) = label(title, 13f, R.color.text_secondary, bold = true).apply {
         setPadding(dimen(R.dimen.space_xs), if (first) dimen(R.dimen.space_sm) else dimen(R.dimen.space_xl),
             dimen(R.dimen.space_xs), dimen(R.dimen.space_sm))
+        ViewCompat.setAccessibilityHeading(this, true)
     }
 
     fun card() = LinearLayout(context).apply {
@@ -75,7 +77,7 @@ internal class SettingsKit(val context: Context) {
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(60)
         val padding = dimen(R.dimen.settings_row_padding)
-        setPadding(padding, dimen(R.dimen.space_md), padding, dimen(R.dimen.space_md))
+        setPadding(padding, dimen(R.dimen.space_xs), padding, dimen(R.dimen.space_xs))
         isClickable = true
         isFocusable = true
         foreground = selectableBackground()
@@ -86,19 +88,13 @@ internal class SettingsKit(val context: Context) {
         context.getDrawable(it.resourceId)
     }
 
-    /** [singleLine] keeps settings rows to one subtitle line; the full text belongs in a [Detail]. */
-    fun titleBlock(title: CharSequence, subtitle: CharSequence?, singleLine: Boolean = false) = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        addView(label(title, 15f, R.color.text_primary, bold = true))
-        if (!subtitle.isNullOrEmpty()) {
-            addView(label(subtitle, 13f, R.color.text_secondary).apply {
-                setPadding(0, dp(2), 0, 0)
-                setLineSpacing(dp(2).toFloat(), 1f)
-                if (singleLine) {
-                    maxLines = 1
-                    ellipsize = TextUtils.TruncateAt.END
-                }
-            })
+    fun rowTitle(title: CharSequence) = resourceLabel(title, R.dimen.settings_title_size, R.color.text_primary, bold = true)
+
+    fun rowValue(text: CharSequence) = resourceLabel(text, R.dimen.settings_description_size, R.color.text_secondary).apply {
+        gravity = Gravity.END
+        maxWidth = dimen(R.dimen.settings_value_width)
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            marginStart = dimen(R.dimen.space_sm)
         }
     }
 
@@ -135,7 +131,7 @@ internal class SettingsKit(val context: Context) {
     }
 
     /** A 48dp target that opens the detail sheet without toggling the row. */
-    private fun infoButton(title: CharSequence, detail: Detail) = ImageView(context).apply {
+    private fun infoButton(title: CharSequence, detail: Detail) = ImageButton(context).apply {
         setImageResource(R.drawable.ic_info)
         imageTintList = ColorStateList.valueOf(color(R.color.text_secondary))
         scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -154,7 +150,6 @@ internal class SettingsKit(val context: Context) {
     /** The whole row toggles; [onChange] fires on every change after creation. */
     fun switchRow(
         title: CharSequence,
-        subtitle: CharSequence?,
         checked: Boolean,
         iconRes: Int? = null,
         detail: Detail? = null,
@@ -162,8 +157,12 @@ internal class SettingsKit(val context: Context) {
     ): SwitchRow {
         val row = row()
         addLeading(row, iconRes)
-        row.addView(titleBlock(title, subtitle, singleLine = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        detail?.let { row.addView(infoButton(title, it), LinearLayout.LayoutParams(dp(48), dp(48))) }
+        row.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        row.isFocusable = false
+        row.addView(rowTitle(title).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val target = dimen(R.dimen.settings_touch_height)
+        detail?.let { row.addView(infoButton(title, it), LinearLayout.LayoutParams(target, target)) }
         val switch = SwitchCompat(context).apply {
             isChecked = checked
             setPadding(0, 0, 0, 0)
@@ -175,20 +174,28 @@ internal class SettingsKit(val context: Context) {
         }
         row.addView(FrameLayout(context).apply {
             addView(switch, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
-        }, LinearLayout.LayoutParams(dimen(R.dimen.settings_trailing_width), dp(48)))
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER))
+        }, LinearLayout.LayoutParams(dimen(R.dimen.settings_trailing_width), target))
         row.setOnClickListener { switch.toggle() }
         return SwitchRow(row, switch)
     }
 
-    fun navRow(title: CharSequence, subtitle: CharSequence?, iconRes: Int?, detail: Detail? = null,
-               onClick: () -> Unit): LinearLayout {
+    fun navRow(
+        title: CharSequence,
+        iconRes: Int? = null,
+        detail: Detail? = null,
+        value: TextView? = null,
+        onClick: () -> Unit
+    ): LinearLayout {
         val row = row()
         addLeading(row, iconRes)
-        row.addView(titleBlock(title, subtitle, singleLine = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        detail?.let { row.addView(infoButton(title, it), LinearLayout.LayoutParams(dp(48), dp(48))) }
+        row.addView(rowTitle(title), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        value?.let { row.addView(it) }
+        val target = dimen(R.dimen.settings_touch_height)
+        detail?.let { row.addView(infoButton(title, it), LinearLayout.LayoutParams(target, target)) }
         row.addView(trailingIcon(R.drawable.ic_shape_chevron),
-            LinearLayout.LayoutParams(dimen(R.dimen.settings_trailing_width), dp(48)))
+            LinearLayout.LayoutParams(dimen(R.dimen.settings_chevron_width), target))
+        ViewCompat.setScreenReaderFocusable(row, true)
         row.setOnClickListener { onClick() }
         return row
     }

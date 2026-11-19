@@ -17,8 +17,8 @@ android {
         applicationId = "io.mo.xatype"
         minSdk = 26
         targetSdk = 34
-        versionCode = 81
-        versionName = "2.2.3.21"
+        versionCode = 82
+        versionName = "2.2.3.22"
         testInstrumentationRunner = "io.mo.xatype.Issue9DeviceInstrumentation"
         // DexKit ships a native library; the module only runs in ARM host processes.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }

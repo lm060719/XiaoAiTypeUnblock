@@ -20,6 +20,7 @@ import androidx.appcompat.widget.AppCompatButton
 import androidx.appcompat.widget.SwitchCompat
 import androidx.appcompat.widget.Toolbar
 import androidx.core.widget.NestedScrollView
+import io.mo.xatype.R
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.keyboard.KeyboardShortcuts
 import io.mo.xatype.keyboard.ShortcutKeyboard
@@ -85,8 +86,6 @@ class Keyboard18Activity : AppCompatActivity() {
             addView(body, android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_HORIZONTAL)) }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        body.addView(text(if (keys === Keyboard14Keys) "字母两两成对，按键更大" else "更宽的按键，更轻松地输入",
-            ShapeUiStyle.TITLE, strong = true))
         val settings = card()
         enabled = SwitchCompat(this).apply {
             text = "在键盘选择中显示${keys.title}"
@@ -124,12 +123,12 @@ class Keyboard18Activity : AppCompatActivity() {
             }
         }
         settings.addView(schemeButton, spaced())
-        body.addView(settings, spaced())
+        body.addView(settings)
 
-        body.addView(text("试试${keys.title}", ShapeUiStyle.HEADING, strong = true), spaced())
+        body.addView(text("键盘预览", ShapeUiStyle.HEADING, strong = true), spaced())
         val preview = card()
         output = EditText(this).apply {
-            hint = "输入的文字显示在这里"
+            hint = "预览输入"
             textSize = ShapeUiStyle.BODY
             setTextColor(style.primary); setHintTextColor(style.secondary)
             minHeight = style.dp(PREVIEW_OUTPUT_HEIGHT)
@@ -147,7 +146,9 @@ class Keyboard18Activity : AppCompatActivity() {
         keypad = column()
         preview.addView(keypad, LinearLayout.LayoutParams(-1, -2))
         buildKeypad()
-        progress = text("正在准备离线词库…", ShapeUiStyle.CAPTION, secondary = true)
+        progress = text("正在读取离线词库…", ShapeUiStyle.CAPTION, secondary = true).apply {
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
         preview.addView(progress, spaced())
         preview.addView(button("清空预览") { engine?.clear(); output.text.clear(); showCandidates() }, spaced())
         body.addView(preview, spaced())
@@ -155,7 +156,7 @@ class Keyboard18Activity : AppCompatActivity() {
 
         val footer = column().apply { setPadding(style.dp(ShapeUiStyle.LG), style.dp(ShapeUiStyle.SM),
             style.dp(ShapeUiStyle.LG), style.dp(ShapeUiStyle.SM)); setBackgroundColor(style.surface) }
-        restartButton = button("重启输入法并应用", accent = true) {
+        restartButton = button("重启输入法", accent = true) {
             ImeRestarter.restart(this) { if (!isDestroyed && !isFinishing) updateStatus() }
         }
         footer.addView(restartButton, LinearLayout.LayoutParams(-1, -2))
@@ -175,7 +176,9 @@ class Keyboard18Activity : AppCompatActivity() {
     private fun prepareDictionary() {
         val generation = ++loadGeneration
         val selectedScheme = Keyboard18Store.scheme(Keyboard18Store.snapshot(this))
-        previewControls.forEach { it.isEnabled = false }; progress.text = "正在准备离线词库…"
+        previewControls.forEach { it.isEnabled = false }
+        progress.visibility = View.VISIBLE
+        progress.text = "正在读取离线词库…"
         val raw = if (engine == null || engine?.scheme == selectedScheme) engine?.raw ?: restoreRaw else ""
         restoreRaw = raw
         engine = null
@@ -190,9 +193,9 @@ class Keyboard18Activity : AppCompatActivity() {
                 loaded.onSuccess { dictionary ->
                     engine = Keyboard18Engine(dictionary).apply { restore(raw) }
                     restoreRaw = ""; previewControls.forEach { it.isEnabled = true }
-                    progress.text = "离线词库 · ${dictionary.entries.size} 条字词"
+                    progress.visibility = View.GONE
                     showCandidates()
-                }.onFailure { progress.text = "词库读取失败：${it.message}。可重新读取。" }
+                }.onFailure { progress.text = "词库读取失败：${it.message ?: "未知错误"}" }
             }
         }
     }
@@ -212,7 +215,7 @@ class Keyboard18Activity : AppCompatActivity() {
     private fun updateStatus() {
         val snapshot = Keyboard18Store.snapshot(this)
         if (snapshot.getLong(Keyboard18Store.STATUS_TIME) > 0) pendingRestart = false
-        restartButton.text = if (pendingRestart) "重启并应用更改" else "重启输入法并应用"
+        restartButton.text = if (pendingRestart) getString(R.string.restart_to_apply) else "重启输入法"
     }
     private fun buildKeypad() {
         keypad.removeAllViews()

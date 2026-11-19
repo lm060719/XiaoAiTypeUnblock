@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="keyboard_test_hint">点此测试键盘</string>
+    <string name="keyboard_test_hint">键盘测试</string>
     <string name="keyboard_test_clear">清空</string>
+    <string name="restart_to_apply">重启输入法以应用更改</string>
     <string name="app_name">超级小爱输入法净化</string>
     <string name="module_description">解除超级小爱输入法的内容风控、版本限制与系统剪贴板保存限制</string>
 </resources>

@@ -6,10 +6,6 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
-import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -20,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import androidx.appcompat.widget.AppCompatRadioButton
+import androidx.core.view.ViewCompat
 import io.mo.xatype.R
 
 /** Settings explanations and choices share the same themed, scrollable bottom sheet. */
@@ -32,31 +29,19 @@ internal object InfoSheet {
             setLineSpacing(kit.dp(4).toFloat(), 1f)
         }, spaced(kit, R.dimen.space_md))
         detail.extra?.let { body.addView(it(kit), spaced(kit, R.dimen.space_lg)) }
-        if (detail.notes.isNotEmpty()) {
-            body.addView(heading(kit, "注意"), spaced(kit, R.dimen.space_xl))
-            detail.notes.forEach { note ->
-                body.addView(bullet(context, kit, note), spaced(kit, R.dimen.space_sm))
-            }
+        detail.notes.forEachIndexed { index, note ->
+            body.addView(bullet(context, kit, note), spaced(kit, if (index == 0) R.dimen.space_lg else R.dimen.space_sm))
         }
         present(context, title, body, "知道了")
     }
 
     fun choose(context: Context, title: CharSequence, labels: List<CharSequence>, selectedIndex: Int = -1,
-               summaries: List<CharSequence> = emptyList(), onSelected: (Int) -> Unit) {
+               onSelected: (Int) -> Unit) {
         val kit = SettingsKit(context)
         val body = RadioGroup(context).apply { orientation = LinearLayout.VERTICAL }
         lateinit var dialog: Dialog
         var chosen = false
         labels.forEachIndexed { index, label ->
-            val caption = SpannableStringBuilder(label)
-            summaries.getOrNull(index)?.let { summary ->
-                caption.append('\n')
-                val start = caption.length
-                caption.append(summary)
-                caption.setSpan(RelativeSizeSpan(0.87f), start, caption.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                caption.setSpan(ForegroundColorSpan(kit.color(R.color.text_secondary)), start, caption.length,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
             val option = if (selectedIndex >= 0) AppCompatRadioButton(context).apply {
                 // RadioGroup reads the checked child's ID before assigning missing IDs.
                 id = View.generateViewId()
@@ -64,9 +49,9 @@ internal object InfoSheet {
                 buttonTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                     intArrayOf(kit.color(R.color.primary), kit.color(R.color.text_secondary)))
                 if (isChecked) setBackgroundResource(R.drawable.bg_key_chip)
-            } else kit.label(caption, 15f, R.color.text_primary)
+            } else kit.rowTitle(label)
             option.apply {
-                text = caption
+                text = label
                 textSize = 15f
                 setTextColor(kit.color(R.color.text_primary))
                 gravity = Gravity.CENTER_VERTICAL
@@ -111,7 +96,9 @@ internal object InfoSheet {
                 gravity = Gravity.CENTER_HORIZONTAL
                 bottomMargin = kit.dimen(R.dimen.space_lg)
             })
-        sheet.addView(kit.label(title, 18f, R.color.text_primary, bold = true))
+        sheet.addView(kit.label(title, 18f, R.color.text_primary, bold = true).apply {
+            ViewCompat.setAccessibilityHeading(this, true)
+        })
 
         val maxBodyHeight = (context.resources.displayMetrics.heightPixels * 0.6f).toInt()
         sheet.addView(BoundedScrollView(context, maxBodyHeight).apply {
@@ -129,8 +116,9 @@ internal object InfoSheet {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setBackgroundResource(R.drawable.bg_button_primary)
             stateListAnimator = null
+            minHeight = kit.dimen(R.dimen.settings_touch_height)
             setOnClickListener { onPrimary(this) }
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, kit.dp(48)).apply {
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = kit.dimen(R.dimen.space_xl)
         })
         sheet.addView(Button(context).apply {
@@ -141,8 +129,9 @@ internal object InfoSheet {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setBackgroundResource(R.drawable.bg_button_outlined)
             stateListAnimator = null
+            minHeight = kit.dimen(R.dimen.settings_touch_height)
             setOnClickListener { dialog.cancel() }
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, kit.dp(48)).apply {
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = kit.dimen(if (primary != null) R.dimen.space_sm else R.dimen.space_xl)
         })
         dialog.show()
@@ -153,11 +142,11 @@ internal object InfoSheet {
         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
     ).apply { topMargin = kit.dimen(topRes) }
 
-    private fun heading(kit: SettingsKit, text: String) = kit.label(text, 13f, R.color.text_secondary, bold = true)
-
     private fun bullet(context: Context, kit: SettingsKit, text: CharSequence) = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
-        addView(kit.label("•", 14f, R.color.text_secondary), LinearLayout.LayoutParams(kit.dp(16), LinearLayout.LayoutParams.WRAP_CONTENT))
+        addView(kit.label("•", 14f, R.color.text_secondary).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(kit.dimen(R.dimen.space_lg), LinearLayout.LayoutParams.WRAP_CONTENT))
         addView(kit.label(text, 14f, R.color.text_primary).apply {
             setLineSpacing(kit.dp(3).toFloat(), 1f)
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))

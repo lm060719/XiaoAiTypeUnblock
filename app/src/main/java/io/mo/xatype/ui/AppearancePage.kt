@@ -21,7 +21,6 @@ import android.view.ViewOutlineProvider
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -63,20 +62,19 @@ class AppearancePage(
 
     private class Option(
         val title: String,
-        val subtitle: String,
         val focus: Focus,
-        val summary: () -> Summary,
+        val summary: (() -> Summary)? = null,
         val build: (LinearLayout) -> Unit
     )
 
-    private class Row(val option: Option, val view: View, val value: TextView, val swatch: View)
+    private class Row(val option: Option, val view: View, val value: TextView)
 
     private lateinit var prefs: SharedPreferences
     private val uiPrefs: SharedPreferences = activity.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
     private val kit = SettingsKit(activity)
     private var editingDark = false
     private lateinit var preview: KeyboardPreviewView
-    private lateinit var previewHint: TextView
+    private lateinit var previewTitle: TextView
     private lateinit var floating: FloatingPreviewCard
     private lateinit var sizeButton: ImageButton
     private lateinit var collapseButton: ImageButton
@@ -137,7 +135,7 @@ class AppearancePage(
         )
 
         preview = root.findViewById(R.id.keyboardPreview)
-        previewHint = root.findViewById(R.id.tvPreviewHint)
+        previewTitle = root.findViewById(R.id.tvPreviewTitle)
         overlay = root.findViewById(R.id.overlayPanel)
         panelCard = root.findViewById(R.id.panelCard)
         panelTitle = root.findViewById(R.id.tvPanelTitle)
@@ -162,7 +160,7 @@ class AppearancePage(
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         refresh()
         if (savedInstanceState?.getBoolean(STATE_SCHEME_PANEL) == true) {
-            openPanel(rows.first { it.option.title == SCHEME_PANEL_TITLE })
+            openPanel(rows.first { it.option.title == SCHEME_PANEL_TITLE }.option)
         }
         schemeTransfer.result.observe(activity) { result ->
             if (result != null) {
@@ -224,89 +222,73 @@ class AppearancePage(
     // ---------------------------------------------------------------- options
 
     private fun buildOptions(root: LinearLayout) {
-        root.addView(kit.sectionHeader("总开关", first = true))
-        root.addView(card().apply {
-            val row = horizontalRow()
-            row.addView(titleBlock("启用键盘外观个性化", ""),
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            styleSwitch = SwitchCompat(context).apply {
-                isChecked = prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)
-                setOnCheckedChangeListener { _, checked ->
-                    if (syncingStyleSwitch) return@setOnCheckedChangeListener
-                    prefs.edit().putBoolean(ConfigManager.KEY_STYLE_ENABLED, checked).apply()
-                    SettingsKit.confirmHaptic(this)
-                    onConfigChanged()
-                }
+        val toggle = kit.switchRow("启用键盘外观个性化", prefs.getBoolean(ConfigManager.KEY_STYLE_ENABLED, false)) { checked ->
+            if (!syncingStyleSwitch) {
+                prefs.edit().putBoolean(ConfigManager.KEY_STYLE_ENABLED, checked).apply()
+                onConfigChanged()
             }
-            row.addView(styleSwitch)
-            row.setOnClickListener { styleSwitch.toggle() }
-            addView(row)
-        })
+        }
+        styleSwitch = toggle.switch
+        kit.group(root, null, listOf(toggle.view))
 
         section(root, "配置", listOf(
-            Option("深浅色配置", "", Focus.NONE,
+            Option("深浅色配置", Focus.NONE,
                 { Summary((if (editingDark) "深色" else "浅色") +
                     if (prefs.getBoolean(AppearanceProfiles.FOLLOW_SYSTEM, false)) " · 跟随系统" else "") },
                 ::buildProfilePanel),
-            Option("一键外观预设", "快速尝试不同风格", Focus.NONE,
-                { Summary("内置 " + AppearancePresetStore.presets.size + " 套") },
-                ::buildPresetPanel),
-            Option(SCHEME_PANEL_TITLE, "保存、切换、导入与导出单条外观配置", Focus.NONE,
-                { Summary(AppearancePresetStore.saved(prefs).size.toString() + " 套") },
-                ::buildSchemePanel)
+            Option("外观预设", Focus.NONE, build = ::buildPresetPanel),
+            Option(SCHEME_PANEL_TITLE, Focus.NONE, build = ::buildSchemePanel)
         ))
 
         section(root, "形状与背景", listOf(
-            Option("边角圆角弧度", "", Focus.CORNER,
+            Option("圆角弧度", Focus.CORNER,
                 { Summary("${stylePrefs().getInt(ConfigManager.KEY_CORNER_RADIUS, 16)} dp") }) { panel ->
                 slider(panel, "圆角弧度", 0, 40, stylePrefs().getInt(ConfigManager.KEY_CORNER_RADIUS, 16), { "$it dp" }) {
                     stylePrefs().edit().putInt(ConfigManager.KEY_CORNER_RADIUS, it).apply()
                 }
             },
-            Option("边缘高光", "", Focus.RIM, {
+            Option("边缘高光", Focus.RIM, {
                 val level = stylePrefs().getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0)
                 val light = GlassRim.LIGHT_NAMES[stylePrefs().getInt(ConfigManager.KEY_RIM_LIGHT, 0).coerceIn(0, 2)]
                 Summary(if (level > 0) "$level% · $light" else "关闭")
             }, ::buildRimPanel),
-            Option("背景类型", "", Focus.BACKGROUND, {
+            Option("背景类型", Focus.BACKGROUND, {
                 val p = stylePrefs()
                 if (officialAppearance()) Summary("官方")
                 else if (p.getInt(ConfigManager.KEY_BG_TYPE, 0) == 1) {
                     Summary("纯色", parseColor(p.getString(ConfigManager.KEY_BG_COLOR, "")))
                 } else Summary("动态毛玻璃")
             }, ::buildBackgroundPanel),
-            Option("背景不透明度", "", Focus.BACKGROUND,
+            Option("背景不透明度", Focus.BACKGROUND,
                 { Summary("${stylePrefs().getInt(ConfigManager.KEY_OPACITY, 85)}%") }) { panel ->
-                val warning = warningText(panel)
-                val combined = note(panel, "")
+                val warning = warningText()
+                val effective = kit.resourceLabel("", R.dimen.settings_description_size, R.color.text_secondary)
                 slider(panel, "背景不透明度", 0, 100, stylePrefs().getInt(ConfigManager.KEY_OPACITY, 85), { "$it%" }) {
                     stylePrefs().edit().putInt(ConfigManager.KEY_OPACITY, it).apply()
                     updateWarning(warning)
-                    updateCombinedOpacity(combined)
+                    updateEffectiveOpacity(effective)
                 }
-                panel.removeView(combined)
-                panel.addView(combined)
-                panel.removeView(warning)
+                panel.addView(effective)
                 panel.addView(warning)
                 updateWarning(warning)
-                updateCombinedOpacity(combined)
+                updateEffectiveOpacity(effective)
             },
-            Option("毛玻璃模糊强度", "", Focus.BACKGROUND,
-                { Summary("${stylePrefs().getInt(ConfigManager.KEY_BLUR_RADIUS, 50)} dp") }) { panel ->
+            Option("毛玻璃模糊强度", Focus.BACKGROUND, {
+                val p = stylePrefs()
+                Summary(if (p.getInt(ConfigManager.KEY_BG_TYPE, 0) != 0) "纯色下停用"
+                    else "${p.getInt(ConfigManager.KEY_BLUR_RADIUS, 50)} dp")
+            }) { panel ->
                 slider(panel, "模糊强度", 20, 100, stylePrefs().getInt(ConfigManager.KEY_BLUR_RADIUS, 50), { "$it dp" }) {
                     stylePrefs().edit().putInt(ConfigManager.KEY_BLUR_RADIUS, it).apply()
-                }
-                if (stylePrefs().getInt(ConfigManager.KEY_BG_TYPE, 0) != 0) {
-                    note(panel, "纯色背景下不生效")
                 }
             }
         ))
 
         section(root, "文字与可读性", listOf(
-            colorOption("按键字体颜色", "含候选字与工具栏图标", Focus.TEXT,
+            colorOption("键盘文字与图标颜色", Focus.TEXT,
                 ConfigManager.KEY_TEXT_COLOR, null, "#FFFFFF",
                 "自动"),
-            Option("可读性底色", "让透明键盘的文字保持清晰", Focus.SCRIM, {
+            Option("可读性底色", Focus.SCRIM, {
                 if (!prefs.getBoolean(ConfigManager.KEY_SCRIM_ENABLED, true)) Summary("关闭") else {
                     val p = stylePrefs()
                     val color = parseColor(p.getString(ConfigManager.KEY_SCRIM_COLOR, ""))
@@ -317,28 +299,28 @@ class AppearancePage(
         ))
 
         section(root, "键帽", listOf(
-            colorOption("字母键键帽颜色", "", Focus.LETTER_KEY,
+            colorOption("字母键键帽颜色", Focus.LETTER_KEY,
                 ConfigManager.KEY_LETTER_KEYCAP_COLOR, ConfigManager.KEY_LETTER_KEYCAP_OPACITY, "#FFFFFF",
                 "原生"),
-            colorOption("功能键键帽颜色", "", Focus.FUNCTION_KEY,
+            colorOption("功能键键帽颜色", Focus.FUNCTION_KEY,
                 ConfigManager.KEY_FUNCTION_KEYCAP_COLOR, ConfigManager.KEY_FUNCTION_KEYCAP_OPACITY, "#FFFFFF",
                 "原生")
         ))
 
         section(root, "按键提示与选择框", listOf(
-            colorOption("选择框背景色", "同时用于单点字母提示框和长按选择框", Focus.KEY_POPUP,
+            colorOption("提示与选择框背景色", Focus.KEY_POPUP,
                 ConfigManager.KEY_KEY_POPUP_BACKGROUND, null, "#FFFFFF", "原生"),
-            colorOption("选中项颜色", "当前手指选中的字符底色", Focus.KEY_POPUP,
+            colorOption("选中字符背景色", Focus.KEY_POPUP,
                 ConfigManager.KEY_KEY_POPUP_SELECTED, null, "#313447", "原生"),
-            colorOption("提示框文字颜色", "含单点提示和长按列表中的全部字符", Focus.KEY_POPUP,
+            colorOption("提示与选择框文字色", Focus.KEY_POPUP,
                 ConfigManager.KEY_KEY_POPUP_TEXT, null, "#202124", "跟随按键")
         ))
 
         section(root, "面板卡片", listOf(
-            colorOption("菜单功能卡片颜色", "菜单键展开后的功能卡片", Focus.MENU_CARD,
+            colorOption("菜单卡片颜色", Focus.MENU_CARD,
                 ConfigManager.KEY_MENU_CARD_COLOR, ConfigManager.KEY_MENU_CARD_OPACITY, "#FFFFFF",
                 "原生"),
-            colorOption("剪贴板卡片颜色", "含常用语卡片", Focus.CLIPBOARD_CARD,
+            colorOption("剪贴板与常用语卡片颜色", Focus.CLIPBOARD_CARD,
                 ConfigManager.KEY_CLIPBOARD_CARD_COLOR, ConfigManager.KEY_CLIPBOARD_CARD_OPACITY, "#FFFFFF",
                 "原生")
         ))
@@ -347,13 +329,12 @@ class AppearancePage(
     /** An optional color: empty means the native or automatic color. */
     private fun colorOption(
         title: String,
-        subtitle: String,
         focus: Focus,
         key: String,
         opacityKey: String?,
         defaultHex: String,
         offSummary: String
-    ) = Option(title, subtitle, focus, {
+    ) = Option(title, focus, {
         val p = stylePrefs()
         val color = parseColor(p.getString(key, ""))
         if (color == null) Summary(offSummary) else Summary(
@@ -368,7 +349,7 @@ class AppearancePage(
             onColor = { stylePrefs().edit().putString(key, it).apply() },
             onOpacity = { value -> opacityKey?.let { stylePrefs().edit().putInt(it, value).apply() } }
         )
-        val toggle = switchRow(panel, "自定义颜色", "", saved.isNotBlank()) { checked ->
+        val toggle = switchRow(panel, "自定义颜色", saved.isNotBlank()) { checked ->
             editor.root.visibility = if (checked) View.VISIBLE else View.GONE
             stylePrefs().edit().putString(key, if (checked) editor.hex else "").apply()
         }
@@ -379,21 +360,22 @@ class AppearancePage(
     }
 
     private fun buildProfilePanel(panel: LinearLayout) {
-        val hint = note(panel, "")
-        fun updateHint(follow: Boolean) {
-            hint.text = if (follow) "选择要编辑的配置" else "键盘固定使用所选配置"
+        val light = radio("")
+        val dark = radio("")
+        fun labelChoices(follow: Boolean) {
+            light.text = if (follow) "编辑浅色" else "使用浅色"
+            dark.text = if (follow) "编辑深色" else "使用深色"
         }
         val follow = prefs.getBoolean(AppearanceProfiles.FOLLOW_SYSTEM, false)
-        switchRow(panel, "跟随系统切换深浅色", "", follow) { checked ->
+        switchRow(panel, "跟随系统切换深浅色", follow) { checked ->
             prefs.edit().putBoolean(AppearanceProfiles.FOLLOW_SYSTEM, checked)
                 .putBoolean(AppearanceProfiles.MANUAL_DARK, editingDark).apply()
-            updateHint(checked)
+            labelChoices(checked)
         }
-        val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        val light = radio("浅色配置")
-        val dark = radio("深色配置")
-        group.addView(light, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        group.addView(dark, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        labelChoices(follow)
+        val group = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
+        group.addView(light, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        group.addView(dark, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         group.check(if (editingDark) dark.id else light.id)
         group.setOnCheckedChangeListener { _, id ->
             editingDark = id == dark.id
@@ -404,9 +386,6 @@ class AppearancePage(
             refresh()
         }
         panel.addView(group)
-        panel.removeView(hint)
-        panel.addView(hint)
-        updateHint(follow)
     }
 
 
@@ -415,14 +394,14 @@ class AppearancePage(
     private fun buildPresetPanel(panel: LinearLayout)
     {
         AppearancePresetStore.presets.forEach { preset ->
-            panel.addView(kit.navRow(preset.name, preset.description, null) {
+            panel.addView(kit.navRow(preset.name) {
                 AlertDialog.Builder(activity)
                     .setTitle("应用「" + preset.name + "」")
                     .setMessage("将替换当前" + (if (editingDark) "深色" else "浅色") +
                         "外观的全部颜色、透明度和圆角设置。" +
-                        if (preset.id == AppearancePresetStore.OFFICIAL)
-                            "\n\n官方方案保留输入法原始配色、透明度与材质，仅可编辑圆角和边缘高光。应用其他预设后可恢复编辑。"
-                        else "")
+                        preset.description.takeIf { it.isNotEmpty() }?.let {
+                            "\n\n$it。应用其他预设后可恢复编辑。"
+                        }.orEmpty())
                     .setNegativeButton("取消", null)
                     .setPositiveButton("应用") { _, _ ->
                         if (AppearancePresetStore.applyPreset(prefs, editingDark, preset.id))
@@ -448,12 +427,12 @@ class AppearancePage(
     private fun showSchemes(panel: LinearLayout)
     {
         panel.removeAllViews()
-        panel.addView(kit.navRow("保存当前为新配置", null, R.drawable.ic_scheme_save) {
+        panel.addView(kit.navRow("保存当前为新配置", R.drawable.ic_scheme_save) {
             askSchemeName(panel, "保存新配置", "") { name ->
                 AppearancePresetStore.save(prefs, name)
             }
         })
-        panel.addView(kit.navRow("导入外观配置", "选择单条配置的 JSON 文件，导入后可手动加载", R.drawable.ic_shape_import) {
+        panel.addView(kit.navRow("导入外观配置", R.drawable.ic_shape_import) {
             if (schemeTransferPending()) return@navRow
             pickingSchemeImport = true
             runCatching { openSchemeFile.launch(arrayOf("*/*")) }.onFailure {
@@ -462,15 +441,11 @@ class AppearancePage(
             }
         })
 
-        val schemes = AppearancePresetStore.saved(prefs)
-        if (schemes.isEmpty())
-        {
-            note(panel, "还没有保存的配置。可保存当前外观，或导入已有配置文件。")
-            return
-        }
-        note(panel, "已保存 " + schemes.size + " 套 · 点击名称加载配置")
-        schemes.forEach { scheme ->
-            panel.addView(kit.navRow(scheme.name, "包含浅色与深色外观 · 点击切换", null) {
+        AppearancePresetStore.saved(prefs).forEach { scheme ->
+            panel.addView(kit.divider().apply {
+                (layoutParams as LinearLayout.LayoutParams).topMargin = kit.dimen(R.dimen.space_lg)
+            })
+            panel.addView(kit.navRow(scheme.name) {
                 AlertDialog.Builder(activity)
                     .setTitle("加载「" + scheme.name + "」")
                     .setMessage("这将覆盖当前未保存的浅色、深色外观及跟随系统设置，是否继续？")
@@ -493,7 +468,7 @@ class AppearancePage(
                             Toast.makeText(this, "读取配置失败", Toast.LENGTH_SHORT).show()
                         }
                     }.show()
-            })
+            }.apply { contentDescription = "加载${scheme.name}" })
             val actions = SchemeActionRow(this)
             actions.addView(SchemeActionButton(this, "覆盖保存", R.drawable.ic_scheme_save, SchemeActionButton.Tone.PRIMARY) {
                 AlertDialog.Builder(activity)
@@ -508,15 +483,17 @@ class AppearancePage(
                         }
                         else Toast.makeText(this, "覆盖保存失败", Toast.LENGTH_SHORT).show()
                     }.show()
-            })
+            }.apply { contentDescription = "覆盖保存${scheme.name}" })
             actions.addView(SchemeActionButton(this, "重命名", R.drawable.ic_scheme_edit) {
                 askSchemeName(panel, "重命名配置", scheme.name) { name ->
                     AppearancePresetStore.rename(prefs, scheme.id, name)
                 }
-            })
+            }.apply { contentDescription = "重命名${scheme.name}" })
             panel.addView(actions)
             val fileActions = SchemeActionRow(this)
-            fileActions.addView(SchemeActionButton(this, "导出", R.drawable.ic_scheme_export) { exportScheme(scheme) })
+            fileActions.addView(SchemeActionButton(this, "导出", R.drawable.ic_scheme_export) {
+                exportScheme(scheme)
+            }.apply { contentDescription = "导出${scheme.name}" })
             fileActions.addView(SchemeActionButton(this, "删除", R.drawable.ic_scheme_delete, SchemeActionButton.Tone.DESTRUCTIVE) {
                 AlertDialog.Builder(activity)
                     .setTitle("删除「" + scheme.name + "」")
@@ -530,7 +507,7 @@ class AppearancePage(
                         }
                         else Toast.makeText(this, "删除配置失败", Toast.LENGTH_SHORT).show()
                     }.show()
-            })
+            }.apply { contentDescription = "删除${scheme.name}" })
             panel.addView(fileActions)
         }
     }
@@ -576,7 +553,7 @@ class AppearancePage(
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             filters = arrayOf(InputFilter.LengthFilter(AppearancePresetStore.MAX_NAME_LENGTH))
-            hint = "例如：日常通透、深夜护眼"
+            hint = "配置名称"
             setText(initial)
             setSelection(text?.length ?: 0)
         }
@@ -620,7 +597,6 @@ class AppearancePage(
 
         val solidConfig = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         panel.addView(solidConfig)
-        solidConfig.addView(label("常用预设色", 12f, R.color.text_secondary).apply { setPadding(0, dp(8), 0, dp(6)) })
         val presets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         solidConfig.addView(presets)
         val editor = ColorEditor(solidConfig, p.getString(ConfigManager.KEY_BG_COLOR, "#1E1E2E") ?: "#1E1E2E", null,
@@ -633,10 +609,15 @@ class AppearancePage(
                 text = name
                 textSize = 11f
                 gravity = Gravity.CENTER
+                minHeight = kit.dimen(R.dimen.settings_touch_height)
                 setTextColor(if (luma(color) < 150) Color.WHITE else 0xff1e293b.toInt())
                 background = rounded(color, 8)
+                foreground = kit.selectableBackground()
+                isFocusable = true
                 setOnClickListener { editor.setHex(value, notify = true) }
-            }, LinearLayout.LayoutParams(0, dp(36), 1f).apply { if (i > 0) marginStart = dp(6) })
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (i > 0) marginStart = kit.dimen(R.dimen.space_xs)
+            })
         }
 
         val type = p.getInt(ConfigManager.KEY_BG_TYPE, 0)
@@ -654,7 +635,7 @@ class AppearancePage(
         val saved = stylePrefs().getInt(ConfigManager.KEY_RIM_HIGHLIGHT, 0).coerceIn(0, 100)
         var level = if (saved > 0) saved.coerceAtLeast(RIM_MIN) else GlassRim.DEFAULT_INTENSITY
         val config = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        switchRow(panel, "启用边缘高光", "", saved > 0) { checked ->
+        switchRow(panel, "启用边缘高光", saved > 0) { checked ->
             config.visibility = if (checked) View.VISIBLE else View.GONE
             stylePrefs().edit().putInt(ConfigManager.KEY_RIM_HIGHLIGHT, if (checked) level else 0).apply()
         }
@@ -679,14 +660,13 @@ class AppearancePage(
     private fun buildScrimPanel(panel: LinearLayout) {
         val p = stylePrefs()
         val config = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val warning = warningText(panel)
+        val warning = warningText()
         val enabled = prefs.getBoolean(ConfigManager.KEY_SCRIM_ENABLED, true)
-        val toggle = switchRow(panel, "启用可读性底色", "深浅色配置共用", enabled) { checked ->
+        switchRow(panel, "启用深浅色共用底色", enabled) { checked ->
             prefs.edit().putBoolean(ConfigManager.KEY_SCRIM_ENABLED, checked).apply()
             config.visibility = if (checked) View.VISIBLE else View.GONE
             updateWarning(warning)
         }
-        panel.removeView(warning)
         panel.addView(warning)
         panel.addView(config)
         config.visibility = if (enabled) View.VISIBLE else View.GONE
@@ -700,7 +680,7 @@ class AppearancePage(
         val editor = ColorEditor(config, saved.ifBlank { "#121212" }, null,
             onColor = { stylePrefs().edit().putString(ConfigManager.KEY_SCRIM_COLOR, it).apply() },
             onOpacity = {})
-        val custom = switchRow(config, "自定义底色颜色", "", saved.isNotBlank()) { checked ->
+        val custom = switchRow(config, "自定义底色颜色", saved.isNotBlank()) { checked ->
             editor.root.visibility = if (checked) View.VISIBLE else View.GONE
             stylePrefs().edit().putString(ConfigManager.KEY_SCRIM_COLOR, if (checked) editor.hex else "").apply()
         }
@@ -711,10 +691,9 @@ class AppearancePage(
         updateWarning(warning)
     }
 
-    private fun warningText(panel: LinearLayout) = label("", 12f, R.color.status_inactive).apply {
-        setPadding(0, dp(8), 0, 0)
+    private fun warningText() = label("", 12f, R.color.shape_error_text).apply {
+        setPadding(0, kit.dimen(R.dimen.space_sm), 0, 0)
         visibility = View.GONE
-        panel.addView(this)
     }
 
     /** Scrim opacity in effect, 0 when it is switched off. */
@@ -729,14 +708,14 @@ class AppearancePage(
         return opacity + activeScrimOpacity() * (100 - opacity) / 100
     }
 
-    private fun updateCombinedOpacity(view: TextView) {
+    private fun updateEffectiveOpacity(view: TextView) {
         val scrim = activeScrimOpacity()
-        // A low result is already reported by the warning below.
-        view.visibility = if (scrim > 0 && (scrim >= 100 || effectiveOpacity() >= LOW_OPACITY)) View.VISIBLE else View.GONE
-        view.text = if (scrim >= 100) {
-            "可读性底色为 100%，背景透明度不会生效"
-        } else {
-            "叠加底色后整体约 ${effectiveOpacity()}%"
+        val effective = effectiveOpacity()
+        val background = stylePrefs().getInt(ConfigManager.KEY_OPACITY, 85).coerceIn(0, 100)
+        view.visibility = if (scrim >= 100 || (effective > background && effective >= LOW_OPACITY)) View.VISIBLE else View.GONE
+        view.text = when {
+            scrim >= 100 -> "背景被可读性底色完全覆盖"
+            else -> "叠加后 ${effective}%"
         }
     }
 
@@ -744,7 +723,7 @@ class AppearancePage(
     private fun updateWarning(view: TextView) {
         val effective = effectiveOpacity()
         view.visibility = if (effective < LOW_OPACITY) View.VISIBLE else View.GONE
-        view.text = "整体仅约 $effective%，文字可能看不清，建议调高可读性底色"
+        view.text = "整体不透明度 $effective%，文字可能难以辨认"
     }
 
     // ------------------------------------------------------- floating preview
@@ -849,23 +828,25 @@ class AppearancePage(
 
     // ------------------------------------------------------------ panel state
 
-    private fun openPanel(row: Row) {
-        if (lockedByOfficial(row.option)) {
+    private fun openPanel(option: Option) {
+        if (lockedByOfficial(option)) {
             Toast.makeText(this, "官方方案仅可编辑圆角和边缘高光，请先切换其他预设", Toast.LENGTH_SHORT).show()
             return
         }
-        if (!styleSwitch.isChecked && row.option.focus != Focus.NONE) {
+        if (!styleSwitch.isChecked && option.focus != Focus.NONE) {
             Toast.makeText(this, "请先启用键盘外观个性化", Toast.LENGTH_SHORT).show()
             return
         }
         panelContent.removeAllViews()
-        panelTitle.text = row.option.title
-        row.option.build(panelContent)
+        panelTitle.text = option.title
+        option.build(panelContent)
         panelChanged = false
-        preview.focus = row.option.focus
+        preview.focus = option.focus
         if (previewCollapsed) setPreviewCollapsed(false)
         placePanel()
         closePanelOnBack.isEnabled = true
+        options.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        ViewCompat.setAccessibilityPaneTitle(overlay, option.title)
         overlay.visibility = View.VISIBLE
         overlay.alpha = 0f
         overlay.animate().alpha(1f).setDuration(160).start()
@@ -884,6 +865,7 @@ class AppearancePage(
         preview.focus = Focus.NONE
         overlay.animate().alpha(0f).setDuration(140).withEndAction {
             overlay.visibility = View.GONE
+            options.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
             panelContent.removeAllViews()
         }.start()
         if (panelChanged) onConfigChanged()
@@ -898,16 +880,18 @@ class AppearancePage(
             syncingStyleSwitch = false
         }
         preview.style = style
-        previewHint.text = "编辑" + (if (editingDark) "深色" else "浅色") + "配置" +
-            if (!style.enabled) " · 未启用"
-            else if (officialAppearance()) " · 官方方案，仅可调圆角与高光" else ""
+        previewTitle.text = if (editingDark) "深色预览" else "浅色预览"
         rows.forEach { row ->
             val locked = lockedByOfficial(row.option)
-            val summary = if (locked) Summary("官方 · 已锁定") else row.option.summary()
-            row.value.text = summary.text
+            val summary = if (locked) Summary("官方锁定") else row.option.summary?.invoke()
+            row.value.text = summary?.text
+            row.value.visibility = if (summary == null) View.GONE else View.VISIBLE
             row.value.setTextColor(getColor(if (locked) R.color.text_secondary else R.color.primary))
-            row.swatch.visibility = if (summary.color != null) View.VISIBLE else View.GONE
-            summary.color?.let { row.swatch.background = swatchDrawable(it, dp(9).toFloat()) }
+            val swatch = summary?.color?.let {
+                val size = kit.dimen(R.dimen.appearance_swatch_size)
+                swatchDrawable(it, size / 2f).apply { setBounds(0, 0, size, size) }
+            }
+            row.value.setCompoundDrawablesRelative(swatch, null, null, null)
             val active = style.enabled || row.option.focus == Focus.NONE
             row.view.isEnabled = active && !locked
             row.view.alpha = if (active) 1f else 0.45f
@@ -953,33 +937,11 @@ class AppearancePage(
     }
 
     private fun optionRow(option: Option): View {
-        val row = horizontalRow()
-        row.addView(kit.titleBlock(option.title, option.subtitle, singleLine = true),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val swatch = View(this)
-        row.addView(swatch, LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginStart = dp(8) })
-        val value = label("", 13f, R.color.primary).apply {
-            setPadding(dp(6), 0, dp(4), 0)
-            maxWidth = dp(130)
-            maxLines = 1
-        }
-        row.addView(value)
-        row.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_shape_chevron)
-            imageTintList = ColorStateList.valueOf(getColor(R.color.text_secondary))
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(dp(20), dp(20)))
-        val item = Row(option, row, value, swatch)
-        row.setOnClickListener { openPanel(item) }
-        rows += item
+        val value = kit.rowValue("").apply { compoundDrawablePadding = kit.dimen(R.dimen.space_xs) }
+        val row = kit.navRow(option.title, value = value) { openPanel(option) }
+        rows += Row(option, row, value)
         return row
     }
-
-    private fun card() = kit.card()
-
-    private fun horizontalRow() = kit.row()
-
-    private fun titleBlock(title: String, subtitle: String) = kit.titleBlock(title, subtitle)
 
     private fun label(text: String, size: Float, colorRes: Int) = TextView(this).apply {
         this.text = text
@@ -987,15 +949,10 @@ class AppearancePage(
         setTextColor(getColor(colorRes))
     }
 
-    private fun note(panel: LinearLayout, text: String) = label(text, 12f, R.color.text_secondary).apply {
-        setPadding(0, dp(8), 0, 0)
-        panel.addView(this)
-    }
-
     private fun radio(text: String) = RadioButton(this).apply {
         id = View.generateViewId()
         this.text = text
-        minHeight = dp(48)
+        minHeight = kit.dimen(R.dimen.settings_touch_height)
         setTextColor(getColor(R.color.text_primary))
         buttonTintList = ColorStateList.valueOf(getColor(R.color.primary))
     }
@@ -1003,25 +960,29 @@ class AppearancePage(
     private fun switchRow(
         panel: LinearLayout,
         title: String,
-        subtitle: String,
         checked: Boolean,
         onChange: (Boolean) -> Unit
     ): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(48)
-            setPadding(0, dp(4), 0, dp(4))
+            minimumHeight = kit.dimen(R.dimen.settings_touch_height)
+            val pad = kit.dimen(R.dimen.space_xs)
+            setPadding(0, pad, 0, pad)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
-        row.addView(titleBlock(title, subtitle).apply {
-            (getChildAt(0) as TextView).textSize = 14f
+        row.addView(label(title, 14f, R.color.text_primary).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val switch = SwitchCompat(this).apply {
             isChecked = checked
+            contentDescription = title
+            minHeight = kit.dimen(R.dimen.settings_touch_height)
             setOnCheckedChangeListener { _, value -> onChange(value) }
         }
         row.addView(switch)
         row.setOnClickListener { switch.toggle() }
+        row.isFocusable = false
         panel.addView(row)
         return row
     }
@@ -1053,15 +1014,18 @@ class AppearancePage(
             contentDescription = title
             progressTintList = ColorStateList.valueOf(getColor(R.color.primary))
             thumbTintList = ColorStateList.valueOf(getColor(R.color.primary))
+            ViewCompat.setStateDescription(this, valueView.text)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    valueView.text = format(progress)
+                    val formatted = format(progress)
+                    valueView.text = formatted
+                    seekBar?.let { ViewCompat.setStateDescription(it, formatted) }
                     if (fromUser) onChange(progress)
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {}
             })
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, kit.dimen(R.dimen.settings_touch_height)))
     }
 
     /** Inline wheel, brightness, hex field and optional opacity; changes save as they happen. */

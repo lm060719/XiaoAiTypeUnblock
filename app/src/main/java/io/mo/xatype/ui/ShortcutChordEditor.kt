@@ -16,9 +16,8 @@ internal object ShortcutChordEditor {
         val kit = SettingsKit(context)
         val initial = stored?.let(ShortcutKeyChord::parse) ?: ShortcutKeyChord("Z", ctrl = true)
         val body = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        body.addView(kit.resourceLabel("下滑一次发送完整组合键。目标应用需要支持对应操作；Ctrl、Alt、Shift 会在本次操作结束时释放。",
-            R.dimen.settings_description_size, R.color.text_secondary))
         val preview = kit.resourceLabel(initial.label, R.dimen.settings_chord_preview_size, R.color.primary, bold = true)
+        body.addView(preview)
         val names = ShortcutKeyChord.keys.keys.toList()
         val key = Spinner(context).apply {
             contentDescription = "组合键主键"
@@ -48,7 +47,6 @@ internal object ShortcutChordEditor {
         }
         body.addView(kit.resourceLabel("主键", R.dimen.settings_description_size, R.color.text_secondary))
         body.addView(key, LinearLayout.LayoutParams(-1, -2))
-        body.addView(preview, LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dimen(R.dimen.space_md) })
         lateinit var dialog: Dialog
         dialog = InfoSheet.withAction(context, "自定义组合键", body, "保存", "取消") { button ->
             onSave(chord().encoded)
