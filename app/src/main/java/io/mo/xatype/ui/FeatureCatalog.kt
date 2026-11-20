@@ -65,10 +65,7 @@ internal object FeatureCatalog {
 
     val bottomSpacing = Feature(ConfigManager.KEY_BOTTOM_SPACING_ENABLED, "自定义键盘底部间距")
 
-    val toolbarHeight = Feature(ConfigManager.KEY_TOOLBAR_HEIGHT_ENABLED, "自定义顶部功能栏高度",
-        Detail("调节键盘顶部功能栏与候选栏共用区域的高度，范围为 48～80 dp。数值越小，顶部区域越薄。",
-            notes = listOf("关闭后恢复原生高度，保留已选数值。修改后重启输入法生效。",
-                "同步调整键盘总高度，保留字母按键的高度；悬浮键盘保持原生布局。")))
+    val toolbarHeight = Feature(ConfigManager.KEY_TOOLBAR_HEIGHT_ENABLED, "自定义顶部功能栏高度")
 
     private fun shortcutTable(kit: SettingsKit): View {
         val context = kit.context

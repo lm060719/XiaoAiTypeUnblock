@@ -438,7 +438,6 @@ class MainActivity : AppCompatActivity() {
             kit.navRow(getString(R.string.key_positions_title), R.drawable.ic_nav_keyboard) {
                 startActivity(Intent(this, KeyboardPositionsActivity::class.java))
             },
-            oneHandRow(),
             featureSwitch(FeatureCatalog.keyboardHeight).view,
             toolbarHeightRow(),
             bottomSpacingRow()
@@ -473,34 +472,6 @@ class MainActivity : AppCompatActivity() {
                 value.text = modes[index].title
                 markRestartNeeded()
             }
-        }
-    }
-
-    private fun oneHandRow(): View {
-        val labels = listOf("关闭", "左手", "右手")
-        fun selected() = prefs.getInt(ConfigManager.KEY_ONE_HAND_SIDE, 0).coerceIn(labels.indices)
-        val policy = io.mo.xatype.hooks.OneHandPolicy
-        val width = settingSlider("单手键盘宽度", policy.WIDTH_RANGE,
-            prefs.getInt(ConfigManager.KEY_ONE_HAND_WIDTH, policy.DEFAULT_WIDTH),
-            "单手键盘宽度百分比", { "$it%" }) {
-            prefs.edit().putInt(ConfigManager.KEY_ONE_HAND_WIDTH, it).apply()
-        }
-        width.visibility = if (selected() == 0) View.GONE else View.VISIBLE
-        val value = kit.rowValue(labels[selected()])
-        val row = kit.navRow("单手模式", value = value, detail = SettingsKit.Detail(
-            "也可从键盘菜单即时切换。适用于竖屏的非悬浮键盘，最小宽度为 240 dp。"
-        )) {
-            InfoSheet.choose(this, "单手模式", labels, selected()) { index ->
-                ConfigManager.editOneHandSide(prefs, index).apply()
-                value.text = labels[index]
-                width.visibility = if (index == 0) View.GONE else View.VISIBLE
-                markRestartNeeded()
-            }
-        }
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(row)
-            addView(width)
         }
     }
 
