@@ -128,9 +128,9 @@ class KeyboardAbi private constructor(private val loader: ClassLoader, private v
         }
 
         /** Explicit fixture injection; production hooks always use [require]. */
-        internal fun reference(loader: ClassLoader): KeyboardAbi = KeyboardAbi(loader,
+        internal fun reference(loader: ClassLoader, overrides: Map<String, String> = emptyMap()): KeyboardAbi = KeyboardAbi(loader,
             KeyboardAbiReference.data.getJSONObject("reference").let { json ->
-                json.keys().asSequence().associateWith { json.getString(it) }
+                json.keys().asSequence().associateWith { json.getString(it) } + overrides
             })
 
         private fun parse(values: List<String>): Map<String, String> {

@@ -38,3 +38,8 @@ interface p : q {
     fun r(segment: Int): r
     fun v(): List<Any>
 }
+
+// The raw cursor added in 0.2.1448 shares its host name with another callback.
+interface EngineWithRawCursor : p {
+    fun r(): Int
+}

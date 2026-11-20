@@ -270,8 +270,9 @@ class EmojiHostBridge(
                             selectNative(method, forwarded)
                         }
                     }
+                    // The host reads the cursor while building the candidate snapshot, before a tap.
                     "a", "e", "f", "j", "v", "singleCharFilterSupported", "cursorEditing", "engineName",
-                    "segmentState" -> method.invoke(engine, *arguments)
+                    "segmentState", "rawCursor" -> method.invoke(engine, *arguments)
                     else -> {
                         reset()
                         // Space/enter may commit through a key callback instead of candidate selection.

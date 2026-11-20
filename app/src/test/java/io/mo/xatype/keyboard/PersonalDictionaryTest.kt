@@ -62,6 +62,29 @@ class PersonalDictionaryTest {
         assertTrue(p.s().isEmpty())
     }
 
+    @Test fun `host cursor read after displaying candidates preserves tap positions`() {
+        val loader = javaClass.classLoader!!
+        val abi = KeyboardAbi.reference(loader, mapOf(
+            "c:z8.p" to "Lz8/EngineWithRawCursor;",
+            "m:z8.p#rawCursor()I" to "Lz8/EngineWithRawCursor;->r()I"
+        ))
+        val bridge = EmojiHostBridge(loader, abi)
+        val personal = PersonalDictionary.of(listOf(PersonalDictionary.entry("xm", "小米15ultra")))
+        for (index in listOf(0, 2)) {
+            val native = Native().apply { words = listOf("小米", "小明", "小猫") }
+            val p = bridge.create(native, { null }, { false }, personal = { personal }) { throw AssertionError(it) }
+                as EngineWithRawCursor
+            p.i('x'.code)
+            val shown = p.i('m'.code).candidates.map { it.text }
+            assertEquals(listOf("小米15ultra", "小米", "小明"), shown)
+            assertEquals(2, p.r())
+            val picked = p.n(index, shown[index])
+            assertEquals(shown[index], picked.first)
+            assertTrue(picked.second)
+            assertEquals(if (index == 0) -1 else 1, native.selected)
+        }
+    }
+
     @Test fun `space commits shortcut through character code text and flush without native learning`() {
         for (path in 0..3) {
             val native = Native()
@@ -200,7 +223,7 @@ class PersonalDictionaryTest {
         assertEquals(1, native.selections)
     }
 
-    private class Native : p {
+    private class Native : EngineWithRawCursor {
         var raw = ""
         var mode = g.PINYIN
         var words = listOf("小米", "小明") + (2..29).map { "候选$it" }
@@ -240,6 +263,7 @@ class PersonalDictionaryTest {
         override fun k(): r { raw = raw.dropLast(1); return result() }
         override fun c() = h('\'')
         override fun g(list: List<Any>) = result()
+        override fun r() = raw.length
         override fun r(segment: Int) = result()
         override fun j() = ""
         override fun v() = emptyList<Any>()
