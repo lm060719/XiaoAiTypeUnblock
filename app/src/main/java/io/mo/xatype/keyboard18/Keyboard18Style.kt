@@ -8,6 +8,7 @@ object Keyboard18Style {
     const val CONTROL_WEIGHT = 1f
     const val FALLBACK_SPACING = 5f
     const val MAIN_TEXT_SCALE = 0.9f
+    const val QWERTY_TEXT_SCALE = 0.95f
     const val PREVIEW_TEXT_SIZE = 18f
     const val PREVIEW_HINT_SCALE = 0.55f
     const val PREVIEW_RADIUS = 8
