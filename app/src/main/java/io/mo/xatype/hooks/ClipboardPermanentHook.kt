@@ -85,6 +85,12 @@ object ClipboardPermanentHook {
         installForManagerClass(module, managerClass, phraseApk, cacheDir)
     }
 
+    internal fun pluginLoaders(): Array<ClassLoader> =
+        installedManagerClasses.mapNotNull { it.classLoader }.distinct().toTypedArray()
+
+    internal fun reattachPlugin(module: XposedInterface, loader: ClassLoader) =
+        attachPluginLoader(module, loader, null)
+
     private fun installFrameworkBridge(module: XposedInterface) {
         if (!frameworkBridgeInstalled.compareAndSet(false, true)) return
 
@@ -193,8 +199,7 @@ object ClipboardPermanentHook {
 
     /** Lets the fingerprint cache be found before the IME service's onCreate runs. */
     private fun applicationCacheDir(): File? = runCatching {
-        val app = Class.forName("android.app.ActivityThread")
-            .getMethod("currentApplication").invoke(null) as? Context
+        val app = XposedUtils.currentApplication()
         app?.applicationInfo?.deviceProtectedDataDir?.let { File(it, "cache") }
     }.getOrNull()?.also { ownCacheDir = it }
 

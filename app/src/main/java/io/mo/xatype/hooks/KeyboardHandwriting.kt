@@ -79,6 +79,7 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
     private val recognizeLater = Runnable { recognize() }
     private val ink = Ink()
     private var decor = WeakReference<View>(null)
+    private var attachedWindow = WeakReference<Window>(null)
     private var pending: Pending? = null
     private var stroke: FloatList? = null
     private var strokePointer = -1
@@ -102,8 +103,10 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
         val window = service.window?.window ?: return
         val current = window.callback ?: return
         if (Proxy.isProxyClass(current.javaClass) && Proxy.getInvocationHandler(current) is Dispatch) return
+        detach()
         window.callback = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(Window.Callback::class.java),
             Dispatch(current)) as Window.Callback
+        attachedWindow = WeakReference(window)
         val view = window.decorView
         if (decor.get() !== view) {
             decor.get()?.overlay?.remove(ink)
@@ -111,6 +114,19 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
             decor = WeakReference(view)
         }
         XposedUtils.log(module, "Keyboard handwriting attached to the input window")
+    }
+
+    fun detach() {
+        reset()
+        attachedWindow.get()?.let { window ->
+            val callback = window.callback
+            if (callback != null && Proxy.isProxyClass(callback.javaClass)) {
+                (Proxy.getInvocationHandler(callback) as? Dispatch)?.let { window.callback = it.original }
+            }
+        }
+        attachedWindow.clear()
+        decor.get()?.overlay?.remove(ink)
+        decor.clear()
     }
 
     /** Drop ink, pending recognition and the candidate strip (the keyboard was hidden). */
@@ -127,7 +143,7 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
         invalidate()
     }
 
-    private inner class Dispatch(private val original: Window.Callback) : InvocationHandler {
+    private inner class Dispatch(val original: Window.Callback) : InvocationHandler {
         override fun invoke(proxy: Any, method: Method, args: Array<out Any?>?): Any? {
             val event = args?.singleOrNull() as? MotionEvent
             if (event != null && method.name == "dispatchTouchEvent") return try {

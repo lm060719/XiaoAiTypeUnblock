@@ -8,6 +8,8 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.view.View
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.util.HookLifetime
+import java.util.WeakHashMap
 
 /**
  * A readability tint beneath solid/image backgrounds, or over the native glass
@@ -16,6 +18,15 @@ import io.mo.xatype.config.ConfigManager
 internal object ReadabilityScrim {
     const val DARK = 0xff121212.toInt()
     const val LIGHT = 0xfff5f5f5.toInt()
+    private class Foreground(val original: Drawable?, var applied: Drawable?)
+    private val materials = WeakHashMap<View, Foreground>()
+
+    fun clear() {
+        materials.forEach { (view, foreground) ->
+            if (view.foreground === foreground.applied) view.foreground = foreground.original
+        }
+        materials.clear()
+    }
 
     /** Light labels get a dark scrim and dark labels a light one. */
     fun autoColor(textColor: Int?, surfaceDark: Boolean): Int {
@@ -78,6 +89,7 @@ internal object ReadabilityScrim {
      */
     fun overlay(material: View, roundBottom: Boolean = false, glassBase: (() -> Int)? = null) {
         fun apply() {
+            if (HookLifetime.retired) return
             // The modern host clears background after applying native material. Keep
             // both glass tints here so that clear cannot discard the opacity setting.
             // Legacy hosts draw the native tint on a separate container instead.
@@ -94,6 +106,9 @@ internal object ReadabilityScrim {
                 scrim != null -> ColorDrawable(scrim)
                 else -> null
             }
+            val tracked = materials[material]
+            if (tracked != null && existing === tracked.applied) tracked.applied = material.foreground
+            else materials[material] = Foreground(existing, material.foreground)
         }
         apply()
         material.postDelayed(::apply, 48L)

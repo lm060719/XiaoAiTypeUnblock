@@ -4,6 +4,7 @@ import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.compat.abiMethod
 import io.mo.xatype.keyboard.HostEngine
+import io.mo.xatype.util.HookLifetime
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Proxy
 
@@ -81,7 +82,7 @@ class ShapeHostBridge(private val loader: ClassLoader, private val abi: Keyboard
         value.candidates.take(PAGE_SIZE).map(::candidate), value.commit, value.code)
 
     fun create(engine: ShapeEngine, onInput: () -> Unit = {}): Any = Proxy.newProxyInstance(
-        loader, arrayOf(extendedInterface), Session(engine, onInput))
+        loader, arrayOf(extendedInterface), Session(engine, onInput)).also(HookLifetime::trackEngine)
 
     fun session(proxy: Any?): ShapeEngine? = if (proxy != null && Proxy.isProxyClass(proxy.javaClass))
         (Proxy.getInvocationHandler(proxy) as? Session)?.engine else null
@@ -105,7 +106,8 @@ class ShapeHostBridge(private val loader: ClassLoader, private val abi: Keyboard
             "toString" -> "ShapeEngine(resolved ABI)"
             "a" -> pinyin
             "b" -> engine.select(arg[0] as Int).orEmpty()
-            "clear", "destroy", "t" -> { engine.clear(); null }
+            "clear", "t" -> { engine.clear(); null }
+            "destroy" -> { engine.clear(); HookLifetime.releaseEngine(proxy); null }
             "d" -> result(engine.replaceCode(arg[0] as String))
             "e" -> false // No prediction or resurrection of previously committed codes.
             "f" -> if (engine.code.isEmpty()) idle else host.composing(engine.code, engine.code)

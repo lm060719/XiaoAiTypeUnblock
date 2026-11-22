@@ -8,6 +8,7 @@ import android.os.Bundle
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.provider.LogContentProvider
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -18,12 +19,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 object AdaptationReporter {
     private val pending = ConcurrentHashMap<String, Bundle>()
     private val hookInstalled = AtomicBoolean(false)
+    private val reports = HookLifetime.worker("xatype-adaptation")
 
     @Volatile
     private var appContext: Context? = null
 
-    fun install(module: XposedInterface) {
+    fun install(module: XposedInterface, application: Application? = null) {
         if (!hookInstalled.compareAndSet(false, true)) return
+        if (application != null) {
+            appContext = application
+            return
+        }
         val method = Instrumentation::class.java.getDeclaredMethod(
             "callApplicationOnCreate",
             Application::class.java
@@ -61,7 +67,7 @@ object AdaptationReporter {
         val context = appContext ?: return
         if (pending.isEmpty()) return
         // Starting the module's provider is IPC; keep it off the host's startup path.
-        Thread {
+        reports {
             pending.keys.toList().forEach { packageName ->
                 val bundle = pending.remove(packageName) ?: return@forEach
                 try {
@@ -76,7 +82,7 @@ object AdaptationReporter {
                     XposedUtils.logWarn(module, "Adaptation report for $packageName failed: $t")
                 }
             }
-        }.start()
+        }
     }
 
     @Suppress("DEPRECATION")

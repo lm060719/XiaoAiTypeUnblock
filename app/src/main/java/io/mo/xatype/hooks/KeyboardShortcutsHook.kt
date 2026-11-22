@@ -18,6 +18,7 @@ import io.mo.xatype.keyboard.KeyboardShortcutHostLayout
 import io.mo.xatype.keyboard.KeyboardShortcutLayout
 import io.mo.xatype.keyboard.KeyboardShortcuts
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 
 /** Native nine/26-key integration; does not load or require either experimental decoder. */
 object KeyboardShortcutsHook {
@@ -240,6 +241,7 @@ object KeyboardShortcutsHook {
 
             override fun connection(): InputConnection? = service?.currentInputConnection
         }, recognizer)
+        HookLifetime.onMainCleanup(writer::detach)
         val hide = InputMethodService::class.java.getDeclaredMethod("hideWindow")
         module.hook(hide).intercept { chain ->
             writer.reset()

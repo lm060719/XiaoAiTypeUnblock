@@ -12,7 +12,11 @@ import java.util.WeakHashMap
 
 /** Clip IME window pixels; CompositorGlassSurface separately rounds its blur region. */
 internal object ImeWindowCornerGuard {
-    private val tracked = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
+    private val tracked = WeakHashMap<View, View.OnAttachStateChangeListener>()
+
+    fun clear() {
+        tracked.toList().forEach { (view, listener) -> listener.onViewDetachedFromWindow(view) }
+    }
 
     fun track(decor: View) {
         if (tracked.containsKey(decor)) return
@@ -25,7 +29,6 @@ internal object ImeWindowCornerGuard {
             }
             true
         }
-        tracked[decor] = listener
         val originalProvider = decor.outlineProvider
         val originalClip = decor.clipToOutline
         decor.outlineProvider = object : ViewOutlineProvider() {
@@ -38,7 +41,7 @@ internal object ImeWindowCornerGuard {
         }
         decor.clipToOutline = true
         decor.viewTreeObserver.addOnPreDrawListener(listener)
-        decor.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        val attachListener = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) = Unit
             override fun onViewDetachedFromWindow(view: View) {
                 if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnPreDrawListener(listener)
@@ -47,7 +50,9 @@ internal object ImeWindowCornerGuard {
                 view.clipToOutline = originalClip
                 view.removeOnAttachStateChangeListener(this)
             }
-        })
+        }
+        tracked[decor] = attachListener
+        decor.addOnAttachStateChangeListener(attachListener)
     }
 
     @SuppressLint("DiscouragedApi") // Framework dimensions are a fallback for IME insets without corners.

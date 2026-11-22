@@ -1,5 +1,6 @@
 package io.mo.xatype
 
+import android.app.Application
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import io.mo.xatype.compat.AdaptationReporter
@@ -34,11 +35,24 @@ import io.mo.xatype.hooks.TelemetryBlockHook
 import io.mo.xatype.hooks.T9ShuangpinHook
 import io.mo.xatype.hooks.VoiceModerationHook
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.io.File
 
 class XiaoAiTypeModule : XposedModule() {
 
     private var processCacheDir: File? = null
+    private val packages = LinkedHashMap<Pair<String, ClassLoader>, LoadedPackage>()
+
+    private data class LoadedPackage(
+        val name: String,
+        val loader: ClassLoader,
+        val apk: String,
+        val dataDir: String,
+        val first: Boolean
+    ) {
+        // No objects defined in this module's class loader cross the reload boundary.
+        fun snapshot(): Array<Any> = arrayOf(name, loader, apk, dataDir, first)
+    }
 
     companion object {
         const val TARGET_PACKAGE = "com.xiaomi.type"
@@ -46,39 +60,78 @@ class XiaoAiTypeModule : XposedModule() {
         const val SYSTEM_UI_PACKAGE = "com.android.systemui"
     }
 
+    @Synchronized
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
-        super.onPackageLoaded(param)
+        if (HookLifetime.retired) return
         if (
             param.packageName != TARGET_PACKAGE &&
             param.packageName != PHRASE_PACKAGE &&
             param.packageName != SYSTEM_UI_PACKAGE
         ) return
+        val loaded = LoadedPackage(param.packageName, param.defaultClassLoader, param.applicationInfo.sourceDir,
+            param.applicationInfo.deviceProtectedDataDir, param.isFirstPackage)
+        if (packages.putIfAbsent(loaded.name to loaded.loader, loaded) == null) install(loaded)
+    }
 
+    override fun onHotReloading(param: XposedModuleInterface.HotReloadingParam): Boolean {
+        val state = synchronized(this) {
+            arrayOf(
+                packages.values.map(LoadedPackage::snapshot).toTypedArray(),
+                ClipboardPermanentHook.pluginLoaders()
+            )
+        }
+        param.setSavedInstanceState(state)
+        return HookLifetime.retire(this)
+    }
+
+    @Synchronized
+    override fun onHotReloaded(param: XposedModuleInterface.HotReloadedParam) {
+        val state = param.savedInstanceState as Array<*>
+        val application = XposedUtils.currentApplication()
+        if (application != null && packages.isEmpty()) {
+            ConfigManager.init(this)
+            ConfigManager.syncFromProvider(application)
+        }
+        for (snapshot in state[0] as Array<*>) {
+            val entry = snapshot as Array<*>
+            val loaded = LoadedPackage(entry[0] as String, entry[1] as ClassLoader,
+                entry[2] as String, entry[3] as String, entry[4] as Boolean)
+            packages[loaded.name to loaded.loader] = loaded
+            install(loaded, application)
+        }
+        for (loader in state[1] as Array<*>) {
+            ClipboardPermanentHook.reattachPlugin(this, loader as ClassLoader)
+        }
+        param.oldHookHandles.forEach { it.unhook() }
+        XposedUtils.log(this, "Hot reload complete: ${BuildConfig.VERSION_NAME} in ${param.processName}")
+    }
+
+    private fun install(loaded: LoadedPackage, application: Application? = null) {
         ConfigManager.init(this)
-        AdaptationReporter.install(this)
-        if (param.isFirstPackage) {
+        AdaptationReporter.install(this, application)
+        if (loaded.first) {
             // The process's own storage; phrase classes also load inside the IME.
-            processCacheDir = File(param.applicationInfo.deviceProtectedDataDir, "cache")
+            processCacheDir = File(loaded.dataDir, "cache")
         }
 
-        val classLoader = param.defaultClassLoader
+        val classLoader = loaded.loader
         XposedUtils.log(this, "================================================")
         XposedUtils.log(this, "XiaoAiTypeUnblock initialized on libxposed API 102")
-        XposedUtils.log(this, "Target: ${param.packageName} (FirstPackage=${param.isFirstPackage})")
+        XposedUtils.log(this, "Target: ${loaded.name} (FirstPackage=${loaded.first})")
         XposedUtils.log(this, "Framework: $frameworkName $frameworkVersion (API ${apiVersion})")
-        if (param.packageName == TARGET_PACKAGE) {
+        if (loaded.name == TARGET_PACKAGE) {
             XposedUtils.log(
                 this,
                 "Target compatibility profile: " +
                     TargetCompatibility.detect(classLoader).name
             )
-            initHostSymbols(param)
+            initHostSymbols(loaded)
         }
         XposedUtils.log(this, "================================================")
 
-        if (param.packageName == SYSTEM_UI_PACKAGE) {
+        if (loaded.name == SYSTEM_UI_PACKAGE) {
             try {
-                ScreenshotClipboardHook.install(this)
+                ScreenshotClipboardHook.install(this, application)
             } catch (t: Throwable) {
                 XposedUtils.logError(this, "Error installing ScreenshotClipboardHook", t)
             }
@@ -91,11 +144,11 @@ class XiaoAiTypeModule : XposedModule() {
         }
 
         try {
-            if (param.packageName == PHRASE_PACKAGE) {
+            if (loaded.name == PHRASE_PACKAGE) {
                 ClipboardPermanentHook.install(
                     this,
                     classLoader,
-                    param.applicationInfo.sourceDir,
+                    loaded.apk,
                     processCacheDir
                 )
             } else {
@@ -107,7 +160,7 @@ class XiaoAiTypeModule : XposedModule() {
 
         // com.miui.phrase owns persistence. The remaining hooks target only the
         // Xiaomi input method process.
-        if (param.packageName == PHRASE_PACKAGE) return
+        if (loaded.name == PHRASE_PACKAGE) return
 
         try {
             ClipboardSplitHook.install(this)
@@ -130,7 +183,7 @@ class XiaoAiTypeModule : XposedModule() {
         }
 
         try {
-            Keyboard18Hook.install(this, classLoader)
+            Keyboard18Hook.install(this, classLoader, application)
         } catch (t: Throwable) {
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_LAYOUT, t)
             XposedUtils.logError(this, "18-key keyboard unavailable for this host ABI", t)
@@ -270,15 +323,14 @@ class XiaoAiTypeModule : XposedModule() {
         XposedUtils.log(this, "XiaoAiTypeUnblock hooks installation complete.")
     }
 
-    private fun initHostSymbols(param: XposedModuleInterface.PackageLoadedParam) {
+    private fun initHostSymbols(loaded: LoadedPackage) {
         try {
-            val appInfo = param.applicationInfo
             // Device-protected storage stays readable before the first unlock,
             // when the input method already runs.
-            val cache = File(appInfo.deviceProtectedDataDir, "cache/xatype-symbols.json")
+            val cache = File(loaded.dataDir, "cache/xatype-symbols.json")
             val summary = HostSymbols.init(
-                param.defaultClassLoader,
-                appInfo.sourceDir,
+                loaded.loader,
+                loaded.apk,
                 cache,
                 XposedUtils.moduleStamp(this)
             )

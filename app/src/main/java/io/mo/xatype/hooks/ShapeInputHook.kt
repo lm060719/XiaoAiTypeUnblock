@@ -16,12 +16,12 @@ import io.mo.xatype.shape.ShapeHostBridge
 import io.mo.xatype.shape.ShapeHostKeyAdapter
 import io.mo.xatype.shape.ShapeStore
 import io.mo.xatype.util.XposedUtils
-import java.util.concurrent.Executors
+import io.mo.xatype.util.HookLifetime
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Opt-in replacement of the PINYIN engine, enabled only after the engine ABI resolves. */
 object ShapeInputHook {
-    private val reports = Executors.newSingleThreadExecutor()
+    private val reports = HookLifetime.worker("xatype-shape-report")
     private var loaded: Loaded? = null
     private data class Loaded(val settings: Bundle, val dictionary: ShapeDictionary)
 
@@ -83,7 +83,7 @@ object ShapeInputHook {
 
     private fun report(context: Context, settings: Bundle, message: String) {
         val app = context.applicationContext ?: context
-        reports.execute {
+        reports {
             runCatching { app.contentResolver.call(ShapeContentProvider.CONTENT_URI, "report", null, Bundle().apply {
                 putLong(ShapeStore.REVISION, settings.getLong(ShapeStore.REVISION))
                 putString(ShapeStore.STATUS, message)

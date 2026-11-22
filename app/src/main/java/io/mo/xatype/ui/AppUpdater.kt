@@ -232,7 +232,7 @@ internal class AppUpdater(private val activity: Activity, private val onChanged:
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { activity.startActivity(intent) }
-            .onSuccess { report("已打开系统安装程序；安装完成后重启输入法生效（版本 ${release.tag}）", false) }
+            .onSuccess { report("已打开系统安装程序（版本 ${release.tag}）。安装后留意框架的热重载结果。", false) }
             .onFailure { report("无法打开系统安装程序，请从发布页手动下载安装", true) }
     }
 

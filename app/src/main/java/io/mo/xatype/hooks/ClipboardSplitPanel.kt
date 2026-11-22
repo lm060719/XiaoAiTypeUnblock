@@ -135,13 +135,16 @@ internal class ClipboardSplitPanel(
         pane.translationY = host.translationY
     }
 
-    private fun close() {
+    var onClose: (() -> Unit)? = null
+
+    fun close() {
         if (pane.parent !== parent) return
         dismissal.stop()
         host.removeOnLayoutChangeListener(onHostLayout)
         host.removeOnAttachStateChangeListener(onHostDetach)
         parent.removeView(pane)
         host.visibility = View.VISIBLE
+        onClose?.invoke()
     }
 
     private fun showPage(index: Int) {

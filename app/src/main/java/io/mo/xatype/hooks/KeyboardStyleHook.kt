@@ -29,6 +29,7 @@ import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.compat.TargetGeneration
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.util.IdentityHashMap
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
@@ -67,6 +68,11 @@ object KeyboardStyleHook {
     private val nativeViewBackgrounds = WeakHashMap<View, NativeViewBackground>()
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
+        HookLifetime.onMainCleanup {
+            ReadabilityScrim.clear()
+            OfficialAppearance.clear()
+            ImeWindowCornerGuard.clear()
+        }
         if (TargetCompatibility.modernKeyboardProfile(classLoader) != null) {
             KeyboardStyleV209Hook.install(module, classLoader)
             return
@@ -80,6 +86,18 @@ object KeyboardStyleHook {
         if (imeServiceClass == null) {
             XposedUtils.logError(module, "MiInputMethodService class not found for KeyboardStyleHook", null)
             return
+        }
+        HookLifetime.onMainCleanup {
+            dynamicGlassSurfaceHoldGeneration.incrementAndGet()
+            dynamicGlassContentHoldActive = false
+            dynamicGlassHiddenBufferPrimed = false
+            synchronized(dynamicGlassHeldContentViews) {
+                dynamicGlassHeldContentViews.keys.forEach { it.alpha = 1f }
+                dynamicGlassHeldContentViews.clear()
+            }
+            compositorGlass.remove()
+            materialRefreshGenerations.clear()
+            clipboardAppliedBackgrounds.keys.toList().forEach(::clearClipboardBackground)
         }
 
         installClipboardPopupHook(module)

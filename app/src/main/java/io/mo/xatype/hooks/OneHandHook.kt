@@ -6,6 +6,7 @@ import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import android.os.Handler
@@ -26,6 +27,7 @@ object OneHandHook {
         val side = OneHandPolicy.actionSide(action)
         if (side == null && action != OneHandPolicy.MENU_ACTION) return false
         Handler(Looper.getMainLooper()).post {
+            if (HookLifetime.retired) return@post
             runCatching {
                 checkNotNull(revision) { "Native layout refresh unavailable" }
                 ConfigManager.syncFromProvider(service)

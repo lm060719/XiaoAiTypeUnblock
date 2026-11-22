@@ -5,6 +5,7 @@ import io.mo.xatype.compat.HostSymbols
 import io.mo.xatype.compat.KeyboardAbi
 import io.mo.xatype.keyboard.HostEngine
 import io.mo.xatype.shape.ShapeHostBridge
+import io.mo.xatype.util.HookLifetime
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Proxy
 
@@ -30,7 +31,7 @@ class Keyboard18HostBridge(private val loader: ClassLoader, private val profile:
     private fun candidate(index: Int, value: Pinyin18Candidate): Any =
         host.candidate(value.text, value.spelling, 1000 - index, value.text)
     fun create(engine: Keyboard18Engine, service: InputMethodService, onInput: () -> Unit): Any =
-        Proxy.newProxyInstance(loader, arrayOf(extended), Session(engine, service, onInput))
+        Proxy.newProxyInstance(loader, arrayOf(extended), Session(engine, service, onInput)).also(HookLifetime::trackEngine)
     fun session(proxy: Any?): Session? = if (proxy != null && Proxy.isProxyClass(proxy.javaClass))
         Proxy.getInvocationHandler(proxy) as? Session else null
 
@@ -47,7 +48,8 @@ class Keyboard18HostBridge(private val loader: ClassLoader, private val profile:
             "toString" -> "Keyboard18Engine(resolved ABI)"
             "a" -> pinyin
             "b" -> engine.select(arguments[0] as Int).orEmpty()
-            "clear", "destroy", "t" -> { engine.clear(); null }
+            "clear", "t" -> { engine.clear(); null }
+            "destroy" -> { engine.clear(); HookLifetime.releaseEngine(proxy); null }
             // A flush sent through the session commits every pending syllable (see HostEngine.FLUSH).
             "d" -> if (arguments[0] == HostEngine.FLUSH) result(engine.snapshot(commit = engine.commitAll()))
                 else result(engine.restore(arguments[0] as String))

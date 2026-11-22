@@ -35,14 +35,14 @@ import io.mo.xatype.keyboard18.Keyboard18Store
 import io.mo.xatype.keyboard18.Pinyin18Result
 import io.mo.xatype.provider.Keyboard18ContentProvider
 import io.mo.xatype.util.XposedUtils
-import java.util.concurrent.Executors
+import io.mo.xatype.util.HookLifetime
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Opt-in 18/14-key keyboards and independent offline decoder, validated against the resolved host ABI. */
 object Keyboard18Hook {
-    private val reports = Executors.newSingleThreadExecutor()
+    private val reports = HookLifetime.worker("xatype-keyboard18-report")
     /** Off the main thread: a full load parses ~100k rows and builds two tries. */
-    private val preloader = Executors.newSingleThreadExecutor { Thread(it, "xatype-keyboard18-preload").apply { isDaemon = true } }
+    private val preloader = HookLifetime.worker("xatype-keyboard18-preload")
     private data class Loaded(val settings: Bundle, val keys: GroupedKeys, val dictionary: Keyboard18Dictionary?)
     /** Parsed rows depend only on the scheme, so switching 18 <-> 14 keys rebuilds just the tries. */
     private class Corpus(val scheme: ShuangpinScheme?, val entries: List<Pinyin18Entry>)
@@ -56,25 +56,21 @@ object Keyboard18Hook {
     @Volatile private var reportedLayout: GroupedKeys? = null
     @Volatile private var applicationContext: Context? = null
 
-    fun install(module: XposedInterface, loader: ClassLoader) {
+    fun install(module: XposedInterface, loader: ClassLoader, application: Application? = null) {
         this.module = module
         // Package hooks install before Application exists. Keep this observer independent
         // so even an ABI-resolution failure can reach the module's status page.
-        val applicationCreate = Instrumentation::class.java.getDeclaredMethod(
-            "callApplicationOnCreate", Application::class.java)
-        module.hook(applicationCreate).intercept { chain ->
-            val result = chain.proceed()
-            val context = chain.getArg(0) as? Context
-            if (context?.packageName == "com.xiaomi.type") {
-                applicationContext = context.applicationContext ?: context
-                installFailure?.let { reportFailure(context, module, "Hook安装失败", it) }
-                // The IME service is bound well before the keyboard first shows; load while it is idle.
-                if (installFailure == null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
-                        Application.getProcessName() == context.packageName)) preload(context)
+        if (application == null) {
+            val applicationCreate = Instrumentation::class.java.getDeclaredMethod(
+                "callApplicationOnCreate", Application::class.java)
+            module.hook(applicationCreate).intercept { chain ->
+                val result = chain.proceed()
+                (chain.getArg(0) as? Application)?.let { start(it, module) }
+                result
             }
-            result
+            module.deoptimize(applicationCreate)
         }
-        module.deoptimize(applicationCreate)
+        applicationContext = application
         try {
             installHostHooks(module, loader)
         } catch (failure: Throwable) {
@@ -82,6 +78,16 @@ object Keyboard18Hook {
             applicationContext?.let { reportFailure(it, module, "Hook安装失败", failure) }
             throw failure
         }
+        application?.let { start(it, module) }
+    }
+
+    private fun start(application: Application, module: XposedInterface) {
+        if (application.packageName != "com.xiaomi.type") return
+        applicationContext = application
+        val failure = installFailure
+        if (failure != null) reportFailure(application, module, "Hook安装失败", failure)
+        else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+            Application.getProcessName() == application.packageName) preload(application)
     }
 
     private fun installHostHooks(module: XposedInterface, loader: ClassLoader) {
@@ -270,7 +276,7 @@ object Keyboard18Hook {
      */
     fun preload(context: Context) {
         val app = context.applicationContext ?: context
-        preloader.execute {
+        preloader {
             runCatching {
                 val keys = groupedKeys(app) ?: return@runCatching
                 if (load(app, keys).dictionary == null) return@runCatching
@@ -305,13 +311,13 @@ object Keyboard18Hook {
     }
     private fun report(context: Context, settings: Bundle, message: String) {
         val app = context.applicationContext ?: context
-        reports.execute { runCatching { app.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "report", null,
+        reports { runCatching { app.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "report", null,
             Bundle().apply { putLong(Keyboard18Store.REVISION, settings.getLong(Keyboard18Store.REVISION))
                 putString(Keyboard18Store.STATUS, message) }) } }
     }
     private fun reportFailure(context: Context, module: XposedInterface, stage: String, failure: Throwable) {
         val app = context.applicationContext ?: context
-        reports.execute {
+        reports {
             runCatching {
                 val settings = app.contentResolver.call(Keyboard18ContentProvider.CONTENT_URI, "snapshot", null, null)
                     ?: return@runCatching

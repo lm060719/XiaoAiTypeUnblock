@@ -29,6 +29,7 @@ import io.mo.xatype.compat.ModernKeyboardProfile
 import io.mo.xatype.compat.TargetCompatibility
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.util.IdentityHashMap
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
@@ -51,6 +52,7 @@ object KeyboardStyleV209Hook
     private data class ClipboardPopupState(val nightMode: Int, val nativeColors: Boolean)
     private val activeClipboardPopups = WeakHashMap<PopupWindow, ClipboardPopupState>()
     private val popupMaterialListeners = WeakHashMap<View, View.OnAttachStateChangeListener>()
+    private val clipboardDetachListeners = WeakHashMap<View, View.OnAttachStateChangeListener>()
     private val pendingMaterialSize = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
     // Materials painted with a custom color or image background.
     private val customBackgroundMaterials = WeakHashMap<View, Boolean>()
@@ -82,6 +84,22 @@ object KeyboardStyleV209Hook
             return
         }
 
+        HookLifetime.onMainCleanup {
+            hiddenGlassRetention.release()
+            removeKeyboardGlass()
+            clipboardGlass.values.toList().forEach { it.remove() }
+            clipboardGlass.clear()
+            clipboardDetachListeners.toList().forEach { (view, listener) ->
+                view.removeOnAttachStateChangeListener(listener)
+            }
+            clipboardDetachListeners.clear()
+            popupMaterialListeners.toList().forEach { (view, listener) -> listener.onViewDetachedFromWindow(view) }
+            pendingMaterialSize.forEach { (view, listener) ->
+                view.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(listener)
+            }
+            pendingMaterialSize.clear()
+            clipboardAppliedBackgrounds.keys.toList().forEach(::clearClipboardBackground)
+        }
         installLifecycleHooks(module, serviceClass)
         AppearanceConfigurationHook.install(module, serviceClass,
             onConfigurationApplied = { service -> refreshClipboardPopups(module, service) },
@@ -882,15 +900,18 @@ object KeyboardStyleV209Hook
         val surface = clipboardGlass.getOrPut(inside) {
             CompositorGlassSurface(null, popupWindow = true,
                 roundBottom = roundBottom).also { retained ->
-                inside.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                val listener = object : View.OnAttachStateChangeListener {
                     override fun onViewAttachedToWindow(view: View) = Unit
                     override fun onViewDetachedFromWindow(view: View) {
                         retained.remove()
                         clipboardGlass.remove(view)
+                        clipboardDetachListeners.remove(view)
                         activeClipboardPopups.remove(popup)
                         view.removeOnAttachStateChangeListener(this)
                     }
-                })
+                }
+                clipboardDetachListeners[inside] = listener
+                inside.addOnAttachStateChangeListener(listener)
             }
         }
         surface.setRoundBottomCorners(roundBottom)
@@ -904,7 +925,7 @@ object KeyboardStyleV209Hook
         }
 
         inside.post {
-            if (!ConfigManager.isStyleEnabled() || !popup.isShowing || !inside.isAttachedToWindow) {
+            if (HookLifetime.retired || !ConfigManager.isStyleEnabled() || !popup.isShowing || !inside.isAttachedToWindow) {
                 surface.remove()
                 return@post
             }
@@ -1940,6 +1961,7 @@ object KeyboardStyleV209Hook
         material: View
     )
     {
+        if (HookLifetime.retired) return
         if (ConfigManager.isOfficialAppearance()) {
             if (XposedUtils.getObjectField(helper, profile.helperMaterialField) === material) {
                 OfficialAppearance.apply(material, isPopupMaterial(service, material))

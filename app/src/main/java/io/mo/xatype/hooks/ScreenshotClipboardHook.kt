@@ -21,29 +21,42 @@ import android.provider.MediaStore
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.config.ConfigManager
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Runs in System UI, which already has media access. No polling or new app permissions. */
 object ScreenshotClipboardHook {
     private val installed = AtomicBoolean(false)
 
-    fun install(module: XposedInterface) {
+    fun install(module: XposedInterface, application: Application? = null) {
         if (Build.VERSION.SDK_INT < 30) return
+        if (application != null) {
+            startMonitor(module, application)
+            return
+        }
         // Xiaomi relocates its Application class between OS versions. Use the framework lifecycle.
         val onCreate = Instrumentation::class.java.getDeclaredMethod("callApplicationOnCreate", Application::class.java)
         module.hook(onCreate).intercept { chain ->
             val result = chain.proceed()
-            val context = chain.getArg(0) as? Application
-            if (context != null && Application.getProcessName() == "com.android.systemui" &&
-                installed.compareAndSet(false, true)) {
-                val worker = HandlerThread("XatScreenshotClipboard").apply { start() }
-                Handler(worker.looper).let { handler ->
-                    handler.post { Monitor(module, context, handler).start() }
-                }
-            }
+            (chain.getArg(0) as? Application)?.let { startMonitor(module, it) }
             result
         }
         XposedUtils.log(module, "[Screenshot Clipboard] Application lifecycle hook installed")
+    }
+
+    private fun startMonitor(module: XposedInterface, context: Application) {
+        if (Application.getProcessName() != "com.android.systemui" ||
+            HookLifetime.retired || !installed.compareAndSet(false, true)) return
+        val worker = HandlerThread("XatScreenshotClipboard").apply { start() }
+        val handler = Handler(worker.looper)
+        val monitor = Monitor(module, context, handler)
+        HookLifetime.onWorkerCleanup {
+            worker.quit()
+            worker.join(4_000)
+            check(!worker.isAlive) { "Screenshot clipboard worker is still running" }
+            monitor.unregister()
+        }
+        handler.post { monitor.start() }
     }
 
     private class Monitor(
@@ -87,12 +100,16 @@ object ScreenshotClipboardHook {
                 refreshConfig()
                 XposedUtils.log(module, "[Screenshot Clipboard] Observer ready; enabled=$enabled")
             } catch (t: Throwable) {
-                resolver.unregisterContentObserver(mediaObserver)
-                resolver.unregisterContentObserver(configObserver)
-                runCatching { context.unregisterReceiver(unlockReceiver) }
+                unregister()
                 XposedUtils.logError(module, "[Screenshot Clipboard] Observer unavailable", t)
                 handler.looper.quitSafely()
             }
+        }
+
+        fun unregister() {
+            resolver.unregisterContentObserver(mediaObserver)
+            resolver.unregisterContentObserver(configObserver)
+            runCatching { context.unregisterReceiver(unlockReceiver) }
         }
 
         fun refreshConfig() {

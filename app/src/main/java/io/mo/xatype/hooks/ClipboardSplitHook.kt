@@ -8,6 +8,7 @@ import android.widget.PopupWindow
 import android.widget.Toast
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.util.Collections
 import java.util.WeakHashMap
 
@@ -19,8 +20,18 @@ internal object ClipboardSplitHook {
     private val textEntryTypes = setOf(2, 3, 10) // Taobao codes, links, and plain text.
     private val adapterClasses = mutableSetOf<Class<*>>()
     private val splitCards = Collections.newSetFromMap(WeakHashMap<View, Boolean>())
+    private var openPanel: ClipboardSplitPanel? = null
 
     fun install(module: XposedInterface) {
+        HookLifetime.onMainCleanup {
+            openPanel?.close()
+            openPanel = null
+            splitCards.forEach {
+                it.setOnLongClickListener(null)
+                it.isLongClickable = false
+            }
+            splitCards.clear()
+        }
         val show = PopupWindow::class.java.getMethod(
             "showAtLocation", View::class.java, Int::class.javaPrimitiveType,
             Int::class.javaPrimitiveType, Int::class.javaPrimitiveType
@@ -102,10 +113,14 @@ internal object ClipboardSplitHook {
             return true
         }
         val feedback = KeyboardHapticsHook.keyPressFeedback(module, service)
-        ClipboardSplitPanel(inside, parent, words, roundBottom = popup.width > 0, keyPressFeedback = feedback) { selectedText ->
+        openPanel?.close()
+        val panel = ClipboardSplitPanel(inside, parent, words, roundBottom = popup.width > 0, keyPressFeedback = feedback) { selectedText ->
             popup.isShowing && service.currentInputEditorInfo === editor &&
                 service.currentInputConnection === connection && connection.commitText(selectedText, 1)
-        }.show()
+        }
+        openPanel = panel
+        panel.onClose = { if (openPanel === panel) openPanel = null }
+        panel.show()
         return true
     }
 }

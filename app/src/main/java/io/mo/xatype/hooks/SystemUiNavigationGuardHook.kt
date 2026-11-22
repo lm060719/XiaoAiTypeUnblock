@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.view.View
 import io.github.libxposed.api.XposedModule
 import io.mo.xatype.config.ConfigManager
+import io.mo.xatype.util.HookLifetime
 import io.mo.xatype.util.XposedUtils
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -35,7 +36,8 @@ object SystemUiNavigationGuardHook {
     @Volatile private var surfaceAnimationArmedUntil = 0L
     @Volatile private var imeWasShowing = false
     @Volatile private var suppressImeGuardUntil = 0L
-    @Volatile private var screenReceiverRegistered = false
+    private var screenReceiver: BroadcastReceiver? = null
+    private var restoreBackground: (() -> Unit)? = null
     @Volatile private var blurWarmSentinel: Any? = null
     @Volatile private var blurWarmSentinelParent: Any? = null
 
@@ -54,10 +56,18 @@ object SystemUiNavigationGuardHook {
             return
         }
 
+        HookLifetime.onMainCleanup {
+            generation.incrementAndGet()
+            screenReceiver?.let { systemUiContext?.unregisterReceiver(it) }
+            screenReceiver = null
+            removeBlurWarmSentinel()
+            restoreBackground?.invoke()
+            restoreBackground = null
+        }
         module.hook(method).intercept { chain ->
             val navigationBar = chain.thisObject
             val view = XposedUtils.getObjectField(navigationBar, "mView") as? View
-            if (view != null) {
+            if (view != null && !HookLifetime.retired) {
                 val context = view.context.applicationContext ?: view.context
                 systemUiContext = context
                 ensureScreenStateReceiver(context)
@@ -148,16 +158,15 @@ object SystemUiNavigationGuardHook {
     }
 
     private fun ensureScreenStateReceiver(context: Context) {
-        if (screenReceiverRegistered) return
+        if (screenReceiver != null || HookLifetime.retired) return
         synchronized(this) {
-            if (screenReceiverRegistered) return
+            if (screenReceiver != null || HookLifetime.retired) return
             try {
                 val filter = IntentFilter().apply {
                     addAction(Intent.ACTION_SCREEN_OFF)
                     addAction(Intent.ACTION_SCREEN_ON)
                 }
-                context.registerReceiver(
-                    object : BroadcastReceiver() {
+                val receiver = object : BroadcastReceiver() {
                         override fun onReceive(receiverContext: Context, intent: Intent) {
                             when (intent.action) {
                                 Intent.ACTION_SCREEN_OFF -> {
@@ -172,11 +181,9 @@ object SystemUiNavigationGuardHook {
 
                             }
                         }
-                    },
-                    filter,
-                    Context.RECEIVER_NOT_EXPORTED
-                )
-                screenReceiverRegistered = true
+                    }
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                screenReceiver = receiver
             } catch (_: Throwable) {}
         }
     }
@@ -522,6 +529,13 @@ object SystemUiNavigationGuardHook {
         }
         val color = resolveGuardColor(view.context)
         view.setBackgroundColor(color)
+        val temporaryBackground = view.background
+        restoreBackground = {
+            if (view.background === temporaryBackground) {
+                view.background = original
+                original.invalidateSelf()
+            }
+        }
         XposedUtils.log(
             module,
             "[BottomDiag][SystemUI][$sequence] nav-guard applied color=${colorHex(color)} " +
@@ -530,8 +544,8 @@ object SystemUiNavigationGuardHook {
         view.postDelayed(
             {
                 if (generation.get() == sequence) {
-                    view.background = original
-                    original.invalidateSelf()
+                    restoreBackground?.invoke()
+                    restoreBackground = null
                     XposedUtils.log(
                         module,
                         "[BottomDiag][SystemUI][$sequence] nav-guard restored after=${duration}ms"

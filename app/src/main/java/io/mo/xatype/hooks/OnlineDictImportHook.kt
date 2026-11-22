@@ -14,6 +14,7 @@ import io.mo.xatype.dict.OnlineDictStore
 import io.mo.xatype.dict.UserWordEngine
 import io.mo.xatype.provider.OnlineDictContentProvider
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 import java.io.File
 import java.lang.reflect.Method
 import java.util.IdentityHashMap
@@ -34,6 +35,7 @@ object OnlineDictImportHook {
     private val running = AtomicBoolean(false)
 
     fun install(module: XposedInterface, loader: ClassLoader) {
+        HookLifetime.waitForIdle("online dictionary import", running::get)
         val engine = XposedUtils.findClass(ENGINE, loader)
             ?: return XposedUtils.logWarn(module, "[OnlineDict] SmartEngineManager not found; online word list inactive")
         val hooks = engine.declaredMethods.filter {
@@ -57,7 +59,7 @@ object OnlineDictImportHook {
     }
 
     private fun schedule(module: XposedInterface, manager: Any?, context: Context, engineLooper: Looper) {
-        if (manager == null || !running.compareAndSet(false, true)) return
+        if (manager == null || !HookLifetime.begin { running.compareAndSet(false, true) }) return
         val app = context.applicationContext ?: context
         Thread({
             try {

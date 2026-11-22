@@ -1,5 +1,6 @@
 package io.mo.xatype.util
 
+import android.app.Application
 import android.util.Log
 import io.github.libxposed.api.XposedInterface
 import io.mo.xatype.BuildConfig
@@ -10,6 +11,10 @@ import java.lang.reflect.Method
 
 object XposedUtils {
     private const val TAG = "XiaoAiTypeUnblock"
+
+    fun currentApplication(): Application? = runCatching {
+        Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as? Application
+    }.getOrNull()
 
     fun log(module: XposedInterface, msg: String) {
         module.log(Log.INFO, TAG, msg)

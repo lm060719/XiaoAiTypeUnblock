@@ -15,9 +15,14 @@ internal object OfficialAppearance {
         var rim: GlassRim.Spec? = null
         var appliedForeground: Drawable? = foreground
         var geometry: Triple<Int, Int, Float>? = null
+        lateinit var attachListener: View.OnAttachStateChangeListener
     }
 
     private val tracked = WeakHashMap<View, State>()
+
+    fun clear() {
+        tracked.toList().forEach { (view, state) -> state.attachListener.onViewDetachedFromWindow(view) }
+    }
 
     fun apply(material: View, roundBottom: Boolean = false) {
         if (!ConfigManager.isOfficialAppearance()) return
@@ -65,7 +70,7 @@ internal object OfficialAppearance {
         }
         val listener = ViewTreeObserver.OnPreDrawListener { refresh(); true }
         material.viewTreeObserver.addOnPreDrawListener(listener)
-        material.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        state.attachListener = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) = Unit
             override fun onViewDetachedFromWindow(view: View) {
                 if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnPreDrawListener(listener)
@@ -77,7 +82,8 @@ internal object OfficialAppearance {
                 if (view.foreground === state.appliedForeground) view.foreground = state.foreground
                 view.removeOnAttachStateChangeListener(this)
             }
-        })
+        }
+        material.addOnAttachStateChangeListener(state.attachListener)
         refresh()
     }
 }

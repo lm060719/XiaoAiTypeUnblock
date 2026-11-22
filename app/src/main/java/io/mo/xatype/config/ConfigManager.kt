@@ -14,6 +14,7 @@ import io.mo.xatype.keyboard.PersonalDictionary
 import io.mo.xatype.keyboard.ShortcutKeyboard
 import io.mo.xatype.keyboard.KeyboardPositions
 import io.mo.xatype.util.XposedUtils
+import io.mo.xatype.util.HookLifetime
 
 /**
  * Settings as seen by the hooked processes.
@@ -121,8 +122,11 @@ object ConfigManager {
     @Volatile private var failureLogged = false
     @Volatile private var decodedShortcutMaps: Map<ShortcutKeyboard, Pair<String?, Map<String, String>>> = emptyMap()
     @Volatile private var decodedPersonalDictionary: Pair<String?, PersonalDictionary>? = null
+    private var stopObserver: (() -> Unit)? = null
 
+    @Synchronized
     fun init(module: XposedInterface) {
+        if (this.module == null) HookLifetime.onWorkerCleanup(::stopObserving)
         this.module = module
     }
 
@@ -136,6 +140,7 @@ object ConfigManager {
      * arrive before this object's observer has counted the change.
      */
     fun syncFromProvider(context: Context, force: Boolean = false) {
+        if (HookLifetime.retired) return
         val dark = isSystemDark(context)
         if (!observerAttempted) registerObserver(context)
         if (!force && values != null && syncedDark == dark && observing &&
@@ -173,7 +178,7 @@ object ConfigManager {
     /** One observer per process. Changes are fetched on its own thread, after a short debounce. */
     @Synchronized
     private fun registerObserver(context: Context) {
-        if (observerAttempted) return
+        if (observerAttempted || HookLifetime.retired) return
         observerAttempted = true
         val app = context.applicationContext ?: context
         val thread = HandlerThread("xatype-config").apply { start() }
@@ -189,10 +194,21 @@ object ConfigManager {
         try {
             app.contentResolver.registerContentObserver(CONFIG_URI, false, observer)
             observing = true
+            stopObserver = {
+                thread.quit()
+                app.contentResolver.unregisterContentObserver(observer)
+                thread.join(4_000)
+                check(!thread.isAlive) { "Config observer is still running" }
+            }
         } catch (t: Throwable) {
             thread.quitSafely()
             module?.let { XposedUtils.logWarn(it, "[Config] Change observer unavailable, syncing on every show: $t") }
         }
+    }
+
+    private fun stopObserving() {
+        val stop = synchronized(this) { stopObserver.also { stopObserver = null } }
+        stop?.invoke()
     }
 
     private fun current(): Map<String, Any?> = values ?: ConfigSchema.defaults
