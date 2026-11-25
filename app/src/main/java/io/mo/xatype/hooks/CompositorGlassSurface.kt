@@ -150,14 +150,21 @@ internal class CompositorGlassSurface(
 
             val location = IntArray(2)
             material.getLocationInWindow(location)
-            val cornerRadiusPx = ConfigManager.getCornerRadius() * material.resources.displayMetrics.density
+            val cornerRadiusPx = KeyboardSurfaceOutline.radius(material)
             val docked = !popupWindow && !roundBottom && location[1] + material.height >= decor.height
+            // SurfaceFlinger antialiases the blur crop independently of the material
+            // outline. Tuck its top arcs under the docked material to hide the fringe.
+            val blurTopRadius = if (docked && cornerRadiusPx > 0f) {
+                cornerRadiusPx + material.resources.displayMetrics.density * BLUR_CORNER_GUARD_DP
+            } else {
+                cornerRadiusPx
+            }
             val visibleHeight = if (docked) minOf(material.height, decor.height - location[1]).coerceAtLeast(0) else material.height
             val bottomRadius = if (docked) ImeWindowCornerGuard.bottomRadius(decor) else 0f
             val roundDisplayBottom = docked && bottomRadius > 0f
             // Keep the original rendering for popups and floating keyboards.
             val cropHeight = if (roundDisplayBottom) visibleHeight else material.height +
-                if (docked) kotlin.math.ceil(cornerRadiusPx.toDouble()).toInt() else 0
+                if (docked) kotlin.math.ceil(blurTopRadius.toDouble()).toInt() else 0
             val transactionClass = Class.forName("android.view.SurfaceControl\$Transaction")
             val transaction = transactionClass.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
             // ViewRootImpl reuses the Java SurfaceControl wrapper when its
@@ -195,7 +202,7 @@ internal class CompositorGlassSurface(
             ).apply { isAccessible = true }.invoke(
                 transaction,
                 primer,
-                if (roundDisplayBottom) 0f else cornerRadiusPx
+                if (roundDisplayBottom) 0f else blurTopRadius
             )
             // HyperOS explicit blur regions disappear during a held Recents
             // gesture even though the effect layer remains visible. Its native
@@ -206,7 +213,7 @@ internal class CompositorGlassSurface(
                 transactionClass.getDeclaredMethod("setMiCornerRadii", surfaceClass, FloatArray::class.java)
                     .apply { isAccessible = true }
                     .invoke(transaction, primer, floatArrayOf(
-                        cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx,
+                        blurTopRadius, blurTopRadius, blurTopRadius, blurTopRadius,
                         cropBottomRadius, cropBottomRadius, cropBottomRadius, cropBottomRadius
                     ))
                 true
@@ -242,7 +249,7 @@ internal class CompositorGlassSurface(
                 // Compatibility fallback for frameworks without native per-corner cropping.
                 // Bounds use window coordinates, not child-surface coordinates.
                 val region = GlassBlurRegion.encode(template, blurRadius, location[0], location[1],
-                    material.width, visibleHeight, cornerRadiusPx, bottomRadius)
+                    material.width, visibleHeight, blurTopRadius, bottomRadius)
                 transactionClass.getDeclaredMethod("setBlurRegions", surfaceClass, Array<FloatArray>::class.java)
                     .apply { isAccessible = true }.invoke(transaction, primer, arrayOf(region))
             } else if (blurRegionTemplate != null) {
@@ -276,7 +283,7 @@ internal class CompositorGlassSurface(
                 "[BottomDiag] glass Surface geometry " +
                     "bounds=${material.width}x${material.height}@${location[0]},${location[1]} " +
                     "shown=${material.isShown} drawSync=$syncWithDraw decor=${decor.width}x${decor.height} " +
-                    "visibleHeight=$visibleHeight bottomRadius=$bottomRadius " +
+                    "visibleHeight=$visibleHeight blurTopRadius=$blurTopRadius bottomRadius=$bottomRadius " +
                     "perCornerCrop=$perCornerCrop blurRegions=$useBlurRegions"
             }
             dynamicGlassGeometry = geometry
@@ -316,4 +323,7 @@ internal class CompositorGlassSurface(
         } catch (_: Throwable) {}
     }
 
+    private companion object {
+        const val BLUR_CORNER_GUARD_DP = 2f
+    }
 }

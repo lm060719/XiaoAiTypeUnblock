@@ -82,7 +82,7 @@ internal object GlassRim {
         val density = view.resources.displayMetrics.density
         return Spec(
             intensity,
-            ConfigManager.getCornerRadius().coerceAtLeast(0) * density,
+            KeyboardSurfaceOutline.radius(view),
             roundBottom,
             ReadabilityScrim.surfaceDark(view.context),
             density,

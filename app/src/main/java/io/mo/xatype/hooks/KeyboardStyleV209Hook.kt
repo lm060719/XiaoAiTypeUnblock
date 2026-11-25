@@ -5,7 +5,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Outline
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -14,7 +13,6 @@ import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
@@ -332,16 +330,24 @@ object KeyboardStyleV209Hook
             XposedUtils.findMethodExact(rendererClass, profile.rendererUpdateMethod)?.let { method ->
                 module.hook(method).intercept { chain ->
                     val renderer = chain.thisObject
-                    val service = XposedUtils.getObjectField(renderer, profile.rendererServiceField)
+                    val service = XposedUtils.getObjectField(renderer, profile.rendererServiceField) as?
+                        android.inputmethodservice.InputMethodService
                     val helper = service?.let { XposedUtils.getObjectField(it, "hyperMaterialHelper") }
-                    if (usesCompositorGlass() && helper != null &&
-                        ownsKeyboardGlass(XposedUtils.getObjectField(helper, profile.helperMaterialField))) {
-                        (XposedUtils.getObjectField(renderer, profile.rendererViewField) as? View)
-                            ?.setRenderEffect(null)
+                    val material = helper?.let { XposedUtils.getObjectField(it, profile.helperMaterialField) as? View }
+                    if (usesCompositorGlass() && ownsKeyboardGlass(material)) {
+                        (XposedUtils.getObjectField(renderer, profile.rendererViewField) as? View)?.setRenderEffect(null)
                         XposedUtils.setObjectField(renderer, profile.rendererEffectField, null)
                         null
                     } else {
-                        chain.proceed()
+                        val result = chain.proceed()
+                        if (service != null && material != null && ConfigManager.isAppearanceEnabled() &&
+                            !isPopupMaterial(service, material)) {
+                            val edge = XposedUtils.getObjectField(renderer, profile.rendererViewField) as? View
+                            if (edge != null && edge.parent === material.parent) {
+                                OfficialAppearance.clipDockedEdge(edge, material)
+                            }
+                        }
+                        result
                     }
                 }
             }
@@ -1002,12 +1008,7 @@ object KeyboardStyleV209Hook
                 }
 
                 inside.foreground = null
-                applyTopCornerOutline(
-                    inside,
-                    ConfigManager.getCornerRadius().coerceAtLeast(0) *
-                        inside.resources.displayMetrics.density,
-                    roundBottom = roundBottom
-                )
+                KeyboardSurfaceOutline.apply(inside, KeyboardSurfaceOutline.radius(inside), roundBottom)
 
                 styleClipboardViewTree(root)
                 AppearanceDiagnostics.record(module, service, "clipboard-popup", inside, surface.owns(inside))
@@ -1725,6 +1726,7 @@ object KeyboardStyleV209Hook
             service.window?.window?.decorView?.let(ImeWindowCornerGuard::track)
             val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper") ?: return
             val material = XposedUtils.getObjectField(helper, profile.helperMaterialField) as? View ?: return
+            service.window?.window?.decorView?.let { ImeWindowCornerGuard.track(it, material) }
             OfficialAppearance.apply(material, isPopupMaterial(service, material))
             return
         }
@@ -1962,6 +1964,10 @@ object KeyboardStyleV209Hook
     )
     {
         if (HookLifetime.retired) return
+        if (ConfigManager.isAppearanceEnabled() &&
+            XposedUtils.getObjectField(helper, profile.helperMaterialField) === material) {
+            service.window?.window?.decorView?.let { ImeWindowCornerGuard.track(it, material) }
+        }
         if (ConfigManager.isOfficialAppearance()) {
             if (XposedUtils.getObjectField(helper, profile.helperMaterialField) === material) {
                 OfficialAppearance.apply(material, isPopupMaterial(service, material))
@@ -2030,12 +2036,7 @@ object KeyboardStyleV209Hook
             material.visibility = View.VISIBLE
 
             val floating = isPopupMaterial(service, material)
-            applyTopCornerOutline(
-                material,
-                ConfigManager.getCornerRadius().coerceAtLeast(0) *
-                    material.resources.displayMetrics.density,
-                roundBottom = floating
-            )
+            KeyboardSurfaceOutline.apply(material, KeyboardSurfaceOutline.radius(material), roundBottom = floating)
             // Glass scrim (dynamic glass only) and edge highlight. Also clears
             // a glass scrim left behind after switching to a solid or image background.
             applyGlassOverlay(service, material)
@@ -2216,35 +2217,6 @@ object KeyboardStyleV209Hook
         {
             null
         }
-    }
-
-    private fun applyTopCornerOutline(view: View, radiusPx: Float, roundBottom: Boolean = false)
-    {
-        if (radiusPx <= 0f)
-        {
-            view.clipToOutline = false
-            return
-        }
-
-        view.clipToOutline = true
-        view.outlineProvider = object : ViewOutlineProvider()
-        {
-            override fun getOutline(target: View, outline: Outline)
-            {
-                if (target.width > 0 && target.height > 0)
-                {
-                    outline.setRoundRect(
-                        0,
-                        0,
-                        target.width,
-                        target.height + if (roundBottom) 0 else radiusPx.toInt(),
-                        radiusPx
-                    )
-                }
-            }
-        }
-
-        view.invalidateOutline()
     }
 
     private fun snapshotLongFields(instance: Any): Map<String, Long>

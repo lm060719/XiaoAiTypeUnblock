@@ -11,10 +11,16 @@ import java.util.WeakHashMap
 
 /** Decorates the host's own material without changing its palette, alpha or blur. */
 internal object OfficialAppearance {
-    private class State(val foreground: Drawable?, var roundBottom: Boolean) {
+    private data class Geometry(
+        val left: Int, val top: Int, val width: Int, val height: Int, val radius: Float
+    )
+
+    private class State(
+        val foreground: Drawable?, var roundBottom: Boolean, val outlineSource: View
+    ) {
         var rim: GlassRim.Spec? = null
         var appliedForeground: Drawable? = foreground
-        var geometry: Triple<Int, Int, Float>? = null
+        var geometry: Geometry? = null
         lateinit var attachListener: View.OnAttachStateChangeListener
     }
 
@@ -24,39 +30,68 @@ internal object OfficialAppearance {
         tracked.toList().forEach { (view, state) -> state.attachListener.onViewDetachedFromWindow(view) }
     }
 
-    fun apply(material: View, roundBottom: Boolean = false) {
-        if (!ConfigManager.isOfficialAppearance()) return
-        tracked[material]?.let {
-            if (it.roundBottom != roundBottom) {
-                it.roundBottom = roundBottom
-                material.invalidateOutline()
+    fun apply(material: View, roundBottom: Boolean = false) = track(material, material, roundBottom)
+
+    // The host draws its top hairline in a sibling view, sometimes with an outset.
+    // Clip it in the material's coordinate space so a rectangular line cannot cross the corners.
+    fun clipDockedEdge(edge: View, material: View) = track(edge, material, roundBottom = false)
+
+    private fun track(view: View, outlineSource: View, roundBottom: Boolean) {
+        val drawsRim = view === outlineSource
+        fun enabled() = if (drawsRim) ConfigManager.isOfficialAppearance()
+            else ConfigManager.isAppearanceEnabled()
+        if (!enabled()) return
+        tracked[view]?.let {
+            if (it.outlineSource === outlineSource) {
+                if (it.roundBottom != roundBottom) {
+                    it.roundBottom = roundBottom
+                    view.invalidateOutline()
+                }
+                return
             }
-            return
+            it.attachListener.onViewDetachedFromWindow(view)
         }
-        val state = State(material.foreground, roundBottom)
-        tracked[material] = state
-        val originalProvider = material.outlineProvider
-        val originalClip = material.clipToOutline
+        val state = State(view.foreground, roundBottom, outlineSource)
+        tracked[view] = state
+        val originalProvider = view.outlineProvider
+        val originalClip = view.clipToOutline
+        val viewLocation = IntArray(2)
+        val sourceLocation = IntArray(2)
         val provider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
-                val radius = ConfigManager.getCornerRadius().coerceAtLeast(0) *
-                    view.resources.displayMetrics.density
-                if (radius > 0f) outline.setRoundRect(0, 0, view.width,
-                    view.height + if (state.roundBottom) 0 else kotlin.math.ceil(radius.toDouble()).toInt(), radius)
-                else outline.setRect(0, 0, view.width, view.height)
+                val geometry = state.geometry ?: return
+                val (left, top, width, height, radius) = geometry
+                KeyboardSurfaceOutline.set(outline, left, top, left + width, top + height,
+                    radius, state.roundBottom)
             }
         }
         fun refresh() {
-            if (!ConfigManager.isOfficialAppearance()) return
-            if (material.outlineProvider !== provider) material.outlineProvider = provider
-            if (!material.clipToOutline) material.clipToOutline = true
-            val geometry = Triple(material.width, material.height,
-                ConfigManager.getCornerRadius().toFloat())
+            if (!enabled()) {
+                state.attachListener.onViewDetachedFromWindow(view)
+                return
+            }
+            if (!drawsRim) {
+                view.getLocationInWindow(viewLocation)
+                outlineSource.getLocationInWindow(sourceLocation)
+            }
+            val radius = KeyboardSurfaceOutline.radius(outlineSource)
+            val geometry = Geometry(
+                sourceLocation[0] - viewLocation[0], sourceLocation[1] - viewLocation[1],
+                outlineSource.width, outlineSource.height, radius
+            )
             if (geometry != state.geometry) {
                 state.geometry = geometry
-                material.invalidateOutline()
+                view.invalidateOutline()
             }
-            val rim = GlassRim.spec(material, state.roundBottom)
+            if (drawsRim || radius > 0f) {
+                if (view.outlineProvider !== provider) view.outlineProvider = provider
+                if (!view.clipToOutline) view.clipToOutline = true
+            } else if (view.outlineProvider === provider) {
+                view.outlineProvider = originalProvider
+                view.clipToOutline = originalClip
+            }
+            if (!drawsRim) return
+            val rim = GlassRim.spec(view, state.roundBottom)
             if (rim != state.rim) {
                 state.rim = rim
                 val overlay = rim?.let { GlassRim.Overlay(null, it) }
@@ -66,10 +101,10 @@ internal object OfficialAppearance {
                     else -> LayerDrawable(arrayOf(state.foreground, overlay))
                 }
             }
-            if (material.foreground !== state.appliedForeground) material.foreground = state.appliedForeground
+            if (view.foreground !== state.appliedForeground) view.foreground = state.appliedForeground
         }
         val listener = ViewTreeObserver.OnPreDrawListener { refresh(); true }
-        material.viewTreeObserver.addOnPreDrawListener(listener)
+        view.viewTreeObserver.addOnPreDrawListener(listener)
         state.attachListener = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) = Unit
             override fun onViewDetachedFromWindow(view: View) {
@@ -79,11 +114,11 @@ internal object OfficialAppearance {
                     view.outlineProvider = originalProvider
                     view.clipToOutline = originalClip
                 }
-                if (view.foreground === state.appliedForeground) view.foreground = state.foreground
+                if (drawsRim && view.foreground === state.appliedForeground) view.foreground = state.foreground
                 view.removeOnAttachStateChangeListener(this)
             }
         }
-        material.addOnAttachStateChangeListener(state.attachListener)
+        view.addOnAttachStateChangeListener(state.attachListener)
         refresh()
     }
 }

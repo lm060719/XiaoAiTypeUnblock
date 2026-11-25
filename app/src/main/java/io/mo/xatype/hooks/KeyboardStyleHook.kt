@@ -1615,7 +1615,7 @@ object KeyboardStyleHook {
             }
             original.drawable?.alpha = original.alpha * ConfigManager.getOpacity().coerceIn(0, 100) / 100
             inside.background = original.drawable
-            applyTopCornerOutline(inside, ConfigManager.getCornerRadius() * inside.resources.displayMetrics.density)
+            KeyboardSurfaceOutline.apply(inside, KeyboardSurfaceOutline.radius(inside))
             return
         }
         popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -1684,7 +1684,7 @@ object KeyboardStyleHook {
                     }
                 }
 
-                applyTopCornerOutline(inside, radiusPx)
+                KeyboardSurfaceOutline.apply(inside, radiusPx)
                 styleClipboardViewTree(root)
                 XposedUtils.logDebug(module) { "KeyboardStyleHook: clipboard panel synchronized with keyboard background" }
             } catch (t: Throwable) {
@@ -1901,28 +1901,6 @@ object KeyboardStyleHook {
             Color.argb((205 * opacityStrength).toInt(), 255, 255, 255)
         }
         return ClipboardPalette(card, pressed, tabTrack, tabSelected, primary, secondary)
-    }
-
-    private fun applyTopCornerOutline(view: View, radiusPx: Float) {
-        if (radiusPx <= 0f) {
-            view.clipToOutline = false
-            return
-        }
-        view.clipToOutline = true
-        view.outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(target: View, outline: Outline) {
-                if (target.width > 0 && target.height > 0) {
-                    outline.setRoundRect(
-                        0,
-                        0,
-                        target.width,
-                        target.height + radiusPx.toInt(),
-                        radiusPx
-                    )
-                }
-            }
-        }
-        view.invalidateOutline()
     }
 
     private fun roundedBackground(color: Int, radius: Float) = GradientDrawable().apply {
@@ -2343,11 +2321,9 @@ object KeyboardStyleHook {
 
         val bgType = ConfigManager.getBgType() // 0: DYNAMIC_GLASS, 1: COLOR, 2: IMAGE
         val opacity = ConfigManager.getOpacity()
-        val cornerRadiusDp = ConfigManager.getCornerRadius()
         val blurRadiusDp = ConfigManager.getBlurRadius()
 
-        val density = f3500h.resources.displayMetrics.density
-        val radiusPx = cornerRadiusDp * density
+        val radiusPx = KeyboardSurfaceOutline.radius(f3500h)
         f3500h.post {
             try {
                 // 1. Background Customization on f3500h (the actual keyboard card at bottom)
@@ -2400,22 +2376,8 @@ object KeyboardStyleHook {
                 f3500h.elevation = 0f
                 f3500h.translationZ = 0f
 
-                // 2. Rounded Corners & Clipping on f3500h (Top corners only)
-                if (radiusPx > 0f) {
-                    f3500h.clipToOutline = true
-                    f3500h.outlineProvider = object : ViewOutlineProvider() {
-                        override fun getOutline(v: View, outline: Outline) {
-                            val w = v.width
-                            val h = v.height
-                            if (w <= 0 || h <= 0) return
-                            outline.setRoundRect(0, 0, w, h + radiusPx.toInt(), radiusPx)
-                        }
-                    }
-                    f3500h.invalidateOutline()
-                } else {
-                    f3500h.clipToOutline = false
-                    f3500h.outlineProvider = ViewOutlineProvider.BACKGROUND
-                }
+                KeyboardSurfaceOutline.apply(f3500h, radiusPx)
+                if (radiusPx <= 0f) f3500h.outlineProvider = ViewOutlineProvider.BACKGROUND
 
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "KeyboardStyleHook: failed to update material views", t)
@@ -2606,6 +2568,7 @@ object KeyboardStyleHook {
     private fun applyOfficialMaterial(helper: Any) {
         val material = XposedUtils.getObjectField(helper, "h") as? View ?: return
         val service = XposedUtils.getObjectField(helper, "a") as? android.inputmethodservice.InputMethodService
+        service?.window?.window?.decorView?.let { ImeWindowCornerGuard.track(it, material) }
         val roundBottom = service?.window?.window?.decorView?.let { material.rootView !== it } ?: false
         OfficialAppearance.apply(material, roundBottom)
     }
@@ -2686,6 +2649,8 @@ object KeyboardStyleHook {
 
                 // 4. Update HyperMaterialHelper's f3500h view which is the true keyboard bottom card
                 val helper = XposedUtils.getObjectField(service, "hyperMaterialHelper")
+                val material = helper?.let { XposedUtils.getObjectField(it, "h") as? View }
+                if (material != null) window?.decorView?.let { ImeWindowCornerGuard.track(it, material) }
                 scheduleHyperMaterialRefresh(module, helper)
             } catch (t: Throwable) {
                 XposedUtils.logError(module, "Error applying custom style to keyboard view", t)
