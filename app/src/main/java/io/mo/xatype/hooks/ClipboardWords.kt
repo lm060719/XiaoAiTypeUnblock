@@ -5,20 +5,23 @@ import java.util.Locale
 
 internal fun clipboardWords(text: String): List<String> {
     val boundaries = BreakIterator.getWordInstance(Locale.SIMPLIFIED_CHINESE)
-    boundaries.setText(text)
     return buildList {
-        var start = boundaries.first()
-        var end = boundaries.next()
-        while (end != BreakIterator.DONE) {
-            val word = text.substring(start, end)
-            if (word.any {
-                    !it.isWhitespace() && !it.isISOControl() && Character.getType(it) != Character.FORMAT.toInt()
+        for ((index, section) in text.splitToSequence('.').withIndex()) {
+            if (index > 0) add(".")
+            boundaries.setText(section)
+            var start = boundaries.first()
+            var end = boundaries.next()
+            while (end != BreakIterator.DONE) {
+                val word = section.substring(start, end)
+                if (word.any {
+                        !it.isWhitespace() && !it.isISOControl() && Character.getType(it) != Character.FORMAT.toInt()
+                    }
+                ) {
+                    add(word)
                 }
-            ) {
-                add(word)
+                start = end
+                end = boundaries.next()
             }
-            start = end
-            end = boundaries.next()
         }
     }
 }

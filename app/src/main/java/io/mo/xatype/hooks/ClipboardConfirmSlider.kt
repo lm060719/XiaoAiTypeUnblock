@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
 import io.mo.xatype.ui.SpringAnimator
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor") // Created in the host process with the panel's colors and callback.
@@ -56,7 +57,8 @@ internal class ClipboardConfirmSlider(
     private val spring = SpringAnimator(
         SpringAnimator.STANDARD_STIFFNESS, SpringAnimator.STANDARD_DAMPING, onUpdate = ::moveThumb
     )
-    private var fingerStart = 0f
+    private var fingerStartX = 0f
+    private var fingerStartY = 0f
     private var thumbStart = 0f
     private var slideStarted = false
     private var confirmationVelocity = 0f
@@ -104,7 +106,8 @@ internal class ClipboardConfirmSlider(
                     event.x > thumb.x + thumb.width + touchSlop
                 ) return false
                 spring.stop()
-                fingerStart = event.x
+                fingerStartX = event.x
+                fingerStartY = event.y
                 thumbStart = thumb.translationX
                 slideStarted = false
                 velocity = VelocityTracker.obtain().apply { addMovement(event) }
@@ -112,7 +115,7 @@ internal class ClipboardConfirmSlider(
             }
             MotionEvent.ACTION_MOVE -> velocity?.let {
                 it.addMovement(event)
-                val distance = event.x - fingerStart
+                val distance = event.x - fingerStartX
                 moveThumb(thumbStart + distance)
                 if (!slideStarted && distance >= touchSlop) {
                     slideStarted = true
@@ -121,10 +124,14 @@ internal class ClipboardConfirmSlider(
             }
             MotionEvent.ACTION_UP -> velocity?.let {
                 it.addMovement(event)
-                moveThumb(thumbStart + event.x - fingerStart)
+                val distance = event.x - fingerStartX
+                moveThumb(thumbStart + distance)
                 it.computeCurrentVelocity(1000, configuration.scaledMaximumFlingVelocity.toFloat())
-                val confirmed = event.x - fingerStart >= maxOf(touchSlop.toFloat(), travel * CONFIRM_FRACTION) &&
-                    event.y in -touchSlop.toFloat()..(height + touchSlop).toFloat()
+                val confirmDistance = minOf(dp(MAX_CONFIRM_DISTANCE).toFloat(), travel * CONFIRM_FRACTION)
+                    .coerceAtLeast(touchSlop.toFloat())
+                val verticalDistance = abs(event.y - fingerStartY)
+                val confirmed = distance >= confirmDistance &&
+                    verticalDistance <= maxOf(dp(VERTICAL_TOLERANCE).toFloat(), distance)
                 finishDrag(it.xVelocity, confirmed)
                 if (confirmed) performClick()
             }
@@ -181,6 +188,8 @@ internal class ClipboardConfirmSlider(
         const val ARROW_SIZE = 19f
         const val DISABLED_THUMB_ALPHA = 0.5f
         const val FILL_ALPHA = 0.22f
-        const val CONFIRM_FRACTION = 0.88f
+        const val CONFIRM_FRACTION = 0.45f
+        const val MAX_CONFIRM_DISTANCE = 48
+        const val VERTICAL_TOLERANCE = 24
     }
 }
