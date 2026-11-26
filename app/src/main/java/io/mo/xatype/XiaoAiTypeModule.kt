@@ -203,6 +203,19 @@ class XiaoAiTypeModule : XposedModule() {
         }
 
         try {
+            val gate = checkNotNull(HostSymbols.method(HostSymbols.ANTI_MISTOUCH_GATE))
+            val callers = HostSymbols.methods(HostSymbols.ANTI_MISTOUCH_CALLERS)
+            check(callers.isNotEmpty())
+            callers.forEach { deoptimize(it) }
+            hook(gate).intercept { chain ->
+                if (ConfigManager.isAntiMistouchDisabled()) false else chain.proceed()
+            }
+        } catch (t: Throwable) {
+            HostSymbols.markUnavailable(HostSymbols.ANTI_MISTOUCH_GATE, t)
+            XposedUtils.logError(this, "Anti-mistouch gate unavailable for this host", t)
+        }
+
+        try {
             KeyboardHapticsHook.install(this, classLoader)
         } catch (t: Throwable) {
             HostSymbols.markUnavailable(HostSymbols.KEYBOARD_HAPTICS, t)

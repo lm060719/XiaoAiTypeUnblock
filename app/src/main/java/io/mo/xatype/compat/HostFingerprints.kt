@@ -21,6 +21,19 @@ internal object HostFingerprints {
 
     fun resolve(bridge: DexKitBridge, loader: ClassLoader): FingerprintResult {
         val collector = FingerprintCollector()
+        collector.put(HostSymbols.ANTI_MISTOUCH_GATE, HostSymbols.ANTI_MISTOUCH_CALLERS) {
+            val gate = single(bridge.findMethod {
+                matcher {
+                    paramCount(0)
+                    returnType("boolean")
+                    usingEqStrings("anti_mistouch_enabled", "cloud_last_applied_expire_at")
+                }
+            }, "anti-mistouch enable check")
+            check(Modifier.isStatic(gate.getMethodInstance(loader).modifiers))
+            val callers = gate.callers.map { it.descriptor }.distinct()
+            check(callers.isNotEmpty()) { "anti-mistouch gate callers" }
+            listOf(listOf(gate.descriptor), callers)
+        }
         collector.put(HostSymbols.KEYBOARD_HAPTIC_INTENSITY) {
             val dispatch = single(bridge.findMethod {
                 matcher {

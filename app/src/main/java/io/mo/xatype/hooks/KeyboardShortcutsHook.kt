@@ -194,6 +194,13 @@ object KeyboardShortcutsHook {
             override fun active(): Boolean = supported == true && ConfigManager.isKeyboardHandwritingEnabled() &&
                 layoutMode == "PINYIN" && layout() in handwritingLayouts
 
+            override fun blocksHandwriting(): Boolean {
+                val ime = service ?: return true
+                val target = target(ime) ?: return true
+                return runCatching { actions.hasPending(target) }.getOrDefault(true) &&
+                    KeyboardSelectionHook.selected(ime) != KeyboardChoice.SHAPE
+            }
+
             override fun letterBounds(): List<RectF> = swipe()?.letterBounds().orEmpty()
 
             override fun swipeTracking(): Boolean = swipe()?.tracking() == true
@@ -202,6 +209,7 @@ object KeyboardShortcutsHook {
 
             override fun finishComposing(done: () -> Unit) {
                 val ime = service ?: return done()
+                if (KeyboardSelectionHook.selected(ime) != KeyboardChoice.SHAPE) return done()
                 val target = target(ime) ?: return done()
                 try {
                     if (!actions.hasPending(target)) return done()

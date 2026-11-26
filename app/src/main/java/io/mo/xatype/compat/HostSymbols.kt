@@ -1,7 +1,7 @@
 package io.mo.xatype.compat
 
 /** Members of the input method (com.xiaomi.type), located by [HostFingerprints]. */
-object HostSymbols : SymbolTable(15, HostFingerprints::resolve) {
+object HostSymbols : SymbolTable(16, HostFingerprints::resolve) {
     const val ONE_HAND_MENU_GRID = "keyboard.oneHandMenuGrid"
     const val ONE_HAND_MENU_CARD = "keyboard.oneHandMenuCard"
     const val ONE_HAND_MENU_PANEL = "keyboard.oneHandMenuPanel"
@@ -39,6 +39,8 @@ object HostSymbols : SymbolTable(15, HostFingerprints::resolve) {
     const val KEYBOARD_PREDICTION = "keyboard.prediction"
     /** Status only: bound through the service's named haptic manager getter. */
     const val KEYBOARD_HAPTICS = "keyboard.haptics"
+    const val ANTI_MISTOUCH_GATE = "keyboard.antiMistouchGate"
+    const val ANTI_MISTOUCH_CALLERS = "keyboard.antiMistouchCallers"
     const val KEYBOARD_HAPTIC_INTENSITY = "keyboard.hapticIntensity"
     const val KEYBOARD_LAYOUT = "keyboard.layout"
     const val KEYBOARD_ACTIONS = "keyboard.actions"
@@ -70,6 +72,7 @@ object HostSymbols : SymbolTable(15, HostFingerprints::resolve) {
     override val keys = listOf(
         ONE_HAND_DIMENSIONS, ONE_HAND_MENU_GRID, ONE_HAND_MENU_CARD,
         ONE_HAND_MENU_PANEL, ONE_HAND_MENU_CHUNK, KEYBOARD_HAPTIC_INTENSITY,
+        ANTI_MISTOUCH_GATE, ANTI_MISTOUCH_CALLERS,
         KEYBOARD_KEY_PREVIEW, KEYBOARD_KEY_PREVIEW_FILL, KOTLIN_COROUTINES,
         AI_SAFETY_PARSERS, VOICE_MODERATION, ASR_ERROR_MAPPER, ASR_ERROR_CALLBACK,
         OS_VERSION_GATE, HEIGHT_RECT, HEIGHT_CLAMP, HEIGHT_RECT_GETTER, HEIGHT_LAYOUT,
@@ -94,7 +97,7 @@ object HostSymbols : SymbolTable(15, HostFingerprints::resolve) {
         }.getOrDefault(false)
         key == AI_SAFETY_PARSERS -> values.size >= 2 && super.validateValues(key, values)
         key == BOTTOM_SPACING_CALLERS -> super.validateValues(key, values)
-        key == TOOLBAR_HEIGHT_CALLERS -> values.isNotEmpty() && super.validateValues(key, values)
+        key == TOOLBAR_HEIGHT_CALLERS || key == ANTI_MISTOUCH_CALLERS -> values.isNotEmpty() && super.validateValues(key, values)
         key == PANEL_CLOSE || key == KEYBOARD_KEY_PREVIEW_FILL ->
             values.isEmpty() || (values.size == 1 && super.validateValues(key, values))
         key == KOTLIN_COROUTINES -> values.size == 3 && super.validateValues(key, values)

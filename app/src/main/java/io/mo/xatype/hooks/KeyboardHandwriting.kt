@@ -40,12 +40,15 @@ import kotlin.math.max
  * area is ink, dots included. [RECOGNITION_DELAY_MS] after the last stroke the ink goes to the
  * host's own handwriting engine; the best candidate is committed and the others are offered on
  * a strip above the keys, where a tap replaces it.
+ * Pending pinyin keeps touches on the native keyboard until the composition clears.
  */
 class KeyboardHandwriting(private val module: XposedInterface, private val host: Host,
                           private val recognizer: HandwritingRecognizer) {
     interface Host {
         /** A supported keyboard is visible in Chinese mode, and the switch is on. */
         fun active(): Boolean
+        /** Pinyin composition currently takes priority over handwriting. */
+        fun blocksHandwriting(): Boolean
         /** Screen bounds of the visible letter keys. */
         fun letterBounds(): List<RectF>
         /** A downward swipe shortcut owns the current touch. */
@@ -93,6 +96,7 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
     private val items = ArrayList<Pair<RectF, Int>>()
     private var stripGesture = false
     private var stripPressed = -1
+    private var discardingGesture = false
     private var generation = 0
     /** Native key input is blocked: a claimed press is cancelled, which Compose reports as a release. */
     var suppressing = false
@@ -131,6 +135,12 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
 
     /** Drop ink, pending recognition and the candidate strip (the keyboard was hidden). */
     fun reset() {
+        clearSession()
+        discardingGesture = false
+        suppressing = false
+    }
+
+    private fun clearSession() {
         main.removeCallbacks(recognizeLater)
         generation++
         pending = null
@@ -139,7 +149,6 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
         area = null
         hideStrip()
         stripGesture = false
-        suppressing = false
         invalidate()
     }
 
@@ -174,6 +183,21 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
             // Cancellation callbacks of the previous claimed press have drained by now.
             suppressing = false
             stripGesture = false
+            discardingGesture = false
+        }
+        if (discardingGesture) return true
+
+        val active = host.active()
+        if (active && host.blocksHandwriting()) {
+            // Once handwriting owns a touch, consume its remaining events even after dropping the ink.
+            discardingGesture = action != MotionEvent.ACTION_DOWN && (stroke != null || stripGesture)
+            if (action == MotionEvent.ACTION_DOWN || pending != null || discardingGesture ||
+                strokes.isNotEmpty() || strip != null) {
+                clearSession()
+            }
+            return discardingGesture || pass(event)
+        }
+        if (action == MotionEvent.ACTION_DOWN) {
             strip?.let { bar ->
                 if (bar.contains(x, y)) {
                     stripGesture = true
@@ -191,7 +215,7 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
             }
             return true
         }
-        if (!host.active()) {
+        if (!active) {
             if (stroke != null || strokes.isNotEmpty()) reset()
             pending = null
             return pass(event)
@@ -330,7 +354,7 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
         stroke = null
         area = null
         invalidate()
-        if (box == null || captured.isEmpty()) return
+        if (box == null || captured.isEmpty() || host.blocksHandwriting()) return
         val width = box.width().toInt().coerceAtLeast(1)
         val height = box.height().toInt().coerceAtLeast(1)
         val points = captured.map { stroke ->
@@ -341,12 +365,13 @@ class KeyboardHandwriting(private val module: XposedInterface, private val host:
         }
         val session = generation
         host.finishComposing {
-            recognizer.recognize(module, points, width, height) { words ->
+            if (session != generation || host.blocksHandwriting()) return@finishComposing
+            recognizer.recognize(module, points, width, height) onResult@{ words ->
+                if (session != generation || host.blocksHandwriting()) return@onResult
                 words.firstOrNull()?.let { best ->
                     host.commit(best)
                     committed = best
-                    // A newer session or a hidden keyboard does not show stale alternatives.
-                    if (session == generation && strokes.isEmpty() && stroke == null) showStrip(words)
+                    if (strokes.isEmpty() && stroke == null) showStrip(words)
                 }
             }
         }

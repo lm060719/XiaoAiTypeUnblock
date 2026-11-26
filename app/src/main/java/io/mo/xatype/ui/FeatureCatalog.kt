@@ -24,6 +24,9 @@ internal object FeatureCatalog {
             Feature(ConfigManager.KEY_OS_VERSION_UNBLOCK, "解除澎湃 OS 4+ 限制"),
             Feature(ConfigManager.KEY_AI_ABILITY_UNLOCK, "解除 AI 功能机型限制")
         ),
+        "按键输入" to listOf(
+            Feature(ConfigManager.KEY_DISABLE_ANTI_MISTOUCH, "关闭防误触")
+        ),
         "剪贴板" to listOf(
             Feature(ConfigManager.KEY_CLIPBOARD_SENSITIVE, "保存剪贴板敏感内容",
                 Detail("允许被系统标记为敏感的剪贴板内容进入输入法历史及联想。")),
