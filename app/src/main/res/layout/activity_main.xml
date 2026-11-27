@@ -161,12 +161,26 @@
         android:layout_height="1dp"
         android:background="@color/card_stroke" />
 
-    <!-- Navigation items are built in code. -->
-    <LinearLayout
+    <FrameLayout
         android:id="@+id/navBar"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/nav_height"
-        android:background="@color/surface_light"
-        android:orientation="horizontal" />
+        android:layout_height="wrap_content"
+        android:background="@color/surface_light">
+
+        <LinearLayout
+            android:id="@+id/navTabs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:baselineAligned="false"
+            android:orientation="horizontal" />
+
+        <View
+            android:id="@+id/navIndicator"
+            android:layout_width="@dimen/nav_indicator_width"
+            android:layout_height="@dimen/nav_indicator_height"
+            android:layout_gravity="top|start"
+            android:background="@drawable/bg_nav_indicator"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
 
 </LinearLayout>

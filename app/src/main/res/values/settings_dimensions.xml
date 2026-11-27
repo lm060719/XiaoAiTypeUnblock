@@ -25,7 +25,11 @@
     <dimen name="radius_card">20dp</dimen>
     <dimen name="radius_lg">28dp</dimen>
 
-    <dimen name="nav_height">68dp</dimen>
+    <dimen name="nav_min_height">60dp</dimen>
+    <dimen name="nav_icon_size">22dp</dimen>
+    <dimen name="nav_label_size">12sp</dimen>
+    <dimen name="nav_indicator_width">20dp</dimen>
+    <dimen name="nav_indicator_height">3dp</dimen>
     <dimen name="icon_tile">40dp</dimen>
     <dimen name="floating_margin">12dp</dimen>
 </resources>

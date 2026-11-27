@@ -39,13 +39,18 @@ class MainActivity : AppCompatActivity() {
 
     private class Tab(val label: String, val icon: Int, val page: View)
 
-    private class NavItem(val root: View, val indicator: View, val icon: ImageView, val label: TextView)
+    private class NavItem(val root: View, val icon: ImageView, val label: TextView)
 
     private lateinit var kit: SettingsKit
     private lateinit var prefs: SharedPreferences
     private lateinit var appearancePage: AppearancePage
     private lateinit var tabs: List<Tab>
     private val navItems = mutableListOf<NavItem>()
+    private lateinit var navIndicator: View
+    private var indicatorTarget = Float.NaN
+    private val indicatorSpring = SpringAnimator(SpringAnimator.STANDARD_STIFFNESS, SpringAnimator.STANDARD_DAMPING) {
+        navIndicator.translationX = it
+    }
     private var currentTab = TAB_HOME
 
     private lateinit var restartBar: View
@@ -92,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         tabs = listOf(
             Tab("概览", R.drawable.ic_nav_home, findViewById(R.id.pageHome)),
             Tab("净化", R.drawable.ic_nav_shield, findViewById(R.id.pagePurify)),
-            Tab("键盘", R.drawable.ic_nav_keyboard, findViewById(R.id.pageKeyboard)),
+            Tab("键盘", R.drawable.ic_nav_keyboard_outline, findViewById(R.id.pageKeyboard)),
             Tab("外观", R.drawable.ic_nav_palette, findViewById(R.id.pageAppearance))
         )
         buildNavigation(findViewById(R.id.navBar))
@@ -123,6 +128,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        indicatorSpring.stop()
         appearancePage.destroy()
         updater.destroy()
         super.onDestroy()
@@ -175,11 +181,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildNavigation(bar: LinearLayout) {
+    private fun buildNavigation(bar: FrameLayout) {
+        val row = bar.findViewById<LinearLayout>(R.id.navTabs)
+        navIndicator = bar.findViewById(R.id.navIndicator)
+        val iconSize = kit.dimen(R.dimen.nav_icon_size)
+        val verticalPadding = kit.dimen(R.dimen.space_sm)
         tabs.forEachIndexed { index, tab ->
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
+                minimumHeight = kit.dimen(R.dimen.nav_min_height)
+                setPadding(0, verticalPadding, 0, verticalPadding)
                 isClickable = true
                 isFocusable = true
                 contentDescription = tab.label
@@ -189,26 +201,35 @@ class MainActivity : AppCompatActivity() {
                     selectTab(index)
                 }
             }
-            val iconHolder = FrameLayout(this)
-            val indicator = View(this).apply { setBackgroundResource(R.drawable.bg_nav_indicator) }
-            iconHolder.addView(indicator, FrameLayout.LayoutParams(kit.dp(56), kit.dp(30), Gravity.CENTER))
             val icon = ImageView(this).apply {
                 setImageResource(tab.icon)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
-            iconHolder.addView(icon, FrameLayout.LayoutParams(kit.dp(22), kit.dp(22), Gravity.CENTER))
-            item.addView(iconHolder, LinearLayout.LayoutParams(kit.dp(56), kit.dp(30)))
-            val label = kit.label(tab.label, 12f, R.color.text_secondary).apply {
+            item.addView(icon, LinearLayout.LayoutParams(iconSize, iconSize))
+            val label = kit.resourceLabel(tab.label, R.dimen.nav_label_size, R.color.text_secondary).apply {
                 setPadding(0, kit.dimen(R.dimen.space_xs), 0, 0)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
             item.addView(label, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-            bar.addView(item, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
-            navItems += NavItem(item, indicator, icon, label)
+            row.addView(item, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+            navItems += NavItem(item, icon, label)
         }
+        bar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionNavIndicator(animate = false) }
     }
 
-    private val indicatorSprings = mutableMapOf<View, SpringAnimator>()
+    private fun positionNavIndicator(animate: Boolean) {
+        val tab = navItems[currentTab].root
+        if (tab.width == 0 || navIndicator.width == 0) return
+        val target = tab.left + (tab.width - navIndicator.width) / 2f - navIndicator.left
+        if (target == indicatorTarget) return
+        indicatorTarget = target
+        if (animate) {
+            indicatorSpring.start(navIndicator.translationX, target)
+        } else {
+            indicatorSpring.stop()
+            navIndicator.translationX = target
+        }
+    }
 
     private fun selectTab(index: Int, animate: Boolean = true) {
         val previous = currentTab
@@ -217,7 +238,7 @@ class MainActivity : AppCompatActivity() {
         tabs.forEachIndexed { i, tab ->
             val show = i == currentTab
             tab.page.visibility = if (show) View.VISIBLE else View.GONE
-            if (show && animate && previous != currentTab) {
+            if (show && animate && previous != currentTab && ValueAnimator.areAnimatorsEnabled()) {
                 tab.page.alpha = 0f
                 tab.page.animate().alpha(1f).setDuration(150).start()
             }
@@ -229,18 +250,8 @@ class MainActivity : AppCompatActivity() {
             item.label.setTextColor(tint)
             item.label.typeface = if (selected) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
             item.root.isSelected = selected
-            item.indicator.visibility = if (selected) View.VISIBLE else View.INVISIBLE
-            if (selected && animate && previous != currentTab) {
-                val spring = indicatorSprings.getOrPut(item.indicator) {
-                    SpringAnimator(SpringAnimator.MICRO_STIFFNESS, SpringAnimator.MICRO_DAMPING, 0.002f) {
-                        item.indicator.scaleX = it
-                    }
-                }
-                spring.start(0.4f, 1f)
-            } else {
-                item.indicator.scaleX = 1f
-            }
         }
+        positionNavIndicator(animate && previous != currentTab)
         backToHome.isEnabled = currentTab != TAB_HOME
     }
 
